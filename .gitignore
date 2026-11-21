@@ -28,3 +28,9 @@ reports/generated/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local SQLite databases
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
