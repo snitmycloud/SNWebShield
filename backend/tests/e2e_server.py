@@ -15,6 +15,7 @@ def main():
         os.environ["JWT_SECRET_KEY"] = secrets.token_urlsafe(48)
         os.environ["CORS_ORIGINS"] = "http://127.0.0.1:15173"
         os.environ["JWT_ACCESS_TOKEN_MINUTES"] = "20"
+        os.environ["NOTIFICATION_CHANNEL"] = "dashboard"
 
         from alembic import command
         from alembic.config import Config
@@ -31,9 +32,31 @@ def main():
                 role="admin", is_active=True,
             ))
             db.commit()
+        # Test-only transport replacement: exercise the real queue, eligibility,
+        # transactions and UI without sending requests to synthetic domains.
+        from threading import Event, Thread
+        from app.services import monitoring, job_engine
+        stopped = Event()
+        def fixture_worker():
+            while not stopped.wait(.2):
+                try:
+                    with SessionLocal() as db: job_engine.scheduler_tick(db)
+                    with SessionLocal() as db:
+                        job_engine.heartbeat(db, "monitoring-worker"); db.commit()
+                        claimed = job_engine.claim(db, "monitoring")
+                        if claimed:
+                            job_engine.finish(db, *claimed, {"state": "up", "http_status": 200,
+                                "dns_ok": True, "response_ms": 42.5, "tls_valid": True,
+                                "certificate_expires_at": "2030-12-31T00:00:00+00:00",
+                                "fixture": True})
+                except Exception:
+                    # Dispose the transaction and retry, as the real CLI does.
+                    continue
+        worker = Thread(target=fixture_worker, daemon=True); worker.start()
         try:
             uvicorn.run("app.main:app", host="127.0.0.1", port=18000, access_log=False, log_level="warning")
         finally:
+            stopped.set(); worker.join(timeout=5)
             engine.dispose()
 
 

@@ -102,3 +102,22 @@ test("network errors preserve a still-valid session", async () => {
   assert.equal(api.hasSession(), true);
   assert.equal(events.length, 0);
 });
+
+
+test("monitoring management authenticates POST requests and history preserves pagination", async () => {
+  session();
+  const payload = { evidence_id: "synthetic-document", monitoring_permission_reviewed: true };
+  await api.configureMonitoring(7, payload);
+  assert.equal(new URL(calls[0][0]).pathname, "/api/v1/websites/7/monitoring/configure");
+  assert.equal(calls[0][1].method, "POST");
+  assert.equal(calls[0][1].headers.Authorization, "Bearer synthetic-unit-test-token");
+  assert.deepEqual(JSON.parse(calls[0][1].body), payload);
+  await api.monitoringHistory(7, "attempts", 50);
+  const historyURL = new URL(calls[1][0]);
+  assert.equal(historyURL.pathname, "/api/v1/websites/7/monitoring/attempts");
+  assert.equal(historyURL.searchParams.get("offset"), "50");
+  assert.equal(historyURL.searchParams.get("limit"), "50");
+  await api.stopMonitoring();
+  assert.equal(new URL(calls[2][0]).pathname, "/api/v1/monitoring/stop");
+  assert.equal(calls[2][1].method, "POST");
+});

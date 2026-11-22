@@ -7,3 +7,6 @@ from app.models.website import Website
 __all__ = ["Admin", "AuthorizationAuditEvent", "Client", "Website", "WebsiteAuthorization"]
 
 from app.models.evidence import AuthorizationEvidence, EvidenceReview, EvidenceEvent
+
+from app.models.jobs import Job, JobAttempt, JobResult, ExecutionEvent, WorkerHeartbeat, ExecutionSlot
+from app.models.monitoring import MonitoringConfig, MonitoringConsent, MonitoringIncident, NotificationDelivery

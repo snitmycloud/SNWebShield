@@ -142,3 +142,9 @@ Development can use Docker Compose for the web app and PostgreSQL. Production sh
 ## Authorisation evidence subsystem
 
 See [Authorisation Evidence Management](AUTHORIZATION_EVIDENCE.md): private UUID storage, three evidence/review/event tables, conditional revision gating and authenticated binary access. PDF preview is download-only; malware scanning, production parser isolation, tenant isolation and PostgreSQL integration are not implemented or verified.
+
+## Monitoring as the first operational handler
+
+The historical target architecture above is not a current completion claim. [Monitoring](MONITORING.md) now adds a shared SQLAlchemy job engine: durable scheduling, idempotent enqueue, pool slots, atomic claims, attempt/lease records, token-fenced results and transactional execution events. Monitoring registers eligibility, scheduling and result processing on this engine. A future scanner should register its own policy and isolated adapter, keeping the same execution records and scheduler rather than introducing a competing job system. No scanner handler exists today.
+
+The independent scheduler, spawned-probe worker and notification dispatcher run outside FastAPI. Explicit reviewed monitoring consent, configuration revisions and runtime destination validation gate each check. HTTP/DNS/TLS metrics, incidents and notification delivery history are separate from assessment findings. Additive migration `0004_monitoring` leaves existing relationships intact. SQLite is the tested local deployment; production isolation, Windows acceptance and PostgreSQL remain separate validation work.

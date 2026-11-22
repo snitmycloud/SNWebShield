@@ -10,7 +10,8 @@ React + Vite admin console for the local SNWebShield FastAPI backend.
 - API connectivity indicator and retry handling
 - Website authorisation status display (new records remain pending)
 - Administrator login, session restoration and logout
-- Authorisation list, search, filters, details, decision forms and audit history
+- Authorisation list, search, filters, details, private evidence review, decision forms and audit history
+- Monitoring consent/configuration, explicit activation, HTTP/DNS/TLS metrics, response-time chart, job/attempt history, incidents and notifications
 
 This is an internal local-development UI with bearer tokens stored in sessionStorage. It does not include tenant isolation, multiple roles, an authorisation creation form, scanners or production session protections. Session-expiry handling and website status presentation have been updated; see [the correctness guide](../docs/AUTHORIZATION_CORRECTNESS.md) for behaviour, tests and remaining browser verification. Do not expose it publicly or enter real client secrets.
 
@@ -62,7 +63,7 @@ Protected requests include a bearer token. `api.js` also has an authorisation cr
 
 ## Validation
 
-Run `npm run build` from `frontend`. A successful build does not verify browser workflows. `npm test` runs session/API helper regressions. `npm run test:e2e` runs six Playwright journeys using a disposable backend on port 18000 and Vite on 15173. Install Chromium with `npx playwright install chromium` first. Browser execution remains pending in the review environment; run it on Windows as described in the correctness guide.
+Run `npm run build` from `frontend`. A successful build does not verify browser workflows. `npm test` runs session/API helper regressions. `npm run test:e2e` runs eight Playwright journeys using a disposable backend on port 18000 and Vite on 15173. Install Chromium with `npx playwright install chromium` first. Chromium launch was blocked by a local socket restriction in the review environment; run it on Windows as described in the correctness guide.
 
 Override the API base URL by editing `.env`:
 
@@ -74,4 +75,10 @@ Restart Vite after changing `.env`.
 
 ## Local authorisation evidence milestone
 
-Private document upload, authenticated retrieval, human reviews, retention/holds and the approval evidence gate are implemented for local testing. Follow [the evidence guide](../docs/AUTHORIZATION_EVIDENCE.md) for migration `0003_evidence`, configuration, API details, backup limitations and Windows validation. Updated browser execution remains pending; no GitHub push is required.
+Private document upload, authenticated retrieval, human reviews, retention/holds and the approval evidence gate are implemented for local testing. Follow [the evidence guide](../docs/AUTHORIZATION_EVIDENCE.md) for migration `0003_evidence`, configuration, API details, backup limitations and Windows validation. See the monitoring guide for current validation limits; no GitHub push is required.
+
+## Monitoring dashboard
+
+Open **Monitoring** in the sidebar. Select a website, use its inspected/accepted monitoring permission document and save configuration; it remains disabled until explicitly enabled. Settings can be replaced, checks queued, execution disabled or consent revoked. The dashboard polls every 15 seconds and distinguishes stopped processes, stale samples, blocked destinations and measured failures. History uses 50-row pages.
+
+Run the three independent backend operational processes for real checks. [Monitoring setup and acceptance](../docs/MONITORING.md) explains the workflow, status semantics and limitations. The browser test server substitutes a synthetic probe outcome through the actual job engine; it never monitors synthetic domains. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` optionally selects an already-installed Chromium executable for tests. Leave it unset on Windows when using Playwright's installed Chromium.

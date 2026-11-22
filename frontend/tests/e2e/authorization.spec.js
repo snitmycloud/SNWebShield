@@ -176,3 +176,40 @@ test("invalid uploads and rejected evidence cannot enable approval", async ({ pa
   await page.getByRole("button", { name: "Record evidence review", exact: true }).click();
   await expect(page.getByRole("button", { name: "Approve request", exact: true })).toBeDisabled();
 });
+
+
+test("monitoring requires separate consent, runs through the shared engine, and can be revoked", async ({ page, request }) => {
+  const { website } = await asset(request, { approved: true });
+  await signIn(page);
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Monitoring", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Website monitoring", exact: true })).toBeVisible();
+  const websiteRow = page.getByRole("row").filter({ hasText: website.name });
+  await expect(websiteRow).toContainText("not configured");
+  await page.getByLabel("Monitoring website", { exact: true }).selectOption(String(website.id));
+  await expect(page.getByRole("button", { name: "Save monitoring configuration", exact: true })).toBeDisabled();
+  await expect(page.getByLabel("Reviewed permission document").locator("option")).toHaveCount(2);
+  await page.getByLabel("Reviewed permission document").selectOption({ index: 1 });
+  await page.getByLabel("Monitoring agreement reference").fill("BROWSER-SYNTHETIC-MONITORING-CONSENT");
+  await page.getByLabel(/^I reviewed this document and confirm/).check();
+  await page.getByRole("button", { name: "Save monitoring configuration", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Configuration saved disabled");
+  await expect(websiteRow).toContainText("disabled");
+  await page.getByRole("button", { name: "enable", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("enable request accepted");
+  // The test server supplies a synthetic outcome through the real engine.
+  await expect(async () => {
+    await page.getByRole("button", { name: "Refresh monitoring", exact: true }).click();
+    await expect(websiteRow).toContainText("42.5 ms");
+  }).toPass({ timeout: 15000 });
+  await expect(page.getByRole("img", { name: "Recent monitoring response times in milliseconds" })).toBeVisible();
+  await page.getByLabel("Monitoring history type").selectOption("jobs");
+  await expect(page.locator(".monitor-page")).toContainText("completed");
+  await page.getByRole("button", { name: "disable", exact: true }).click();
+  await expect(websiteRow).toContainText("disabled");
+  await page.getByRole("button", { name: "revoke consent", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("revoke-consent request accepted");
+  await page.getByRole("button", { name: "enable", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Monitoring consent or evidence is invalid");
+  await page.getByLabel("Monitoring history type").selectOption("consents");
+  await expect(page.locator(".monitor-page")).toContainText("Revoked");
+});

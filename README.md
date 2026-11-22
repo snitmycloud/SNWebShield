@@ -4,7 +4,7 @@
 
 Tagline: **Identify. Analyse. Secure.**
 
-SNWebShield is an internal platform under development for a website cybersecurity services team. The implemented foundation manages administrator login, clients, websites and authorisation review. Assessment execution, findings, evidence uploads, reports, remediation and retesting remain planned.
+SNWebShield is an internal platform under development for a website cybersecurity services team. The implemented foundation manages administrator login, clients, websites and authorisation review. Private authorisation evidence and reviewed monitoring consent are supported. Assessment execution, findings, reports, remediation and retesting remain planned.
 
 > Safety principle: SNWebShield must only support assessments that have been explicitly authorised in writing by a person with authority over the target assets. A website URL submitted to the platform is not, by itself, permission to test it.
 
@@ -25,13 +25,13 @@ SNWebShield is an internal platform under development for a website cybersecurit
 - Frontend: React 18 + Vite 6, JavaScript and CSS
 - Backend: Python + FastAPI, SQLAlchemy and Pydantic
 - Authentication: Argon2 password hashing and HS256 JWTs; browser sessionStorage for development
-- Current database: SQLite; PostgreSQL deployment and migrations are future work
-- Later background jobs: Celery + Redis
-- Evidence: private, encrypted object storage
+- Current database: SQLite with additive Alembic migrations; PostgreSQL deployment is unverified
+- Background jobs: shared durable SQLAlchemy job engine with separate scheduler, monitoring worker and notification dispatcher
+- Evidence: private local files with authenticated retrieval; encrypted object storage is future work
 - Reports: HTML templates rendered to PDF
 - Development: Git + GitHub
 
-Background jobs, private evidence storage and report rendering are proposed components, not installed subsystems. The current application is for local development and is not production-ready.
+Monitoring jobs and private local evidence storage are implemented; report rendering remains planned. The current application is for local development and is not production-ready.
 
 ## Local setup and verified review
 
@@ -89,8 +89,14 @@ SNWebShield/
 
 ## Status
 
-**Application foundation and authorisation review implemented; stabilisation required.** Administrator login and protected client, website and authorisation APIs exist. The React UI supports client/website creation and authorisation review decisions with audit history. Authorisation creation currently has an API but no UI form. UTC normalisation, computed validity states, atomic decisions, session expiry and exact authorisation summaries now have regression coverage. Alembic migrations are included. Monitoring, scanner execution, analyst workflows, reporting and production hardening are not implemented. Neither website registration nor authorisation approval starts a scan.
+**Application foundation and authorisation review implemented; stabilisation required.** Administrator login and protected client, website and authorisation APIs exist. The React UI supports client/website creation and authorisation review decisions with audit history. Authorisation creation currently has an API but no UI form. UTC normalisation, computed validity states, atomic decisions, session expiry and exact authorisation summaries now have regression coverage. Alembic migrations are included. The monitoring engine is implemented for local validation; scanner execution, analyst workflows, reporting and production hardening remain planned. Neither website registration nor authorisation approval starts a scan.
 
 ## Local authorisation evidence milestone
 
-Private document upload, authenticated retrieval, human reviews, retention/holds and the approval evidence gate are implemented for local testing. Follow [the evidence guide](docs/AUTHORIZATION_EVIDENCE.md) for migration `0003_evidence`, configuration, API details, backup limitations and Windows validation. Updated browser execution remains pending; no GitHub push is required.
+Private document upload, authenticated retrieval, human reviews, retention/holds and the approval evidence gate are implemented for local testing. Follow [the evidence guide](docs/AUTHORIZATION_EVIDENCE.md) for migration `0003_evidence`, configuration, API details, backup limitations and Windows validation. See the monitoring guide for current validation limits; no GitHub push is required.
+
+## Website monitoring milestone
+
+The first operational handler uses a shared job engine with atomic claims, leases, attempts, fenced results and execution events. Separate reviewed monitoring consent and explicit activation are required. The dashboard provides HTTP/DNS/TLS metrics, response-time history, incidents and notification delivery history. Migration `0004_monitoring` preserves existing data.
+
+Follow [monitoring setup, APIs and validation](docs/MONITORING.md) for the five local processes, Windows commands and remaining acceptance checks. Browser execution was blocked by the implementation environment, so Windows browser acceptance remains required. Scanners are not implemented and cannot inherit monitoring permission.

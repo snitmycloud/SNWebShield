@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect
 
-from app.api.routes import auth, authorizations, clients, health, websites, evidence
+from app.api.routes import auth, authorizations, clients, health, websites, evidence, monitoring
 from app.core.config import settings
 from app.db.session import engine
 from app.models import (  # noqa: F401 - register the model relationships
@@ -25,6 +25,8 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("Database migration required. From backend run: python -m alembic upgrade head")
     if not all(inspector.has_table(name) for name in ("authorization_evidence", "evidence_reviews", "evidence_events")) or "evidence_revision" not in {c["name"] for c in inspector.get_columns("website_authorizations")} or "evidence_review_id" not in {c["name"] for c in inspector.get_columns("authorization_audit_events")}:
         raise RuntimeError("Evidence migration required: python -m alembic upgrade head")
+    if not inspector.has_table("jobs") or not inspector.has_table("monitoring_configs"):
+        raise RuntimeError("Operations migration required: python -m alembic upgrade head")
     yield
 
 
@@ -54,3 +56,5 @@ app.include_router(websites.router, prefix="/api/v1")
 app.include_router(authorizations.router, prefix="/api/v1")
 
 app.include_router(evidence.router, prefix="/api/v1")
+
+app.include_router(monitoring.router, prefix="/api/v1")

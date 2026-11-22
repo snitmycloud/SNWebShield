@@ -50,4 +50,10 @@ For an existing database, follow the backup and migration order in [the correctn
 
 ## Local authorisation evidence milestone
 
-Private document upload, authenticated retrieval, human reviews, retention/holds and the approval evidence gate are implemented for local testing. Follow [the evidence guide](../docs/AUTHORIZATION_EVIDENCE.md) for migration `0003_evidence`, configuration, API details, backup limitations and Windows validation. Updated browser execution remains pending; no GitHub push is required.
+Private document upload, authenticated retrieval, human reviews, retention/holds and the approval evidence gate are implemented for local testing. Follow [the evidence guide](../docs/AUTHORIZATION_EVIDENCE.md) for migration `0003_evidence`, configuration, API details, backup limitations and Windows validation. See the monitoring guide for current validation limits; no GitHub push is required.
+
+## Independent monitoring processes
+
+After backing up the existing database **and private evidence files**, run `.\.venv\Scripts\python.exe -m alembic upgrade head` from `backend`. Expected head is `0004_monitoring`. Start the scheduler, worker and notification dispatcher in separate backend terminals using `python -m app.cli.operations scheduler`, `worker` and `notifications` with the existing venv Python. Leave the API and frontend running in their own terminals. Use Ctrl+C to stop each process.
+
+Follow [the monitoring guide](../docs/MONITORING.md) for exact PowerShell commands, explicit consent/enable workflow and functional acceptance checks. No account reset or database recreation is needed.

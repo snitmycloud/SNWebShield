@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { api, API_BASE_URL } from "./lib/api.js";
 import AuthorizationPage from "./AuthorizationPage.jsx";
+import MonitoringPage from "./MonitoringPage.jsx";
  
 
 const NAV_ITEMS = [
@@ -38,6 +39,7 @@ const NAV_ITEMS = [
   { id: "clients", label: "Clients", icon: Users },
   { id: "websites", label: "Websites", icon: Globe2 },
   { id: "authorizations", label: "Authorizations", icon: ClipboardCheck },
+  { id: "monitoring", label: "Monitoring", icon: Activity },
 ];
 
 function formatDate(value) {
@@ -220,6 +222,7 @@ function Dashboard({ admin, onLogout }) {
       clients: "Clients",
       websites: "Websites",
       authorizations: "Authorizations",
+      monitoring: "Monitoring",
     }[activePage] || "Overview"}
   </strong>
 </div>
@@ -292,6 +295,8 @@ function Dashboard({ admin, onLogout }) {
     onDecision={loadData}
   />
 )}
+
+          {activePage === "monitoring" && <MonitoringPage websites={websites} />}
 
           <footer className="content-footer">
             <span>SNWebShield <b>v0.1.0</b></span>

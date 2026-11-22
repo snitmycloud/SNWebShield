@@ -78,10 +78,16 @@ pytest -q
 
 ## Important development limits
 
-This is a local development MVP, not production-ready. Administrator login and authorisation decision audit events exist. Multiple roles, tenant isolation, general audit logging, document evidence storage, rate limiting, secure cookie sessions and scanners do not. Keep it bound to `127.0.0.1`; do not expose it to the internet or store real client secrets or sensitive assessment evidence until the necessary controls are implemented and reviewed.
+This is a local development MVP, not production-ready. Administrator login and authorisation decision audit events exist. Multiple roles, tenant isolation, global API rate limiting, secure cookie sessions and scanners do not. Private evidence, operational audit events and monitoring execution throttles are implemented. Keep it bound to `127.0.0.1`; do not expose it to the internet or store real client secrets or sensitive assessment evidence until the necessary controls are implemented and reviewed.
 
-Before production use, add tenant isolation, secure evidence storage, general audit logging, backup operations, rate limits and production authentication controls. Startup requires the migrated schema and does not recreate it. Run `python -m alembic upgrade head` from backend. Existing installations must first make a verified backup with `python -m app.cli.backup_database`; see the correctness guide. Do not reset an existing administrator.
+Before production use, add tenant isolation, encrypted evidence storage/backups, broader audit coverage, global API rate limits and production authentication controls. Startup requires the migrated schema and does not recreate it. Run `python -m alembic upgrade head` from backend. Existing installations must first make a verified backup with `python -m app.cli.backup_database`; see the correctness guide. Do not reset an existing administrator.
 
 ## Local authorisation evidence milestone
 
-Private document upload, authenticated retrieval, human reviews, retention/holds and the approval evidence gate are implemented for local testing. Follow [the evidence guide](../docs/AUTHORIZATION_EVIDENCE.md) for migration `0003_evidence`, configuration, API details, backup limitations and Windows validation. Updated browser execution remains pending; no GitHub push is required.
+Private document upload, authenticated retrieval, human reviews, retention/holds and the approval evidence gate are implemented for local testing. Follow [the evidence guide](../docs/AUTHORIZATION_EVIDENCE.md) for migration `0003_evidence`, configuration, API details, backup limitations and Windows validation. See the monitoring guide for current validation limits; no GitHub push is required.
+
+## Monitoring worker
+
+Migration `0004_monitoring` adds the shared job engine and monitoring tables. Run the API, `python -m app.cli.operations scheduler`, `python -m app.cli.operations worker` and `python -m app.cli.operations notifications` independently from `backend`, using the same private configuration/database/evidence directory. Each operations command supports `--once`. The API never probes websites inline.
+
+See [monitoring design, permissions, limits, APIs and Windows checks](../docs/MONITORING.md). Consent is separate from VAPT approval, configuration saves disabled, and DNS/redirect checks cannot permit private destinations. Notifications default to the dashboard; SMTP is optional private operator configuration.

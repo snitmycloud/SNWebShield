@@ -166,6 +166,14 @@ export const api = {
 
   logout: () => clearSession(),
 
+  // Monitoring uses the shared execution engine; API requests only queue work.
+  monitoringOverview: () => request("/monitoring/overview"),
+  monitoringHistory: (id, collection, offset = 0) => request(`/websites/${id}/monitoring/${collection}?limit=50&offset=${offset}`),
+  monitoringConfig: (id) => request(`/websites/${id}/monitoring`),
+  configureMonitoring: (id, data) => jsonPost(`/websites/${id}/monitoring/configure`, data),
+  monitoringAction: (id, action) => jsonPost(`/websites/${id}/monitoring/${action}`, {}),
+  stopMonitoring: () => jsonPost("/monitoring/stop", {}),
+
   // Health
   health: () => request("/health", { auth: false }),
 
