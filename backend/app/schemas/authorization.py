@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.core.time import as_utc
+
 PermittedTestingMethod = Literal[
     "passive_reconnaissance",
     "configuration_review",
@@ -15,6 +17,9 @@ PermittedTestingMethod = Literal[
 ]
 
 AuthorizationStatus = Literal["pending", "approved", "rejected", "expired", "revoked"]
+EffectiveAuthorizationStatus = Literal[
+    "pending", "active", "scheduled", "expired", "rejected", "revoked", "needs_date_review"
+]
 
 _DOMAIN_LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 
@@ -71,7 +76,7 @@ class AuthorizationCreate(BaseModel):
     def require_timezone(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Date and time must include a timezone, such as Z or +05:30")
-        return value
+        return as_utc(value)
 
     @model_validator(mode="after")
     def validate_date_window(self):
@@ -92,5 +97,19 @@ class AuthorizationRead(BaseModel):
     valid_from: datetime
     valid_until: datetime
     status: AuthorizationStatus
+    effective_status: EffectiveAuthorizationStatus
+    timestamps_verified: bool
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def utc_system_timestamp(cls, value: datetime) -> datetime:
+        return as_utc(value)
+
+
+class AuthorizationSummary(BaseModel):
+    as_of: datetime
+    total: int
+    decision_counts: dict[str, int]
+    effective_counts: dict[str, int]

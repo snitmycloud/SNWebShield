@@ -1,15 +1,20 @@
 from getpass import getpass
 
 from pydantic import EmailStr, TypeAdapter, ValidationError
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 
 from app.core.security import hash_password
-from app.db.base import Base
 from app.db.session import SessionLocal, engine
 from app.models import Admin, AuthorizationAuditEvent, Client, Website, WebsiteAuthorization  # noqa: F401
 
 
 def main() -> int:
+    inspector = inspect(engine)
+    if not inspector.has_table("website_authorizations") or "timestamps_verified" not in {
+        column["name"] for column in inspector.get_columns("website_authorizations")
+    }:
+        print("Run python -m alembic upgrade head from backend before provisioning an administrator.")
+        return 1
     print("SNWebShield — create an internal administrator")
     print("This local command does not expose a public admin-registration API.\n")
 
@@ -34,7 +39,6 @@ def main() -> int:
         print("Password must be between 12 and 128 characters.")
         return 1
 
-    Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         existing = db.scalar(select(Admin).where(Admin.email == email))
         if existing is not None:

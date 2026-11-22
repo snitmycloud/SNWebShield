@@ -3,8 +3,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.time import as_utc
+
 
 class AuthorizationApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     # Admin must explicitly attest that the original written permission was reviewed.
     evidence_reviewed: Literal[True]
     review_note: str = Field(min_length=20, max_length=2000)
@@ -19,6 +22,7 @@ class AuthorizationApprovalRequest(BaseModel):
 
 
 class AuthorizationDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     reason: str = Field(min_length=10, max_length=2000)
 
     @field_validator("reason")
@@ -42,3 +46,8 @@ class AuthorizationAuditEventRead(BaseModel):
     note: str
     evidence_reviewed: bool
     created_at: datetime
+
+    @field_validator("created_at")
+    @classmethod
+    def utc_timestamp(cls, value: datetime) -> datetime:
+        return as_utc(value)

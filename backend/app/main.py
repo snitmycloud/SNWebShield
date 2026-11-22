@@ -2,12 +2,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect
 
 from app.api.routes import auth, authorizations, clients, health, websites
 from app.core.config import settings
-from app.db.base import Base
 from app.db.session import engine
-from app.models import (  # noqa: F401 - register every SQLAlchemy model before create_all
+from app.models import (  # noqa: F401 - register the model relationships
     Admin,
     AuthorizationAuditEvent,
     Client,
@@ -18,8 +18,11 @@ from app.models import (  # noqa: F401 - register every SQLAlchemy model before 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Local MVP convenience. Use Alembic migrations before production deployment.
-    Base.metadata.create_all(bind=engine)
+    inspector = inspect(engine)
+    if not inspector.has_table("website_authorizations") or "timestamps_verified" not in {
+        column["name"] for column in inspector.get_columns("website_authorizations")
+    }:
+        raise RuntimeError("Database migration required. From backend run: python -m alembic upgrade head")
     yield
 
 

@@ -7,6 +7,8 @@ from app.models.client import Client
 from app.models.website import Website
 from app.schemas.website import WebsiteCreate, WebsiteRead
 from app.core.security import get_current_admin
+from app.core.time import utc_now
+from app.services.authorizations import website_statuses
 
 router = APIRouter(
     prefix="/websites",
@@ -15,8 +17,16 @@ router = APIRouter(
 )
 
 
+def _read_websites(db: Session, rows: list[Website]) -> list[WebsiteRead]:
+    states = website_statuses(db, [row.id for row in rows], utc_now())
+    return [WebsiteRead(**{
+        field: getattr(row, field) for field in WebsiteRead.model_fields
+        if field != "effective_authorisation_status"
+    }, effective_authorisation_status=states[row.id]) for row in rows]
+
+
 @router.post("", response_model=WebsiteRead, status_code=status.HTTP_201_CREATED)
-def create_website(payload: WebsiteCreate, db: Session = Depends(get_db)) -> Website:
+def create_website(payload: WebsiteCreate, db: Session = Depends(get_db)) -> WebsiteRead:
     client = db.get(Client, payload.client_id)
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -26,7 +36,7 @@ def create_website(payload: WebsiteCreate, db: Session = Depends(get_db)) -> Web
     db.add(website)
     db.commit()
     db.refresh(website)
-    return website
+    return _read_websites(db, [website])[0]
 
 
 @router.get("", response_model=list[WebsiteRead])
@@ -35,17 +45,17 @@ def list_websites(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-) -> list[Website]:
+) -> list[WebsiteRead]:
     statement = select(Website).order_by(Website.id.desc())
     if client_id is not None:
         statement = statement.where(Website.client_id == client_id)
     statement = statement.offset(offset).limit(limit)
-    return list(db.scalars(statement).all())
+    return _read_websites(db, list(db.scalars(statement).all()))
 
 
 @router.get("/{website_id}", response_model=WebsiteRead)
-def get_website(website_id: int, db: Session = Depends(get_db)) -> Website:
+def get_website(website_id: int, db: Session = Depends(get_db)) -> WebsiteRead:
     website = db.get(Website, website_id)
     if not website:
         raise HTTPException(status_code=404, detail="Website not found")
-    return website
+    return _read_websites(db, [website])[0]

@@ -2,6 +2,10 @@
 
 **Version:** Draft v0.1
 
+## Implementation status at commit 50b0f0e
+
+The architecture below is a target design. The current implementation uses React/Vite, FastAPI, SQLAlchemy and SQLite, with integer primary keys. It includes a single administrator role, JWT login, clients, websites, authorisation records and decision audit events. Business logic currently resides mainly in route handlers. PostgreSQL deployment, UUID adoption, tenant isolation, private evidence storage, findings, reporting and workers are not implemented. Do not infer those capabilities from the proposed modules or diagrams below. See [the foundation assessment](FOUNDATION_ASSESSMENT.md) for verified checks and the next milestone. Preserve existing IDs and relationships; changes require a migration design.
+
 ## 1. Architecture principles
 
 1. Separate the business management application from the security testing environment.
@@ -130,3 +134,7 @@ Scanner integration is not part of the first manual release. When added:
 ## 8. Deployment direction
 
 Development can use Docker Compose for the web app and PostgreSQL. Production should use separate services, managed secrets, encrypted backups, private evidence storage, monitoring, patching and a documented recovery process. Do not deploy the assessment worker on the same unrestricted network as the client portal.
+
+## Correctness milestone update
+
+[Authentication and authorisation correctness](AUTHORIZATION_CORRECTNESS.md) adds a focused policy/decision service, UTC-normalised creation, computed effective states and summaries, conditional decision updates with transactional audit writes, and Alembic baseline adoption plus a date-provenance column. There are no scanners or monitoring workers. Browser verification and PostgreSQL integration testing remain pending.

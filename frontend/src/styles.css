@@ -492,3 +492,15 @@
     padding: 0;
   }
 }
+
+/* Effective authorisation states; recorded approval alone is not current validity. */
+.status-pill.active,.authz-status.active{background:#e5f7ed;color:#168458}
+.status-pill.active span,.authz-status.active span{background:#19a66d}
+.status-pill.scheduled,.authz-status.scheduled{background:#eaf1ff;color:#355da0}
+.status-pill.scheduled span,.authz-status.scheduled span{background:#477ed6}
+.status-pill.expired,.status-pill.revoked,.status-pill.rejected,
+.authz-status.expired,.authz-status.revoked,.authz-status.rejected{background:#fff0ef;color:#a63d37}
+.status-pill.expired span,.status-pill.revoked span,.status-pill.rejected span{background:#b34e48}
+.status-pill.needs_date_review,.authz-status.needs_date_review{background:#fff4df;color:#8b6018}
+.status-pill.not_requested{background:#eef1f5;color:#65738a}
+.status-pill.needs_date_review span,.status-pill.not_requested span{background:currentColor}

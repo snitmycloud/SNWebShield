@@ -1,6 +1,9 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
+
+from app.schemas.authorization import EffectiveAuthorizationStatus
 
 
 class WebsiteCreate(BaseModel):
@@ -32,4 +35,5 @@ class WebsiteRead(BaseModel):
     hosting_provider: str | None
     notes: str | None
     authorisation_status: str
+    effective_authorisation_status: EffectiveAuthorizationStatus | Literal["not_requested"]
     created_at: datetime

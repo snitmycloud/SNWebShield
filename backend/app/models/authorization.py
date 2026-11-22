@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, JSON, String, Text, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, JSON, String, Text, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -28,6 +28,11 @@ class WebsiteAuthorization(Base):
     valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    # Migration marks pre-fix rows false; their original timezone cannot be inferred.
+    # Only callers that explicitly normalise the window may set this true.
+    timestamps_verified: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
 
     # Reserved for a future private evidence-storage integration. This key is never exposed by API.
     evidence_storage_key: Mapped[str | None] = mapped_column(String(500), nullable=True)

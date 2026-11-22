@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import LoginPage from "./LoginPage.jsx";
 import {
   Activity,
@@ -61,6 +61,8 @@ function Dashboard({ admin, onLogout }) {
   const [activePage, setActivePage] = useState("overview");
   const [clients, setClients] = useState([]);
   const [websites, setWebsites] = useState([]);
+  const [authorizationSummary, setAuthorizationSummary] = useState(null);
+  const dataRequest = useRef(0);
   const [apiState, setApiState] = useState("checking");
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
@@ -69,27 +71,35 @@ function Dashboard({ admin, onLogout }) {
   const [search, setSearch] = useState("");
 
   const loadData = useCallback(async () => {
+    const requestId = ++dataRequest.current;
     setLoading(true);
     setPageError("");
     try {
-      const [health, clientRows, websiteRows] = await Promise.all([
+      const [health, clientRows, websiteRows, summary] = await Promise.all([
         api.health(),
         api.getClients(),
         api.getWebsites(),
+        api.getAuthorizationSummary(),
       ]);
+      if (requestId !== dataRequest.current) return;
+      setAuthorizationSummary(summary);
       setApiState(health?.status === "ok" ? "online" : "unknown");
       setClients(Array.isArray(clientRows) ? clientRows : []);
       setWebsites(Array.isArray(websiteRows) ? websiteRows : []);
     } catch (error) {
+      if (requestId !== dataRequest.current) return;
+      setAuthorizationSummary(null);
       setApiState("offline");
       setPageError(error.message || "Unable to load data from the API.");
     } finally {
-      setLoading(false);
+      if (requestId === dataRequest.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     loadData();
+    const timer = window.setInterval(loadData, 60000);
+    return () => { window.clearInterval(timer); dataRequest.current += 1; };
   }, [loadData]);
 
   useEffect(() => {
@@ -245,6 +255,8 @@ function Dashboard({ admin, onLogout }) {
             <OverviewPage
               clients={clients}
               websites={websites}
+              authorizationSummary={authorizationSummary}
+              apiState={apiState}
               websitesByClient={websitesByClient}
               loading={loading}
               onNavigate={setActivePage}
@@ -276,6 +288,7 @@ function Dashboard({ admin, onLogout }) {
     websites={websites}
     clients={clients}
     onNotice={setNotice}
+    onDecision={loadData}
   />
 )}
 
@@ -302,8 +315,8 @@ function PageHeading({ eyebrow, title, subtitle, action }) {
   );
 }
 
-function OverviewPage({ clients, websites, websitesByClient, loading, onNavigate, onCreate }) {
-  const pendingCount = websites.filter((site) => site.authorisation_status !== "approved").length;
+function OverviewPage({ clients, websites, authorizationSummary, apiState, websitesByClient, loading, onNavigate, onCreate }) {
+  const pendingCount = authorizationSummary?.effective_counts?.pending ?? "—";
   const recentWebsites = [...websites].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
 
   return (
@@ -333,8 +346,8 @@ function OverviewPage({ clients, websites, websitesByClient, loading, onNavigate
       <div className="stats-grid">
         <StatCard icon={Users} label="Total clients" value={clients.length} detail="Registered organisations" tone="blue" loading={loading} onClick={() => onNavigate("clients")} />
         <StatCard icon={Globe2} label="Registered websites" value={websites.length} detail="Client-linked assets" tone="teal" loading={loading} onClick={() => onNavigate("websites")} />
-        <StatCard icon={Clock3} label="Authorisation pending" value={pendingCount} detail="Not cleared for testing" tone="amber" loading={loading} onClick={() => onNavigate("websites")} />
-        <StatCard icon={ShieldCheck} label="API status" value={loading ? "…" : "Online"} detail="FastAPI development server" tone="violet" loading={false} />
+        <StatCard icon={Clock3} label="Authorisation pending" value={pendingCount} detail="Requests awaiting review" tone="amber" loading={loading} onClick={() => onNavigate("authorizations")} />
+        <StatCard icon={ShieldCheck} label="API status" value={loading ? "…" : apiState === "online" ? "Online" : "Offline"} detail="FastAPI development server" tone="violet" loading={false} />
       </div>
 
       <div className="dashboard-grid">
@@ -344,7 +357,7 @@ function OverviewPage({ clients, websites, websitesByClient, loading, onNavigate
             <div className="recent-list">
               {recentWebsites.map((website) => {
                 const client = clients.find((item) => item.id === website.client_id);
-                return <div className="recent-row" key={website.id}><div className="site-icon"><Globe2 size={18} /></div><div className="recent-main"><strong>{website.name}</strong><span>{website.url} · {client?.company_name || `Client #${website.client_id}`}</span></div><StatusPill status={website.authorisation_status || "pending"} /><span className="recent-date">{formatDate(website.created_at)}</span></div>;
+                return <div className="recent-row" key={website.id}><div className="site-icon"><Globe2 size={18} /></div><div className="recent-main"><strong>{website.name}</strong><span>{website.url} · {client?.company_name || `Client #${website.client_id}`}</span></div><StatusPill status={website.effective_authorisation_status || "not_requested"} /><span className="recent-date">{formatDate(website.created_at)}</span></div>;
               })}
             </div>
           ) : <EmptyState icon={Globe2} title="No websites registered yet" text="Add a client website to start building your asset inventory." action={<button className="secondary-button" onClick={() => onCreate("website")}><Plus size={15} /> Add website</button>} />}
@@ -390,7 +403,7 @@ function WebsitesPage({ websites, clients, loading, search, onSearch, onCreate }
         <div className="table-scroll"><table><thead><tr><th>Website</th><th>Client</th><th>Platform</th><th>Environment</th><th>Authorisation</th><th>Added</th></tr></thead><tbody>
           {loading ? <TableLoading columns={6} /> : websites.length ? websites.map((website) => {
             const client = clients.find((item) => item.id === website.client_id);
-            return <tr key={website.id}><td><div className="website-cell"><div className="site-icon"><Globe2 size={17} /></div><div><strong>{website.name}</strong><a href={website.url} target="_blank" rel="noreferrer">{website.url} <ExternalLink size={11} /></a></div></div></td><td>{client?.company_name || `Client #${website.client_id}`}</td><td>{website.platform || "Not specified"}</td><td><span className="environment-pill">{website.environment}</span></td><td><StatusPill status={website.authorisation_status || "pending"} /></td><td>{formatDate(website.created_at)}</td></tr>;
+            return <tr key={website.id}><td><div className="website-cell"><div className="site-icon"><Globe2 size={17} /></div><div><strong>{website.name}</strong><a href={website.url} target="_blank" rel="noreferrer">{website.url} <ExternalLink size={11} /></a></div></div></td><td>{client?.company_name || `Client #${website.client_id}`}</td><td>{website.platform || "Not specified"}</td><td><span className="environment-pill">{website.environment}</span></td><td><StatusPill status={website.effective_authorisation_status || "not_requested"} /></td><td>{formatDate(website.created_at)}</td></tr>;
           }) : <tr><td colSpan="6"><EmptyState icon={Globe2} title="No matching websites" text="Register a website and link it to one of your clients." action={<button className="secondary-button" onClick={onCreate}><Plus size={15} /> Add website</button>} /></td></tr>}
         </tbody></table></div>
         <div className="table-footnote"><ShieldCheck size={14} /> Only registered assets are shown here. Security testing requires separate written authorisation.</div>
@@ -475,8 +488,11 @@ function FormField({ label, required, wide, children }) {
 }
 
 function StatusPill({ status }) {
-  const approved = String(status).toLowerCase() === "approved";
-  return <span className={`status-pill ${approved ? "approved" : "pending"}`}><span />{approved ? "Approved" : "Pending"}</span>;
+  const labels = { active: "Currently valid", scheduled: "Scheduled", pending: "Pending review",
+    rejected: "Rejected", revoked: "Revoked", expired: "Expired",
+    needs_date_review: "Dates need review", not_requested: "Not requested" };
+  const value = String(status).toLowerCase();
+  return <span className={`status-pill ${value}`}><span />{labels[value] || value}</span>;
 }
 
 function EmptyState({ icon: Icon, title, text, action }) {
@@ -510,6 +526,7 @@ function App() {
         const profile = await api.getCurrentAdmin();
 
         if (active) {
+          api.startSessionTimer();
           setAdmin(profile);
         }
       } catch (error) {
@@ -557,6 +574,17 @@ function App() {
       );
     };
   }, []);
+
+  // Re-check expiry after a background tab resumes as well as on the timer.
+  useEffect(() => {
+    const checkExpiry = () => { if (admin && !api.hasSession()) setAdmin(null); };
+    window.addEventListener("focus", checkExpiry);
+    document.addEventListener("visibilitychange", checkExpiry);
+    return () => {
+      window.removeEventListener("focus", checkExpiry);
+      document.removeEventListener("visibilitychange", checkExpiry);
+    };
+  }, [admin]);
 
   // Authenticate the administrator against FastAPI.
   const handleLogin = async (credentials) => {

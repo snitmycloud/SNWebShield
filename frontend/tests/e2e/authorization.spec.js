@@ -1,0 +1,141 @@
+import { expect, test } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+
+const API = "http://127.0.0.1:18000/api/v1";
+const credentials = { email: "browser-test@example.com", password: "Synthetic-browser-password-123!" };
+
+async function signIn(page) {
+  await page.goto("/");
+  await page.getByLabel("Email address").fill(credentials.email);
+  await page.getByLabel("Password", { exact: true }).fill(credentials.password);
+  await page.getByRole("button", { name: "Sign in securely" }).click();
+  await expect(page.getByRole("heading", { name: "Workspace summary" })).toBeVisible();
+}
+
+async function asset(request, { approved = false, startsIn = -3600000, endsIn = 3600000, noRequest = false } = {}) {
+  const key = randomUUID();
+  const login = await request.post(`${API}/auth/login`, { data: credentials });
+  expect(login.status()).toBe(200);
+  const headers = { Authorization: `Bearer ${(await login.json()).access_token}` };
+  const client = await request.post(`${API}/clients`, { headers, data: {
+    company_name: `Browser client ${key}`, primary_contact_name: "Synthetic Contact", email: `${key}@example.com`,
+  } });
+  expect(client.status()).toBe(201);
+  const site = await request.post(`${API}/websites`, { headers, data: {
+    client_id: (await client.json()).id, name: `Browser website ${key}`, url: `https://${key}.example.com`, environment: "staging",
+  } });
+  expect(site.status()).toBe(201);
+  const website = await site.json();
+  if (noRequest) return { website, headers };
+  const authorization = await request.post(`${API}/authorizations`, { headers, data: {
+    website_id: website.id, authorization_reference: `BROWSER-${key}`,
+    authorized_by: "Synthetic Contact", authorized_domains: [`${key}.example.com`],
+    permitted_methods: ["passive_reconnaissance"],
+    valid_from: new Date(Date.now() + startsIn).toISOString(),
+    valid_until: new Date(Date.now() + endsIn).toISOString(),
+  } });
+  expect(authorization.status()).toBe(201);
+  const record = await authorization.json();
+  if (approved) {
+    const decision = await request.post(`${API}/authorizations/${record.id}/approve`, { headers, data: {
+      evidence_reviewed: true, review_note: "Reviewed synthetic permission and the exact domain scope.",
+    } });
+    expect(decision.status()).toBe(200);
+  }
+  return { website, record, headers };
+}
+
+async function openRecord(page, record) {
+  await page.getByRole("button", { name: "Authorizations", exact: true }).click();
+  await page.getByPlaceholder("Search reference, domain, client or contact").fill(record.authorization_reference);
+  await page.getByRole("row").filter({ hasText: record.authorization_reference }).getByRole("button").click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+}
+
+test.beforeEach(async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("console", message => {
+    if (message.type() === "error" && !message.text().includes("Failed to load resource")) errors.push(message.text());
+  });
+  page.testErrors = errors;
+});
+
+test.afterEach(async ({ page }) => {
+  expect(page.testErrors).toEqual([]);
+});
+
+test("incorrect password, valid login, restore and logout", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Email address").fill(credentials.email);
+  await page.getByLabel("Password", { exact: true }).fill("incorrect-password");
+  await page.getByRole("button", { name: "Sign in securely" }).click();
+  await expect(page.getByRole("alert")).toContainText("Incorrect email or password");
+  await page.getByLabel("Password", { exact: true }).fill(credentials.password);
+  await page.getByRole("button", { name: "Sign in securely" }).click();
+  await expect(page.getByRole("heading", { name: "Workspace summary" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Workspace summary" })).toBeVisible();
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+});
+
+test("approve with evidence, see audit, revoke and refresh website status", async ({ page, request }) => {
+  const { record, website } = await asset(request);
+  await signIn(page);
+  await openRecord(page, record);
+  await page.getByRole("button", { name: "Approve request", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Confirm approval" })).toBeDisabled();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("dialog").getByRole("textbox").fill("Reviewed synthetic permission and verified the exact domain scope.");
+  await page.getByRole("button", { name: "Confirm approval" }).click();
+  await expect(page.locator(".authz-event-title strong").filter({ hasText: "APPROVED" })).toBeVisible();
+  await page.getByRole("button", { name: "Revoke approval" }).click();
+  await page.getByRole("dialog").getByRole("textbox").fill("Synthetic permission withdrawn by the test signatory.");
+  await page.getByRole("button", { name: "Confirm revocation" }).click();
+  await expect(page.locator(".authz-event-title strong").filter({ hasText: "REVOKED" })).toBeVisible();
+  await page.getByRole("button", { name: "Close authorization details" }).click();
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: /^Websites/ }).click();
+  await expect(page.getByRole("row").filter({ hasText: website.name })).toContainText("Revoked");
+});
+
+test("expired pending request cannot be approved but can be rejected", async ({ page, request }) => {
+  const { record } = await asset(request, { startsIn: -7200000, endsIn: -3600000 });
+  await signIn(page); await openRecord(page, record);
+  await expect(page.getByRole("button", { name: "Approve request", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Reject request", exact: true }).click();
+  await page.getByRole("dialog").getByRole("textbox").fill("Synthetic permission validity period has already expired.");
+  await page.getByRole("button", { name: "Confirm rejection" }).click();
+  await expect(page.locator(".authz-event-title strong").filter({ hasText: "REJECTED" })).toBeVisible();
+});
+
+test("future approval is scheduled and a website without requests is labelled accurately", async ({ page, request }) => {
+  const scheduled = await asset(request, { approved: true, startsIn: 3600000, endsIn: 7200000 });
+  const empty = await asset(request, { noRequest: true });
+  await signIn(page);
+  await page
+  .getByRole("navigation", { name: "Main navigation" })
+  .getByRole("button", { name: /^Websites/ })
+  .click();
+  await expect(page.getByRole("row").filter({ hasText: scheduled.website.name })).toContainText("Scheduled");
+  await expect(page.getByRole("row").filter({ hasText: empty.website.name })).toContainText("Not requested");
+});
+
+test("idle token expiry returns to login and clears the token", async ({ page }) => {
+  await page.clock.install();
+  await signIn(page);
+  await page.clock.fastForward("20:01");
+  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+  await expect(page.getByText("Your session has expired. Please sign in again.")).toBeVisible();
+});
+
+test("API outage displays Offline and retry recovers", async ({ page }) => {
+  await signIn(page);
+  await page.route(`${API}/**`, route => route.abort());
+  await page.getByRole("button", { name: "Refresh data", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Could not load SNWebShield data");
+  await expect(page.locator(".stat-card").filter({ hasText: "API status" })).toContainText("Offline");
+  await page.unroute(`${API}/**`);
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.locator(".api-indicator")).toContainText("API connected");
+});

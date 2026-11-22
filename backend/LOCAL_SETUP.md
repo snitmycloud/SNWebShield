@@ -2,13 +2,48 @@
 
 Run the backend from the `backend` folder. Do not run `uvicorn` from the repository root.
 
+The following Bash setup creates a new environment. For an existing installation, preserve `.env`, the administrator and the database; use the existing virtual environment and start Uvicorn. New installations must also configure `JWT_SECRET_KEY` and provision an administrator as described in [the backend README](README.md).
+
 ```bash
 cd backend
 python -m venv .venv
 source .venv/Scripts/activate
 pip install -r requirements.txt
 cp .env.example .env
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+python -m alembic upgrade head
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 For UCRT64/Git Bash, the activation command above is appropriate after creating the venv with `python -m venv .venv` or `py -3 -m venv .venv`.
+
+## Existing installation: PowerShell
+
+Using the latest project location supplied for this review:
+
+```powershell
+Set-Location C:\SNWebShield-Local\backend
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+In a second PowerShell terminal:
+
+```powershell
+Set-Location C:\SNWebShield-Local\frontend
+npm run dev
+```
+
+For baseline checks, run these separately in the corresponding directories:
+
+```powershell
+# backend
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+```powershell
+# frontend
+npm run build
+```
+
+If your checkout is still at the older `C:\SNWebShield_Project_Foundation\SNWebShield` location, substitute that root. These commands do not reset accounts or remove application data.
+
+For an existing database, follow the backup and migration order in [the correctness guide](../docs/AUTHORIZATION_CORRECTNESS.md) before starting the updated API. Do not run an old application binary against the migrated database as a rollback procedure.

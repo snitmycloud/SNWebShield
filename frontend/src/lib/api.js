@@ -1,11 +1,19 @@
 
 const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env?.VITE_API_BASE_URL ||
   "http://127.0.0.1:8000/api/v1"
 ).replace(/\/$/, "");
 
 const TOKEN_KEY = "snwebshield_access_token";
 const EXPIRY_KEY = "snwebshield_access_token_expiry";
+let expiryTimer;
+
+function expireSession() {
+  clearSession();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("snwebshield:session-expired"));
+  }
+}
 
 function getAccessToken() {
   try {
@@ -14,8 +22,8 @@ function getAccessToken() {
 
     if (!token) return null;
 
-    if (expiry && Date.now() >= expiry) {
-      clearSession();
+    if (!Number.isFinite(expiry) || expiry <= Date.now()) {
+      expireSession();
       return null;
     }
 
@@ -37,9 +45,11 @@ function saveSession(data) {
     EXPIRY_KEY,
     String(Date.now() + expiresIn * 1000)
   );
+  startSessionTimer();
 }
 
 function clearSession() {
+  clearTimeout(expiryTimer);
   try {
     sessionStorage.removeItem(TOKEN_KEY);
     sessionStorage.removeItem(EXPIRY_KEY);
@@ -48,9 +58,22 @@ function clearSession() {
   }
 }
 
+function startSessionTimer() {
+  clearTimeout(expiryTimer);
+  if (getAccessToken()) {
+    expiryTimer = setTimeout(expireSession, Math.max(
+      0, Number(sessionStorage.getItem(EXPIRY_KEY)) - Date.now()
+    ));
+  }
+}
+
 async function request(path, options = {}) {
   const { auth = true, ...fetchOptions } = options;
   const token = auth ? getAccessToken() : null;
+  if (auth && !token) {
+    expireSession();
+    throw new Error("Your session has expired. Please sign in again.");
+  }
 
   const headers = {
     Accept: "application/json",
@@ -84,14 +107,8 @@ async function request(path, options = {}) {
   }
 
   if (!response.ok) {
-    if (response.status === 401 && token && auth) {
-      clearSession();
-
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new Event("snwebshield:session-expired")
-        );
-      }
+    if (response.status === 401 && auth && token === getAccessToken()) {
+      expireSession();
     }
 
     const detail = payload?.detail;
@@ -105,7 +122,22 @@ async function request(path, options = {}) {
     throw new Error(message);
   }
 
+  if (auth && token !== getAccessToken()) {
+    throw new Error("Your session has changed. Please sign in again.");
+  }
   return payload;
+}
+
+// Existing list APIs return pages of up to 100. Keep the current UI search and
+// relationships complete while retaining the public paginated API contract.
+async function allPages(path, filters = {}) {
+  const rows = [];
+  for (let offset = 0; ; offset += 100) {
+    const params = new URLSearchParams({ ...filters, limit: "100", offset: String(offset) });
+    const page = await request(`${path}?${params}`);
+    rows.push(...page);
+    if (page.length < 100) return rows;
+  }
 }
 
 const jsonPost = (path, data) =>
@@ -130,39 +162,40 @@ export const api = {
   getCurrentAdmin: () => request("/auth/me"),
 
   hasSession: () => Boolean(getAccessToken()),
+  startSessionTimer,
 
   logout: () => clearSession(),
 
   // Health
-  health: () => request("/health"),
+  health: () => request("/health", { auth: false }),
 
   // Clients
-  getClients: () => request("/clients?limit=100&offset=0"),
+  getClients: () => allPages("/clients"),
 
   createClient: (data) => jsonPost("/clients", data),
 
   // Websites
-  getWebsites: () => request("/websites?limit=100&offset=0"),
+  getWebsites: () => allPages("/websites"),
 
   createWebsite: (data) => jsonPost("/websites", data),
 
   // Authorizations
   getAuthorizations: (filters = {}) => {
-    const params = new URLSearchParams({
-      limit: "100",
-      offset: "0",
-    });
+    const params = {};
 
     if (filters.status && filters.status !== "all") {
-      params.set("status", filters.status);
+      params.status = filters.status;
     }
 
     if (filters.websiteId) {
-      params.set("website_id", String(filters.websiteId));
+      params.website_id = String(filters.websiteId);
     }
 
-    return request(`/authorizations?${params.toString()}`);
+    return allPages("/authorizations", params);
   },
+
+  getAuthorizationSummary: () => request("/authorizations/summary"),
+  getAuthorization: (id) => request(`/authorizations/${id}`),
 
   getAuthorizationEvents: (authorizationId) =>
     request(`/authorizations/${authorizationId}/events`),

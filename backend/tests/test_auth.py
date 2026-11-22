@@ -76,6 +76,7 @@ def create_pending_authorization() -> int:
             valid_from=now - timedelta(hours=1),
             valid_until=now + timedelta(days=2),
             status="pending",
+            timestamps_verified=True,
         )
         db.add(authorization)
         db.commit()

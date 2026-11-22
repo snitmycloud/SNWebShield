@@ -1,17 +1,7 @@
 
-import os
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
-
-# Ensure tests use an isolated SQLite database before importing the app.
-TEST_DB = Path(__file__).with_name("test_snwebshield.db")
-os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB.as_posix()}"
-os.environ["CORS_ORIGINS"] = "http://localhost:5173"
-os.environ["JWT_SECRET_KEY"] = (
-    "test-only-secret-key-not-for-any-real-environment-123456789"
-)
 
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import select  # noqa: E402
@@ -253,10 +243,3 @@ def test_list_authorizations_can_filter_by_website(api_client):
     assert response.status_code == 200
     assert len(response.json()) == 1
     assert response.json()[0]["status"] == "pending"
-
-
-def teardown_module():
-    engine.dispose()
-
-    if TEST_DB.exists():
-        TEST_DB.unlink()

@@ -4,7 +4,7 @@
 
 Tagline: **Identify. Analyse. Secure.**
 
-SNWebShield is planned as an internal platform for a website cybersecurity services team. It will manage client engagements, authorised website assets, assessment scope, manual testing records, validated findings, evidence, PDF reports, remediation and retesting.
+SNWebShield is an internal platform under development for a website cybersecurity services team. The implemented foundation manages administrator login, clients, websites and authorisation review. Assessment execution, findings, evidence uploads, reports, remediation and retesting remain planned.
 
 > Safety principle: SNWebShield must only support assessments that have been explicitly authorised in writing by a person with authority over the target assets. A website URL submitted to the platform is not, by itself, permission to test it.
 
@@ -20,17 +20,26 @@ SNWebShield is planned as an internal platform for a website cybersecurity servi
 8. Track remediation and retest outcomes.
 9. Add controlled scanner integrations only after the manual workflow is proven.
 
-## Initial technology direction
+## Current stack and future direction
 
-- Frontend: React + Vite
-- Backend: Python + FastAPI
-- Database: PostgreSQL
+- Frontend: React 18 + Vite 6, JavaScript and CSS
+- Backend: Python + FastAPI, SQLAlchemy and Pydantic
+- Authentication: Argon2 password hashing and HS256 JWTs; browser sessionStorage for development
+- Current database: SQLite; PostgreSQL deployment and migrations are future work
 - Later background jobs: Celery + Redis
 - Evidence: private, encrypted object storage
 - Reports: HTML templates rendered to PDF
 - Development: Git + GitHub
 
-These are proposed choices, not installed dependencies or a production-ready deployment.
+Background jobs, private evidence storage and report rendering are proposed components, not installed subsystems. The current application is for local development and is not production-ready.
+
+## Local setup and verified review
+
+Use [backend setup](backend/README.md) and [frontend setup](frontend/README.md). Configure `JWT_SECRET_KEY` in `backend/.env` and provision an administrator with `python -m app.cli.create_admin` before signing in. The root environment example is an older planning example; runtime backend settings are defined in `backend/app/core/config.py` and read from the backend working directory.
+
+The [authentication and authorisation implementation guide](docs/AUTHORIZATION_CORRECTNESS.md) covers the current fixes, migration, Windows checks and review workflow. Browser verification remains pending.
+
+The [foundation assessment](docs/FOUNDATION_ASSESSMENT.md) records the review of commit `50b0f0e`, baseline checks, reproduced defects and the next milestone. The architecture and workflow documents describe future requirements as well as implemented features; they are not a feature-completion checklist.
 
 ## Repository map
 
@@ -80,4 +89,4 @@ SNWebShield/
 
 ## Status
 
-**Milestone 0: Project foundation created.** This repository contains initial planning and security-governance documents. Application code, authentication, database migrations and scanner integrations have not yet been implemented.
+**Application foundation and authorisation review implemented; stabilisation required.** Administrator login and protected client, website and authorisation APIs exist. The React UI supports client/website creation and authorisation review decisions with audit history. Authorisation creation currently has an API but no UI form. UTC normalisation, computed validity states, atomic decisions, session expiry and exact authorisation summaries now have regression coverage. Alembic migrations are included. Document upload, monitoring, scanner execution, analyst workflows, reporting and production hardening are not implemented. Neither website registration nor authorisation approval starts a scan.

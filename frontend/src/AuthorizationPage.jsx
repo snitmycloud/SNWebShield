@@ -1,5 +1,5 @@
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowUpRight,
@@ -67,7 +67,9 @@ function StatusBadge({ status }) {
   return (
     <span className={`authz-status ${value}`}>
       <span />
-      {value.charAt(0).toUpperCase() + value.slice(1)}
+      {{ active: "Currently valid", scheduled: "Scheduled", pending: "Pending review",
+        needs_date_review: "Dates need review", expired: "Expired", rejected: "Rejected",
+        revoked: "Revoked", approved: "Approved" }[value] || value}
     </span>
   );
 }
@@ -84,7 +86,10 @@ function SummaryCard({ label, value, icon: Icon, tone }) {
   );
 }
 
-function AuthorizationPage({ websites = [], clients = [], onNotice }) {
+function AuthorizationPage({ websites = [], clients = [], onNotice, onDecision }) {
+  const [summary, setSummary] = useState(null);
+  const listRequest = useRef(0);
+  const detailRequest = useRef(0);
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -103,29 +108,36 @@ function AuthorizationPage({ websites = [], clients = [], onNotice }) {
   const [actionError, setActionError] = useState("");
 
   const loadAuthorizations = useCallback(async () => {
+    const requestId = ++listRequest.current;
     setLoading(true);
     setError("");
 
     try {
-      const data = await api.getAuthorizations();
+      const [data, totals] = await Promise.all([api.getAuthorizations(), api.getAuthorizationSummary()]);
+      if (requestId !== listRequest.current) return;
+      setSummary(totals);
       setRecords(Array.isArray(data) ? data : []);
     } catch (err) {
+      if (requestId !== listRequest.current) return;
+      setSummary(null);
       setError(err.message || "Unable to load authorization records.");
     } finally {
-      setLoading(false);
+      if (requestId === listRequest.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     loadAuthorizations();
+    const timer = window.setInterval(loadAuthorizations, 60000);
+    return () => { window.clearInterval(timer); listRequest.current += 1; detailRequest.current += 1; };
   }, [loadAuthorizations]);
 
-  const counts = useMemo(() => ({
-    total: records.length,
-    pending: records.filter((item) => item.status === "pending").length,
-    approved: records.filter((item) => item.status === "approved").length,
-    rejected: records.filter((item) => item.status === "rejected").length,
-  }), [records]);
+  const counts = {
+    total: summary?.total ?? "—",
+    pending: summary?.effective_counts?.pending ?? "—",
+    approved: summary?.effective_counts?.active ?? "—",
+    rejected: summary?.effective_counts?.rejected ?? "—",
+  };
 
   const filteredRecords = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -133,7 +145,7 @@ function AuthorizationPage({ websites = [], clients = [], onNotice }) {
     return records.filter((record) => {
       if (
         statusFilter !== "all" &&
-        record.status !== statusFilter
+        record.effective_status !== statusFilter
       ) {
         return false;
       }
@@ -171,17 +183,21 @@ function AuthorizationPage({ websites = [], clients = [], onNotice }) {
   };
 
   const loadAuditEvents = async (authorizationId) => {
+    const requestId = ++detailRequest.current;
     setAuditLoading(true);
     setAuditError("");
 
     try {
-      const data = await api.getAuthorizationEvents(authorizationId);
+      const [data, current] = await Promise.all([api.getAuthorizationEvents(authorizationId), api.getAuthorization(authorizationId)]);
+      if (requestId !== detailRequest.current) return;
+      setSelected(current);
       setEvents(Array.isArray(data) ? data : []);
     } catch (err) {
+      if (requestId !== detailRequest.current) return;
       setAuditError(err.message || "Unable to load audit history.");
       setEvents([]);
     } finally {
-      setAuditLoading(false);
+      if (requestId === detailRequest.current) setAuditLoading(false);
     }
   };
 
@@ -199,6 +215,7 @@ function AuthorizationPage({ websites = [], clients = [], onNotice }) {
   const closeDetails = () => {
     if (submitting) return;
 
+    detailRequest.current += 1;
     setSelected(null);
     setActionType("");
     setReviewNote("");
@@ -282,17 +299,19 @@ function AuthorizationPage({ websites = [], clients = [], onNotice }) {
 
       await loadAuditEvents(updated.id);
       await loadAuthorizations();
+      await onDecision?.();
     } catch (err) {
       setActionError(err.message || "The authorization decision failed.");
+      await loadAuditEvents(selected.id);
+      await loadAuthorizations();
+      await onDecision?.();
     } finally {
       setSubmitting(false);
     }
   };
 
-  const pendingExpired = selected
-    ? selected.status === "pending" &&
-      new Date(selected.valid_until).getTime() <= Date.now()
-    : false;
+  const pendingExpired = selected?.effective_status === "expired";
+  const needsDateReview = selected?.effective_status === "needs_date_review";
 
   return (
     <div className="authz-page">
@@ -343,7 +362,7 @@ function AuthorizationPage({ websites = [], clients = [], onNotice }) {
           tone="amber"
         />
         <SummaryCard
-          label="Approved"
+          label="Currently valid"
           value={counts.approved}
           icon={ShieldCheck}
           tone="green"
@@ -373,6 +392,8 @@ function AuthorizationPage({ websites = [], clients = [], onNotice }) {
         </div>
       )}
 
+      <p className="toolbar-count">Counts as of {formatDateTime(summary?.as_of)}. Recorded approval and current validity are separate.</p>
+
       <div className="authz-toolbar">
         <div className="search-box">
           <Search size={17} />
@@ -391,7 +412,9 @@ function AuthorizationPage({ websites = [], clients = [], onNotice }) {
         >
           <option value="all">All statuses</option>
           <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
+          <option value="active">Currently valid</option>
+          <option value="scheduled">Scheduled</option>
+          <option value="needs_date_review">Dates need review</option>
           <option value="rejected">Rejected</option>
           <option value="expired">Expired</option>
           <option value="revoked">Revoked</option>
@@ -466,10 +489,10 @@ function AuthorizationPage({ websites = [], clients = [], onNotice }) {
                         </div>
                       </td>
 
-                      <td>{formatDate(record.valid_until)}</td>
+                      <td>{record.timestamps_verified ? formatDate(record.valid_until) : "Dates need review"}</td>
 
                       <td>
-                        <StatusBadge status={record.status} />
+                        <StatusBadge status={record.effective_status} />
                       </td>
 
                       <td>
@@ -537,6 +560,7 @@ function AuthorizationPage({ websites = [], clients = [], onNotice }) {
                 className="icon-button"
                 onClick={closeDetails}
                 aria-label="Close authorization details"
+                disabled={submitting}
               >
                 <X size={19} />
               </button>
@@ -544,9 +568,9 @@ function AuthorizationPage({ websites = [], clients = [], onNotice }) {
 
             <div className="authz-detail-body">
               <div className="authz-detail-status">
-                <StatusBadge status={selected.status} />
+                <StatusBadge status={selected.effective_status} />
                 <span>
-                  Submitted {formatDateTime(selected.created_at)}
+                  Recorded decision: {selected.status} · Submitted {formatDateTime(selected.created_at)}
                 </span>
               </div>
 
@@ -581,12 +605,12 @@ function AuthorizationPage({ websites = [], clients = [], onNotice }) {
 
                 <div>
                   <span>Valid from</span>
-                  <strong>{formatDateTime(selected.valid_from)}</strong>
+                  <strong>{selected.timestamps_verified ? formatDateTime(selected.valid_from) : `Unverified: ${selected.valid_from}`}</strong>
                 </div>
 
                 <div>
                   <span>Valid until</span>
-                  <strong>{formatDateTime(selected.valid_until)}</strong>
+                  <strong>{selected.timestamps_verified ? formatDateTime(selected.valid_until) : `Unverified: ${selected.valid_until}`}</strong>
                 </div>
               </div>
 
@@ -610,6 +634,14 @@ function AuthorizationPage({ websites = [], clients = [], onNotice }) {
                   ))}
                 </div>
               </div>
+
+              {needsDateReview && (
+                <div className="authz-expired-notice" role="status">
+                  Legacy dates have no reliable timezone. Keep this record for history and
+                  create a replacement through the API using dates from the original written permission.
+                  No current validity is granted by this record.
+                </div>
+              )}
 
               {pendingExpired && (
                 <div className="authz-expired-notice">
@@ -659,7 +691,7 @@ function AuthorizationPage({ websites = [], clients = [], onNotice }) {
 
               {!actionType && (
                 <div className="authz-actions">
-                  {selected.status === "pending" && !pendingExpired && (
+                  {selected.status === "pending" && (
                     <>
                       <button
                         type="button"
@@ -672,6 +704,7 @@ function AuthorizationPage({ websites = [], clients = [], onNotice }) {
                       <button
                         type="button"
                         className="authz-approve-button"
+                        disabled={pendingExpired || needsDateReview || auditLoading || Boolean(auditError)}
                         onClick={() => beginAction("approve")}
                       >
                         <CheckCircle2 size={16} />
