@@ -100,3 +100,9 @@ Private document upload, authenticated retrieval, human reviews, retention/holds
 The first operational handler uses a shared job engine with atomic claims, leases, attempts, fenced results and execution events. Separate reviewed monitoring consent and explicit activation are required. The dashboard provides HTTP/DNS/TLS metrics, response-time history, incidents and notification delivery history. Migration `0004_monitoring` preserves existing data.
 
 Follow [monitoring setup, APIs and validation](docs/MONITORING.md) for the five local processes, Windows commands and remaining acceptance checks. Browser execution was blocked by the implementation environment, so Windows browser acceptance remains required. Scanners are not implemented and cannot inherit monitoring permission.
+
+## Security Scanner Worker: stage one
+
+Explicit assessment requests, a versioned policy-only profile, live authorisation/evidence enforcement and an independent `assessment-worker` role now use the existing shared job engine. The Assessments dashboard supports request history, detail and cancellation. Migration `0005_assessment_intents` preserves existing monitoring data. No network check, Nmap, Nuclei or ZAP adapter is enabled; completed means permission preflight only.
+
+See [the assessment audit, design, API and Windows acceptance guide](docs/SCANNER_STAGE_ONE.md). Keep existing accounts, configuration and data; back up before migrating. New browser acceptance remains pending on Windows.

@@ -121,3 +121,20 @@ test("monitoring management authenticates POST requests and history preserves pa
   assert.equal(new URL(calls[2][0]).pathname, "/api/v1/monitoring/stop");
   assert.equal(calls[2][1].method, "POST");
 });
+
+
+test("assessment requests preserve explicit intent, identity and cancellation reasons", async () => {
+  session();
+  const payload = { website_id: 7, authorization_id: 9, profile_id: "authorization-preflight-v1", explicitly_requested: true, idempotency_key: "synthetic-key", note: "Synthetic preflight request." };
+  await api.requestAssessment(payload);
+  assert.equal(new URL(calls[0][0]).pathname, "/api/v1/assessments");
+  assert.equal(calls[0][1].method, "POST");
+  assert.deepEqual(JSON.parse(calls[0][1].body), payload);
+  await api.getAssessments(7, 50);
+  const url = new URL(calls[1][0]);
+  assert.equal(url.searchParams.get("website_id"), "7");
+  assert.equal(url.searchParams.get("offset"), "50");
+  await api.cancelAssessment("synthetic-id", { reason: "Cancel synthetic preflight." });
+  assert.equal(new URL(calls[2][0]).pathname, "/api/v1/assessments/synthetic-id/cancel");
+  assert.deepEqual(JSON.parse(calls[2][1].body), { reason: "Cancel synthetic preflight." });
+});

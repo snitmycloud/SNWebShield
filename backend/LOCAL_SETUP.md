@@ -57,3 +57,9 @@ Private document upload, authenticated retrieval, human reviews, retention/holds
 After backing up the existing database **and private evidence files**, run `.\.venv\Scripts\python.exe -m alembic upgrade head` from `backend`. Expected head is `0004_monitoring`. Start the scheduler, worker and notification dispatcher in separate backend terminals using `python -m app.cli.operations scheduler`, `worker` and `notifications` with the existing venv Python. Leave the API and frontend running in their own terminals. Use Ctrl+C to stop each process.
 
 Follow [the monitoring guide](../docs/MONITORING.md) for exact PowerShell commands, explicit consent/enable workflow and functional acceptance checks. No account reset or database recreation is needed.
+
+## Security Scanner Worker: stage one
+
+Explicit assessment requests, a versioned policy-only profile, live authorisation/evidence enforcement and an independent `assessment-worker` role now use the existing shared job engine. The Assessments dashboard supports request history, detail and cancellation. Migration `0005_assessment_intents` preserves existing monitoring data. No network check, Nmap, Nuclei or ZAP adapter is enabled; completed means permission preflight only.
+
+See [the assessment audit, design, API and Windows acceptance guide](../docs/SCANNER_STAGE_ONE.md). Keep existing accounts, configuration and data; back up before migrating. New browser acceptance remains pending on Windows.

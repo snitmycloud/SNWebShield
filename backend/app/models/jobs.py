@@ -1,12 +1,15 @@
 """Shared execution records. Monitoring is the first registered job type."""
 from datetime import datetime
-from sqlalchemy import DateTime, ForeignKey, JSON, String, Integer, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, JSON, String, Integer, UniqueConstraint, Index, text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 
 class Job(Base):
     __tablename__ = "jobs"
+    __table_args__ = (Index("uq_active_assessment_website", "resource_id", unique=True,
+        sqlite_where=text("job_type = 'assessment' AND status IN ('queued', 'running')"),
+        postgresql_where=text("job_type = 'assessment' AND status IN ('queued', 'running')")),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     job_type: Mapped[str] = mapped_column(String(40), index=True)
     resource_id: Mapped[int] = mapped_column(ForeignKey("websites.id", ondelete="RESTRICT"), index=True)

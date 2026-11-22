@@ -16,7 +16,7 @@ from app.models.jobs import Job
 from app.models.monitoring import MonitoringConfig, NotificationDelivery
 from app.models.website import Website
 from app.services import job_engine as engine
-from app.services import monitoring
+from app.services import monitoring, assessments
 from app.services.monitor_probe import probe_child
 
 
@@ -117,7 +117,7 @@ def notification_tick():
 
 
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument("role", choices=["scheduler", "worker", "notifications"])
+    parser = argparse.ArgumentParser(); parser.add_argument("role", choices=["scheduler", "worker", "notifications", "assessment-worker"])
     parser.add_argument("--once", action="store_true"); args = parser.parse_args()
     try:
         while True:
@@ -125,6 +125,7 @@ def main():
                 if args.role == "scheduler":
                     with SessionLocal() as db: engine.scheduler_tick(db)
                 elif args.role == "worker": worker_tick()
+                elif args.role == "assessment-worker": assessments.worker_tick()
                 else: notification_tick()
             except Exception:
                 # Never print URLs, credentials or response contents.

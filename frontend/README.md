@@ -82,3 +82,9 @@ Private document upload, authenticated retrieval, human reviews, retention/holds
 Open **Monitoring** in the sidebar. Select a website, use its inspected/accepted monitoring permission document and save configuration; it remains disabled until explicitly enabled. Settings can be replaced, checks queued, execution disabled or consent revoked. The dashboard polls every 15 seconds and distinguishes stopped processes, stale samples, blocked destinations and measured failures. History uses 50-row pages.
 
 Run the three independent backend operational processes for real checks. [Monitoring setup and acceptance](../docs/MONITORING.md) explains the workflow, status semantics and limitations. The browser test server substitutes a synthetic probe outcome through the actual job engine; it never monitors synthetic domains. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` optionally selects an already-installed Chromium executable for tests. Leave it unset on Windows when using Playwright's installed Chromium.
+
+## Security Scanner Worker: stage one
+
+Explicit assessment requests, a versioned policy-only profile, live authorisation/evidence enforcement and an independent `assessment-worker` role now use the existing shared job engine. The Assessments dashboard supports request history, detail and cancellation. Migration `0005_assessment_intents` preserves existing monitoring data. No network check, Nmap, Nuclei or ZAP adapter is enabled; completed means permission preflight only.
+
+See [the assessment audit, design, API and Windows acceptance guide](../docs/SCANNER_STAGE_ONE.md). Keep existing accounts, configuration and data; back up before migrating. New browser acceptance remains pending on Windows.

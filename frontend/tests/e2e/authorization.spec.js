@@ -14,7 +14,7 @@ async function signIn(page) {
   await expect(page.getByRole("heading", { name: "Workspace summary" })).toBeVisible();
 }
 
-async function asset(request, { approved = false, startsIn = -3600000, endsIn = 3600000, noRequest = false } = {}) {
+async function asset(request, { approved = false, startsIn = -3600000, endsIn = 3600000, noRequest = false, assessmentMethod = false } = {}) {
   const key = randomUUID();
   const login = await request.post(`${API}/auth/login`, { data: credentials });
   expect(login.status()).toBe(200);
@@ -32,7 +32,7 @@ async function asset(request, { approved = false, startsIn = -3600000, endsIn = 
   const authorization = await request.post(`${API}/authorizations`, { headers, data: {
     website_id: website.id, authorization_reference: `BROWSER-${key}`,
     authorized_by: "Synthetic Contact", authorized_domains: [`${key}.example.com`],
-    permitted_methods: ["passive_reconnaissance"],
+    permitted_methods: [assessmentMethod ? "automated_non_intrusive_scanning" : "passive_reconnaissance"],
     valid_from: new Date(Date.now() + startsIn).toISOString(),
     valid_until: new Date(Date.now() + endsIn).toISOString(),
   } });
@@ -212,4 +212,65 @@ test("monitoring requires separate consent, runs through the shared engine, and 
   await expect(page.getByRole("alert")).toContainText("Monitoring consent or evidence is invalid");
   await page.getByLabel("Monitoring history type").selectOption("consents");
   await expect(page.locator(".monitor-page")).toContainText("Revoked");
+});
+
+async function openAssessmentForm(page, website, record, note) {
+  await signIn(page);
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Assessments", exact: true }).click();
+  await page.getByLabel("Assessment website", { exact: true }).selectOption(String(website.id));
+  await page.getByLabel("Assessment authorisation", { exact: true }).selectOption(String(record.id));
+  await page.getByLabel("Assessment request note", { exact: true }).fill(note);
+  await expect(page.getByRole("button", { name: "Queue permission preflight", exact: true })).toBeDisabled();
+  await page.getByLabel(/^I explicitly request this permission preflight/).check();
+  await page.getByRole("button", { name: "Queue permission preflight", exact: true }).click();
+}
+
+test("assessment explicitly queues a preflight and cancellation is audited", async ({ page, request }) => {
+  const { website, record } = await asset(request, { approved: true, assessmentMethod: true });
+  await openAssessmentForm(page, website, record, "Browser synthetic permission preflight, no network execution.");
+  await expect(page.getByRole("status")).toContainText("Permission preflight request recorded");
+  const details = page.getByRole("article", { name: "Assessment details" });
+  await expect(details).toContainText("queued");
+  await page.getByLabel("Assessment cancellation reason").fill("Cancel this synthetic browser preflight request.");
+  await page.getByRole("button", { name: "Cancel assessment request", exact: true }).click();
+  await expect(details).toContainText("assessment cancelled");
+  await expect(page.getByRole("status")).toContainText("Assessment request cancelled");
+});
+
+test("assessment profile rejects passive reconnaissance permission", async ({ page, request }) => {
+  const { website, record } = await asset(request, { approved: true });
+  await openAssessmentForm(page, website, record, "Browser synthetic request with insufficient permitted methods.");
+  await expect(page.getByRole("alert")).toContainText("profile_methods_not_authorized");
+  await expect(page.getByRole("button", { name: "Cancel assessment request", exact: true })).toHaveCount(0);
+});
+
+test("assessment worker result is labelled preflight without scan findings", async ({ page, request }) => {
+  const { website, record } = await asset(request, { approved: true, assessmentMethod: true });
+  await openAssessmentForm(page, website, record, "BROWSER_COMPLETE synthetic permission preflight only.");
+  const details = page.getByRole("article", { name: "Assessment details" });
+  await expect(async () => {
+    await page.getByRole("button", { name: "Refresh assessments", exact: true }).click();
+    await expect(details).toContainText("permission preflight passed");
+  }).toPass({ timeout: 15000 });
+  await expect(page.getByRole("row").filter({ hasText: new URL(website.url).hostname })).toContainText("Preflight completed");
+  await expect(details).toContainText("No scanner execution");
+});
+
+
+test("assessment refresh removes revoked approval and updates queued request details", async ({ page, request }) => {
+  const { website, record, headers } = await asset(request, { approved: true, assessmentMethod: true });
+  await openAssessmentForm(page, website, record, "Browser synthetic refresh and revocation preflight.");
+  const details = page.getByRole("article", { name: "Assessment details" });
+  await expect(details).toContainText("queued");
+  const revoked = await request.post(`${API}/authorizations/${record.id}/revoke`, { headers, data: {
+    reason: "Withdraw synthetic permission to test assessment refresh.",
+  } });
+  expect(revoked.status()).toBe(200);
+  await page.getByRole("button", { name: "Refresh assessments", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Assessment data refreshed");
+  await expect(page.getByLabel("Assessment authorisation", { exact: true })).toHaveValue("");
+  await expect(page.getByLabel("Assessment authorisation", { exact: true }).locator(`option[value="${record.id}"]`)).toHaveCount(0);
+  await expect(details).toContainText("cancelled");
+  await expect(details).toContainText("authorization revoked");
+  await expect(page.getByRole("button", { name: "Queue permission preflight", exact: true })).toBeDisabled();
 });

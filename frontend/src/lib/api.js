@@ -174,6 +174,15 @@ export const api = {
   monitoringAction: (id, action) => jsonPost(`/websites/${id}/monitoring/${action}`, {}),
   stopMonitoring: () => jsonPost("/monitoring/stop", {}),
 
+  // Assessment stage one: explicit network-free permission preflight.
+  assessmentProfiles: () => request("/assessments/profiles"),
+  assessmentWorkerStatus: () => request("/assessments/worker-status"),
+  getAssessments: (websiteId = "", offset = 0) => request(`/assessments?limit=50&offset=${offset}${websiteId ? `&website_id=${websiteId}` : ""}`),
+  getAssessment: (id) => request(`/assessments/${id}`),
+  assessmentHistory: (id, collection, offset = 0) => request(`/assessments/${id}/${collection}?limit=50&offset=${offset}`),
+  requestAssessment: (data) => jsonPost("/assessments", data),
+  cancelAssessment: (id, data) => jsonPost(`/assessments/${id}/cancel`, data),
+
   // Health
   health: () => request("/health", { auth: false }),
 

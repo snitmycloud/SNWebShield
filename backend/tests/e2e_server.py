@@ -35,7 +35,10 @@ def main():
         # Test-only transport replacement: exercise the real queue, eligibility,
         # transactions and UI without sending requests to synthetic domains.
         from threading import Event, Thread
-        from app.services import monitoring, job_engine
+        from app.services import monitoring, job_engine, assessments
+        from sqlalchemy import select
+        from app.models.assessment import AssessmentRequest
+        from app.models.jobs import Job
         stopped = Event()
         def fixture_worker():
             while not stopped.wait(.2):
@@ -49,6 +52,13 @@ def main():
                                 "dns_ok": True, "response_ms": 42.5, "tls_valid": True,
                                 "certificate_expires_at": "2030-12-31T00:00:00+00:00",
                                 "fixture": True})
+                    # Test-only completion fixture. Other browser requests stay
+                    # queued for deterministic manual-cancellation coverage.
+                    with SessionLocal() as db:
+                        first = db.scalar(select(AssessmentRequest).join(Job, Job.id == AssessmentRequest.job_id).where(
+                            Job.job_type == "assessment", Job.status == "queued").order_by(Job.created_at).limit(1))
+                        run_preflight = first is not None and first.request_note.startswith("BROWSER_COMPLETE")
+                    if run_preflight: assessments.worker_tick()
                 except Exception:
                     # Dispose the transaction and retry, as the real CLI does.
                     continue

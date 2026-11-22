@@ -91,3 +91,9 @@ Private document upload, authenticated retrieval, human reviews, retention/holds
 Migration `0004_monitoring` adds the shared job engine and monitoring tables. Run the API, `python -m app.cli.operations scheduler`, `python -m app.cli.operations worker` and `python -m app.cli.operations notifications` independently from `backend`, using the same private configuration/database/evidence directory. Each operations command supports `--once`. The API never probes websites inline.
 
 See [monitoring design, permissions, limits, APIs and Windows checks](../docs/MONITORING.md). Consent is separate from VAPT approval, configuration saves disabled, and DNS/redirect checks cannot permit private destinations. Notifications default to the dashboard; SMTP is optional private operator configuration.
+
+## Security Scanner Worker: stage one
+
+Explicit assessment requests, a versioned policy-only profile, live authorisation/evidence enforcement and an independent `assessment-worker` role now use the existing shared job engine. The Assessments dashboard supports request history, detail and cancellation. Migration `0005_assessment_intents` preserves existing monitoring data. No network check, Nmap, Nuclei or ZAP adapter is enabled; completed means permission preflight only.
+
+See [the assessment audit, design, API and Windows acceptance guide](../docs/SCANNER_STAGE_ONE.md). Keep existing accounts, configuration and data; back up before migrating. New browser acceptance remains pending on Windows.

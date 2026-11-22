@@ -130,6 +130,9 @@ def decide_authorization(
             previous_status=expected, new_status=action, note=note,
             evidence_reviewed=action == "approved", created_at=now,
         ))
+        if action == "revoked":
+            from app.services.assessments import cancel_for_authorization
+            cancel_for_authorization(db, authorization_id, admin_id)
         db.commit()
         db.refresh(record)
         return record

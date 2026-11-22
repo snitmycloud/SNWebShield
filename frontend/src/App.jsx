@@ -32,6 +32,7 @@ import {
 import { api, API_BASE_URL } from "./lib/api.js";
 import AuthorizationPage from "./AuthorizationPage.jsx";
 import MonitoringPage from "./MonitoringPage.jsx";
+import AssessmentsPage from "./AssessmentsPage.jsx";
  
 
 const NAV_ITEMS = [
@@ -40,6 +41,7 @@ const NAV_ITEMS = [
   { id: "websites", label: "Websites", icon: Globe2 },
   { id: "authorizations", label: "Authorizations", icon: ClipboardCheck },
   { id: "monitoring", label: "Monitoring", icon: Activity },
+  { id: "assessments", label: "Assessments", icon: FileText },
 ];
 
 function formatDate(value) {
@@ -190,7 +192,6 @@ function Dashboard({ admin, onLogout }) {
         </nav>
 
         <div className="nav-label tools-label">MANAGEMENT</div>
-        <div className="nav-item nav-muted"><FileText size={18} /><span>Assessments</span><span className="coming-soon">Soon</span></div>
         <div className="nav-item nav-muted"><ShieldAlert size={18} /><span>Vulnerabilities</span><span className="coming-soon">Soon</span></div>
         <div className="nav-item nav-muted"><Activity size={18} /><span>Reports</span><span className="coming-soon">Soon</span></div>
 
@@ -223,6 +224,7 @@ function Dashboard({ admin, onLogout }) {
       websites: "Websites",
       authorizations: "Authorizations",
       monitoring: "Monitoring",
+      assessments: "Assessments",
     }[activePage] || "Overview"}
   </strong>
 </div>
@@ -297,6 +299,7 @@ function Dashboard({ admin, onLogout }) {
 )}
 
           {activePage === "monitoring" && <MonitoringPage websites={websites} />}
+          {activePage === "assessments" && <AssessmentsPage websites={websites} />}
 
           <footer className="content-footer">
             <span>SNWebShield <b>v0.1.0</b></span>

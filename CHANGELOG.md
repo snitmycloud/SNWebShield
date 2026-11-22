@@ -25,3 +25,11 @@
 - Add bounded public-destination HTTP/DNS/TLS probes with pinned addresses, same-origin redirect validation and independent child-process deadlines.
 - Add historical metrics, failure/recovery incidents, a durable dashboard/optional SMTP notification outbox and the monitoring dashboard.
 - Add controlled HTTP fixture, concurrency, cancellation, subprocess, SSRF, notification and browser journey coverage. Browser launch is blocked in this environment; Windows acceptance remains required.
+
+## Unreleased — assessment job manager and permission engine
+
+- Add explicit, idempotent assessment requests on the shared queue, a separate assessment pool and network-free worker role.
+- Require current audited authorisation, exact domain/method scope, accepted current evidence, hash integrity and bound snapshots before request/execution.
+- Add transactional revocation cancellation, request/attempt/audit history and a policy-only profile catalogue/dashboard.
+- Add additive migration `0005_assessment_intents` and backend/browser/helper regression coverage.
+- Real scanner integration, profile approval management, findings and network isolation remain unimplemented. Windows browser acceptance is pending for this stage.
