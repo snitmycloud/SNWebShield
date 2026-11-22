@@ -504,3 +504,10 @@
 .status-pill.needs_date_review,.authz-status.needs_date_review{background:#fff4df;color:#8b6018}
 .status-pill.not_requested{background:#eef1f5;color:#65738a}
 .status-pill.needs_date_review span,.status-pill.not_requested span{background:currentColor}
+
+.evidence-panel{margin:18px 0;padding:16px;border:1px solid #dce7ed;border-radius:10px;background:#f8fbfd;font-size:12px}
+.evidence-panel label{display:block;margin:12px 0;line-height:1.6}
+.evidence-panel textarea,.evidence-panel input:not([type=checkbox]),.evidence-panel select{display:block;max-width:100%;width:100%;padding:8px;border:1px solid #ccd8e2;border-radius:6px}
+.evidence-panel button{margin:5px;padding:7px 10px;border:1px solid #b9d0dc;border-radius:6px;background:white;color:#18445a}
+.evidence-document{padding:12px 0;border-bottom:1px solid #dae4eb;overflow-wrap:anywhere}
+.evidence-review{padding:12px;background:white;border-radius:8px;margin-top:12px}

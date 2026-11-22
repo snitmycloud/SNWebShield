@@ -30,6 +30,9 @@ class AuthorizationAuditEvent(Base):
         ForeignKey("website_authorizations.id", ondelete="RESTRICT"), index=True
     )
     admin_id: Mapped[int] = mapped_column(ForeignKey("admins.id", ondelete="RESTRICT"), index=True)
+    evidence_review_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True
+    )
     action: Mapped[str] = mapped_column(String(20))
     previous_status: Mapped[str] = mapped_column(String(20))
     new_status: Mapped[str] = mapped_column(String(20))

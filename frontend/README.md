@@ -12,7 +12,7 @@ React + Vite admin console for the local SNWebShield FastAPI backend.
 - Administrator login, session restoration and logout
 - Authorisation list, search, filters, details, decision forms and audit history
 
-This is an internal local-development UI with bearer tokens stored in sessionStorage. It does not include tenant isolation, multiple roles, an authorisation creation form, evidence uploads, scanners or production session protections. Session-expiry handling and website status presentation have been updated; see [the correctness guide](../docs/AUTHORIZATION_CORRECTNESS.md) for behaviour, tests and remaining browser verification. Do not expose it publicly or enter real client secrets.
+This is an internal local-development UI with bearer tokens stored in sessionStorage. It does not include tenant isolation, multiple roles, an authorisation creation form, scanners or production session protections. Session-expiry handling and website status presentation have been updated; see [the correctness guide](../docs/AUTHORIZATION_CORRECTNESS.md) for behaviour, tests and remaining browser verification. Do not expose it publicly or enter real client secrets.
 
 ## Requirements
 
@@ -71,3 +71,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8000/api/v1
 ```
 
 Restart Vite after changing `.env`.
+
+## Local authorisation evidence milestone
+
+Private document upload, authenticated retrieval, human reviews, retention/holds and the approval evidence gate are implemented for local testing. Follow [the evidence guide](../docs/AUTHORIZATION_EVIDENCE.md) for migration `0003_evidence`, configuration, API details, backup limitations and Windows validation. Updated browser execution remains pending; no GitHub push is required.

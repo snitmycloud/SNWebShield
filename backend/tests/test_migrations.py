@@ -21,7 +21,7 @@ def test_new_database_migrates_and_upgrade_is_idempotent(tmp_path):
     migrate(path)
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0002_authorization_utc"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0003_evidence"
         columns = {row[1] for row in db.execute("PRAGMA table_info(website_authorizations)")}
         assert "timestamps_verified" in columns
         assert db.execute("SELECT COUNT(*) FROM admins").fetchone()[0] == 0

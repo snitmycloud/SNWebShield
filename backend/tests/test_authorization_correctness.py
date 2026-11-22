@@ -1,3 +1,4 @@
+from evidence_helpers import attach_review
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta, timezone
 from threading import Barrier
@@ -61,6 +62,7 @@ def test_offsets_round_trip_and_approval(api, offset, expired):
     assert record["timestamps_verified"] is True
     assert datetime.fromisoformat(record["valid_until"].replace("Z", "+00:00")) == end
     assert record["valid_until"].endswith(("Z", "+00:00"))
+    if not expired: attach_review(api, record["id"])
     result = api.post(f"/api/v1/authorizations/{record['id']}/approve", json=APPROVAL)
     assert result.status_code == (409 if expired else 200), result.text
 
@@ -148,6 +150,7 @@ def test_revoking_one_approval_uses_another_current_approval(api):
 @pytest.mark.parametrize("actions", [("approved", "rejected"), ("approved", "approved")])
 def test_competing_decisions_have_one_winner_and_one_event(api, monkeypatch, actions):
     record_id, _ = seed_record()
+    attach_review(api, record_id)
     barrier = Barrier(2)
     original_get = service.get_authorization
 
@@ -177,6 +180,7 @@ def test_competing_decisions_have_one_winner_and_one_event(api, monkeypatch, act
 
 def test_audit_write_failure_rolls_back_decision(api):
     record_id, _ = seed_record()
+    attach_review(api, record_id)
     with SessionLocal() as db:
         def reject_event(session, context, instances):
             if any(isinstance(item, AuthorizationAuditEvent) for item in session.new):
@@ -193,6 +197,7 @@ def test_audit_write_failure_rolls_back_decision(api):
 
 def test_repeated_and_invalid_decisions_do_not_add_audit_events(api):
     record_id, _ = seed_record()
+    attach_review(api, record_id)
     endpoint = f"/api/v1/authorizations/{record_id}"
     assert api.post(endpoint + "/approve", json={**APPROVAL, "evidence_reviewed": False}).status_code == 422
     assert api.post(endpoint + "/approve", json={**APPROVAL, "review_note": " " * 30}).status_code == 422

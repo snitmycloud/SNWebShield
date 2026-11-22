@@ -8,6 +8,7 @@ import pytest
 TEST_DIRECTORY = TemporaryDirectory(prefix="snwebshield-pytest-")
 TEST_DB = Path(TEST_DIRECTORY.name) / "test_snwebshield.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB.as_posix()}"
+os.environ["EVIDENCE_ROOT"] = str(Path(TEST_DIRECTORY.name) / "evidence")
 os.environ["CORS_ORIGINS"] = "http://localhost:5173"
 os.environ["JWT_SECRET_KEY"] = "test-only-secret-key-not-for-any-real-environment-123456789"
 

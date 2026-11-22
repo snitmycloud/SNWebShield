@@ -285,6 +285,7 @@ function Dashboard({ admin, onLogout }) {
           )}
 {activePage === "authorizations" && (
   <AuthorizationPage
+    admin={admin}
     websites={websites}
     clients={clients}
     onNotice={setNotice}

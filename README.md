@@ -89,4 +89,8 @@ SNWebShield/
 
 ## Status
 
-**Application foundation and authorisation review implemented; stabilisation required.** Administrator login and protected client, website and authorisation APIs exist. The React UI supports client/website creation and authorisation review decisions with audit history. Authorisation creation currently has an API but no UI form. UTC normalisation, computed validity states, atomic decisions, session expiry and exact authorisation summaries now have regression coverage. Alembic migrations are included. Document upload, monitoring, scanner execution, analyst workflows, reporting and production hardening are not implemented. Neither website registration nor authorisation approval starts a scan.
+**Application foundation and authorisation review implemented; stabilisation required.** Administrator login and protected client, website and authorisation APIs exist. The React UI supports client/website creation and authorisation review decisions with audit history. Authorisation creation currently has an API but no UI form. UTC normalisation, computed validity states, atomic decisions, session expiry and exact authorisation summaries now have regression coverage. Alembic migrations are included. Monitoring, scanner execution, analyst workflows, reporting and production hardening are not implemented. Neither website registration nor authorisation approval starts a scan.
+
+## Local authorisation evidence milestone
+
+Private document upload, authenticated retrieval, human reviews, retention/holds and the approval evidence gate are implemented for local testing. Follow [the evidence guide](docs/AUTHORIZATION_EVIDENCE.md) for migration `0003_evidence`, configuration, API details, backup limitations and Windows validation. Updated browser execution remains pending; no GitHub push is required.

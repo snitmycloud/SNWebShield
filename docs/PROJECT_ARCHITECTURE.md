@@ -138,3 +138,7 @@ Development can use Docker Compose for the web app and PostgreSQL. Production sh
 ## Correctness milestone update
 
 [Authentication and authorisation correctness](AUTHORIZATION_CORRECTNESS.md) adds a focused policy/decision service, UTC-normalised creation, computed effective states and summaries, conditional decision updates with transactional audit writes, and Alembic baseline adoption plus a date-provenance column. There are no scanners or monitoring workers. Browser verification and PostgreSQL integration testing remain pending.
+
+## Authorisation evidence subsystem
+
+See [Authorisation Evidence Management](AUTHORIZATION_EVIDENCE.md): private UUID storage, three evidence/review/event tables, conditional revision gating and authenticated binary access. PDF preview is download-only; malware scanning, production parser isolation, tenant isolation and PostgreSQL integration are not implemented or verified.

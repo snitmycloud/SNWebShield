@@ -110,6 +110,12 @@ def decide_authorization(
                 Authorization.valid_until > Authorization.valid_from,
             ])
 
+        accepted_review_id = None
+        if action == "approved":
+            from app.services.evidence import accepted_review
+            accepted_review_id = accepted_review(db, record, admin_id).id
+            predicates.append(Authorization.evidence_revision == record.evidence_revision)
+
         # Compare-and-set is the concurrency boundary, including on SQLite.
         # UPDATE plus INSERT are in the same transaction; a failed event flush
         # rolls the decision back. No cached website flag is used for validity.
@@ -120,6 +126,7 @@ def decide_authorization(
             raise HTTPException(status_code=409, detail="Authorization changed; refresh before making another decision")
         db.add(AuthorizationAuditEvent(
             authorization_id=authorization_id, admin_id=admin_id, action=action,
+            evidence_review_id=accepted_review_id,
             previous_status=expected, new_status=action, note=note,
             evidence_reviewed=action == "approved", created_at=now,
         ))

@@ -40,6 +40,7 @@ class AuthorizationAuditEventRead(BaseModel):
     id: int
     authorization_id: int
     admin_id: int
+    evidence_review_id: str | None = None
     action: Literal["approved", "rejected", "revoked"]
     previous_status: str
     new_status: str

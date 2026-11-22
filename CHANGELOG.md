@@ -9,3 +9,11 @@
 - Fix idle/request-time session expiry, stale responses after logout, dashboard counts and status labels.
 - Add isolated backend, migration, frontend helper and Windows browser regression suites, plus a verified SQLite backup command.
 - Reconcile setup documentation. Browser acceptance and PostgreSQL verification remain pending.
+
+## Unreleased — authorisation evidence
+
+- Private UUID-addressed PDF/image uploads, content validation, SHA-256 verification and authenticated downloads/previews.
+- Human evidence reviews tied to actor and revision; approval requires current accepted evidence.
+- Evidence metadata/history, legal holds and retention-checked deletion with retryable tombstones.
+- Additive migration 0003_evidence; existing data preserved.
+- Local implementation prepared; updated Windows browser verification and PostgreSQL integration remain pending.

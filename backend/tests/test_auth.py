@@ -1,3 +1,4 @@
+from evidence_helpers import attach_review
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -124,6 +125,7 @@ def test_approval_requires_evidence_attestation(client):
 def test_admin_can_approve_and_audit_event_is_recorded(client):
     _, headers = create_admin_and_login(client)
     authorization_id = create_pending_authorization()
+    attach_review(client, authorization_id, headers)
     response = client.post(
         f"/api/v1/authorizations/{authorization_id}/approve",
         json={
@@ -157,6 +159,7 @@ def test_admin_can_reject_pending_authorization(client):
 def test_admin_can_revoke_approved_authorization(client):
     _, headers = create_admin_and_login(client)
     authorization_id = create_pending_authorization()
+    attach_review(client, authorization_id, headers)
     approved = client.post(
         f"/api/v1/authorizations/{authorization_id}/approve",
         json={

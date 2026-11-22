@@ -16,6 +16,8 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import EvidencePanel from "./EvidencePanel.jsx";
+import "./authorization.css";
 import { api } from "./lib/api.js";
 
 const METHODS = {
@@ -86,7 +88,8 @@ function SummaryCard({ label, value, icon: Icon, tone }) {
   );
 }
 
-function AuthorizationPage({ websites = [], clients = [], onNotice, onDecision }) {
+function AuthorizationPage({ websites = [], clients = [], onNotice, onDecision, admin }) {
+  const [evidenceReady, setEvidenceReady] = useState(false);
   const [summary, setSummary] = useState(null);
   const listRequest = useRef(0);
   const detailRequest = useRef(0);
@@ -202,6 +205,7 @@ function AuthorizationPage({ websites = [], clients = [], onNotice, onDecision }
   };
 
   const openDetails = async (record) => {
+    setEvidenceReady(false);
     setSelected(record);
     setEvents([]);
     setActionType("");
@@ -574,6 +578,8 @@ function AuthorizationPage({ websites = [], clients = [], onNotice, onDecision }
                 </span>
               </div>
 
+              <EvidencePanel key={selected.id} authorization={selected} adminId={admin?.id} onReady={setEvidenceReady} />
+
               <div className="authz-info-grid">
                 <div>
                   <span>Website</span>
@@ -704,7 +710,7 @@ function AuthorizationPage({ websites = [], clients = [], onNotice, onDecision }
                       <button
                         type="button"
                         className="authz-approve-button"
-                        disabled={pendingExpired || needsDateReview || auditLoading || Boolean(auditError)}
+                        disabled={!evidenceReady || pendingExpired || needsDateReview || auditLoading || Boolean(auditError)}
                         onClick={() => beginAction("approve")}
                       >
                         <CheckCircle2 size={16} />

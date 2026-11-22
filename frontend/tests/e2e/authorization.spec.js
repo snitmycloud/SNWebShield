@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
+const syntheticImage = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAIAAAAC64paAAAAHUlEQVR4nGP8//8/A7mAiWydo5pHNY9qHtVMFc0AnKADJXYG/XsAAAAASUVORK5CYII=", "base64");
+
 const API = "http://127.0.0.1:18000/api/v1";
 const credentials = { email: "browser-test@example.com", password: "Synthetic-browser-password-123!" };
 
@@ -37,6 +39,18 @@ async function asset(request, { approved = false, startsIn = -3600000, endsIn = 
   expect(authorization.status()).toBe(201);
   const record = await authorization.json();
   if (approved) {
+    const uploaded = await request.post(`${API}/authorizations/${record.id}/evidence`, {
+      headers: { ...headers, "X-Evidence-Filename": "signed.png", "Content-Type": "application/octet-stream" }, data: syntheticImage,
+    });
+    expect(uploaded.status()).toBe(201);
+    const evidenceId = (await uploaded.json()).id;
+    expect((await request.get(`${API}/evidence/${evidenceId}/download`, { headers })).status()).toBe(200);
+    const evidence = await request.get(`${API}/authorizations/${record.id}/evidence`, { headers });
+    const reviewed = await request.post(`${API}/authorizations/${record.id}/evidence/reviews`, { headers, data: {
+      revision: (await evidence.json()).revision, decision: "accepted", inspected: true,
+      comment: "Inspected the synthetic signed document and the complete approved scope.",
+    } });
+    expect(reviewed.status()).toBe(201);
     const decision = await request.post(`${API}/authorizations/${record.id}/approve`, { headers, data: {
       evidence_reviewed: true, review_note: "Reviewed synthetic permission and the exact domain scope.",
     } });
@@ -84,14 +98,21 @@ test("approve with evidence, see audit, revoke and refresh website status", asyn
   const { record, website } = await asset(request);
   await signIn(page);
   await openRecord(page, record);
+  await expect(page.getByRole("button", { name: "Approve request", exact: true })).toBeDisabled();
+  await page.getByLabel("Upload permission document", { exact: true }).setInputFiles({ name: "signed.png", mimeType: "image/png", buffer: syntheticImage });
+  await page.getByRole("button", { name: "Preview signed.png", exact: true }).click();
+  await expect(page.getByAltText("Permission document preview")).toBeVisible();
+  await page.getByLabel("Evidence review comments").fill("Inspected synthetic signed permission, its signatory, dates and exact scope.");
+  await page.getByLabel("I inspected all current documents and checked the signatory, domains, methods and dates.").check();
+  await page.getByRole("button", { name: "Record evidence review", exact: true }).click();
   await page.getByRole("button", { name: "Approve request", exact: true }).click();
   await expect(page.getByRole("button", { name: "Confirm approval" })).toBeDisabled();
-  await page.getByRole("checkbox").check();
-  await page.getByRole("dialog").getByRole("textbox").fill("Reviewed synthetic permission and verified the exact domain scope.");
+  await page.locator(".authz-evidence-check input").check();
+  await page.locator(".authz-action-form textarea").fill("Reviewed synthetic permission and verified the exact domain scope.");
   await page.getByRole("button", { name: "Confirm approval" }).click();
   await expect(page.locator(".authz-event-title strong").filter({ hasText: "APPROVED" })).toBeVisible();
   await page.getByRole("button", { name: "Revoke approval" }).click();
-  await page.getByRole("dialog").getByRole("textbox").fill("Synthetic permission withdrawn by the test signatory.");
+  await page.locator(".authz-action-form textarea").fill("Synthetic permission withdrawn by the test signatory.");
   await page.getByRole("button", { name: "Confirm revocation" }).click();
   await expect(page.locator(".authz-event-title strong").filter({ hasText: "REVOKED" })).toBeVisible();
   await page.getByRole("button", { name: "Close authorization details" }).click();
@@ -104,7 +125,7 @@ test("expired pending request cannot be approved but can be rejected", async ({ 
   await signIn(page); await openRecord(page, record);
   await expect(page.getByRole("button", { name: "Approve request", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Reject request", exact: true }).click();
-  await page.getByRole("dialog").getByRole("textbox").fill("Synthetic permission validity period has already expired.");
+  await page.locator(".authz-action-form textarea").fill("Synthetic permission validity period has already expired.");
   await page.getByRole("button", { name: "Confirm rejection" }).click();
   await expect(page.locator(".authz-event-title strong").filter({ hasText: "REJECTED" })).toBeVisible();
 });
@@ -138,4 +159,20 @@ test("API outage displays Offline and retry recovers", async ({ page }) => {
   await page.unroute(`${API}/**`);
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(page.locator(".api-indicator")).toContainText("API connected");
+});
+
+
+test("invalid uploads and rejected evidence cannot enable approval", async ({ page, request }) => {
+  const { record } = await asset(request);
+  await signIn(page); await openRecord(page, record);
+  await page.getByLabel("Upload permission document", { exact: true }).setInputFiles({ name: "invalid.pdf", mimeType: "application/pdf", buffer: Buffer.from("not a pdf") });
+  await expect(page.getByRole("alert")).toContainText("Use a valid PDF");
+  await page.getByLabel("Upload permission document", { exact: true }).setInputFiles({ name: "rejected.png", mimeType: "image/png", buffer: syntheticImage });
+  await page.getByRole("button", { name: "Preview rejected.png", exact: true }).click();
+  await expect(page.getByAltText("Permission document preview")).toBeVisible();
+  await page.getByLabel("Evidence review decision").selectOption("rejected");
+  await page.getByLabel("Evidence review comments").fill("The synthetic document does not contain sufficient signed permission.");
+  await page.getByLabel("I inspected all current documents and checked the signatory, domains, methods and dates.").check();
+  await page.getByRole("button", { name: "Record evidence review", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Approve request", exact: true })).toBeDisabled();
 });

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, JSON, String, Text, false, func
+from sqlalchemy import Boolean, Integer, CheckConstraint, DateTime, ForeignKey, JSON, String, Text, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -33,6 +33,8 @@ class WebsiteAuthorization(Base):
     timestamps_verified: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false(), nullable=False
     )
+
+    evidence_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     # Reserved for a future private evidence-storage integration. This key is never exposed by API.
     evidence_storage_key: Mapped[str | None] = mapped_column(String(500), nullable=True)

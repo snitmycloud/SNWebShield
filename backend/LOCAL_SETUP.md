@@ -47,3 +47,7 @@ npm run build
 If your checkout is still at the older `C:\SNWebShield_Project_Foundation\SNWebShield` location, substitute that root. These commands do not reset accounts or remove application data.
 
 For an existing database, follow the backup and migration order in [the correctness guide](../docs/AUTHORIZATION_CORRECTNESS.md) before starting the updated API. Do not run an old application binary against the migrated database as a rollback procedure.
+
+## Local authorisation evidence milestone
+
+Private document upload, authenticated retrieval, human reviews, retention/holds and the approval evidence gate are implemented for local testing. Follow [the evidence guide](../docs/AUTHORIZATION_EVIDENCE.md) for migration `0003_evidence`, configuration, API details, backup limitations and Windows validation. Updated browser execution remains pending; no GitHub push is required.

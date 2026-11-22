@@ -68,7 +68,7 @@ function startSessionTimer() {
 }
 
 async function request(path, options = {}) {
-  const { auth = true, ...fetchOptions } = options;
+  const { auth = true, binary = false, ...fetchOptions } = options;
   const token = auth ? getAccessToken() : null;
   if (auth && !token) {
     expireSession();
@@ -95,7 +95,7 @@ async function request(path, options = {}) {
     );
   }
 
-  const raw = await response.text();
+  const raw = binary && response.ok ? "" : await response.text();
   let payload = null;
 
   if (raw) {
@@ -125,7 +125,7 @@ async function request(path, options = {}) {
   if (auth && token !== getAccessToken()) {
     throw new Error("Your session has changed. Please sign in again.");
   }
-  return payload;
+  return binary ? response.blob() : payload;
 }
 
 // Existing list APIs return pages of up to 100. Keep the current UI search and
@@ -178,6 +178,17 @@ export const api = {
   getWebsites: () => allPages("/websites"),
 
   createWebsite: (data) => jsonPost("/websites", data),
+
+  // Private evidence: authentication stays in the header, never in URLs.
+  getEvidence: (id) => request(`/authorizations/${id}/evidence`),
+  getEvidenceEvents: (id) => request(`/authorizations/${id}/evidence/events`),
+  uploadEvidence: (id, file) => request(`/authorizations/${id}/evidence`, {
+    method: "POST", body: file,
+    headers: { "Content-Type": "application/octet-stream", "X-Evidence-Filename": encodeURIComponent(file.name) },
+  }),
+  openEvidence: (id, preview = false) => request(`/evidence/${id}/${preview ? "preview" : "download"}`, { binary: true }),
+  reviewEvidence: (id, data) => jsonPost(`/authorizations/${id}/evidence/reviews`, data),
+  evidenceAction: (id, action, data) => jsonPost(`/evidence/${id}/${action}`, data),
 
   // Authorizations
   getAuthorizations: (filters = {}) => {

@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 def main():
     with TemporaryDirectory(prefix="snwebshield-browser-") as directory:
         os.environ["DATABASE_URL"] = f"sqlite:///{(Path(directory) / 'browser.db').as_posix()}"
+        os.environ["EVIDENCE_ROOT"] = str(Path(directory) / "evidence")
         os.environ["JWT_SECRET_KEY"] = secrets.token_urlsafe(48)
         os.environ["CORS_ORIGINS"] = "http://127.0.0.1:15173"
         os.environ["JWT_ACCESS_TOKEN_MINUTES"] = "20"
