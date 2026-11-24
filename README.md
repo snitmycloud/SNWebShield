@@ -174,6 +174,8 @@ Passwords are typed at a hidden prompt: 12 to 128 characters, at least three of 
 npm run dev        # http://127.0.0.1:5173
 ```
 
+`scripts\start-workers.ps1` starts any local role that is not already running. The Assessments page shows the worker state and the start command when it is not running.
+
 Restart the API and the assessment worker after changing `.env` or upgrading. Keep everything on the Windows machine; do not deploy the stack to Azure.
 
 ### 5. Environment variables (names only; put real values in the private `backend/.env`)
@@ -261,3 +263,7 @@ Completed header assessments support [analyst review, remediation tracking and r
 For the existing Azure VM integration, see [Remote Docker scanner setup and acceptance](docs/REMOTE_DOCKER_SCANNER.md). The default-off remote profile keeps the application/data on Windows and sends selected headers to a fixed networkless analyser. Windows SSH and live isolation, timeout, cancellation and cleanup checks passed. Real target assessments still require explicit, current written authorisation.
 
 A default-off fixed HTTP profile reuses assessment jobs and live authorisation/evidence checks. It performs one HEAD and runs a network-free header analysis program in a bounded local Python process. No Docker or cloud service is required. Migration: `0006_local_http`; setting: `ASSESSMENT_LOCAL_HTTP_ENABLED=false`. See `docs/LOCAL_HTTP_ASSESSMENTS.md` (repository root) for setup, execution limits, acceptance steps and trust-boundary limitations.
+
+## Running an assessment
+
+Open Assessments, choose a website and a profile. The page checks permission without any network request, shows which authorisation will be used or the exact reason it is blocked, and enables **Run assessment** only when permission is valid. The worker re-checks permission immediately before execution. Observations are unconfirmed until an analyst validates them in Vulnerability Management.

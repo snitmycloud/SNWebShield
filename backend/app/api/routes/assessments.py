@@ -94,6 +94,12 @@ def worker_status(db: Session = Depends(get_db)):
             "scanner_tools_enabled": service.profile_available(service.PROFILES[service.NMAP_PROFILE_ID])}
 
 
+@router.get("/readiness")
+def readiness(website_id: int = Query(gt=0), db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
+    """Network-free permission preflight for every profile; schedules nothing and writes nothing."""
+    return service.readiness(db, admin.id, website_id)
+
+
 @router.post("", status_code=201)
 def create(payload: CreateRequest, db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
     return read(db, service.create_request(db, admin.id, payload))

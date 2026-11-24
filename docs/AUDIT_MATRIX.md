@@ -403,4 +403,19 @@ The page now names the state and shows the exact start command. `scripts/start-w
 | Job states, lease expiry, cancel, late-result rejection | Implemented and tested |
 | Worker health | Fixed here |
 | Observations, analyst validation, vulnerability ingestion, PDF reports | Implemented in M2-M4 |
-| Not yet done | One-click "request from website" flow and UI simplification; R8 Nmap runner inspection; R6 orphan-container report; stuck-job recovery review after worker restart |
+| One-step request flow and simplified UI | Done and verified (below) |
+| Not yet done | R8 Nmap runner inspection; R6 orphan-container report; stuck-job recovery review after worker restart; VM runner redeploy (user) |
+
+### One-step request flow (verified 2026-11-24)
+Select website, pick a profile, and the page shows permission status and enables **Run assessment**. `GET /assessments/readiness?website_id=` is network-free and writes nothing; it reuses `permission()` and selects an authorisation only if it is approved, inside its UTC window, covers the exact domain, permits the profile's methods and has currently accepted evidence. Otherwise the button is disabled and the exact reason is shown. The browser never chooses an authorisation. `create_request()` and the `assessment-worker` re-check permission again before any network call (TOCTOU preserved). The separate authorisation picker, note requirement and "explicitly request" checkbox were removed; clicking Run is the explicit request, and network profiles keep one written-permission attestation.
+
+| Suite | Result |
+|---|---|
+| Backend `pytest tests` (full) | 600 passed, 0 failed (16m41s) |
+| New `test_one_step_flow.py` | 18 passed: read-only readiness, expired/not-yet-valid/revoked/pending/rejected/unverified, out-of-scope and wildcard domain, missing methods, stale evidence, disabled profile, unknown website, auth required, one-step request then active-assessment block, worker cancels after revocation with no network call, observations ingested as unconfirmed then confirmed only by an analyst |
+| New `test_worker_status.py` | 2 passed |
+| Frontend `npm test` | 59 passed, 0 failed (incl. 6 new `runGate` tests) |
+| Frontend `npm run build` | Succeeded |
+| Playwright browser tests | 18 passed, 0 failed (assessment specs rewritten for the new form) |
+
+Not exercised: a real Azure VM scan or real target traffic (all adapters were simulated), and a live worker against the dev database.

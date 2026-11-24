@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./lib/api.js";
 import { describeIsolation, describeRedirect, describeTls } from "./lib/scanner.js";
 import AssessmentReviews from "./AssessmentReviews.jsx";
+import { runGate, defaultNote } from "./lib/runGate.js";
 import "./assessments.css";
 
 const date = value => value ? new Date(value).toLocaleString() : "Not recorded";
@@ -9,9 +10,8 @@ const label = value => value?.replaceAll("_", " ") ?? "Unknown";
 
 export default function AssessmentsPage({ websites, initialAssessmentId = null }) {
   const [site, setSite] = useState("");
-  const [authorizations, setAuthorizations] = useState([]), [profiles, setProfiles] = useState([]);
-  const [authorization, setAuthorization] = useState(""), [profile, setProfile] = useState("");
-  const [note, setNote] = useState(""), [confirmed, setConfirmed] = useState(false);
+  const [readiness, setReadiness] = useState(null), [profiles, setProfiles] = useState([]);
+  const [profile, setProfile] = useState(""), [note, setNote] = useState("");
   const [rows, setRows] = useState([]), [offset, setOffset] = useState(0), [selected, setSelected] = useState(null);
   const [events, setEvents] = useState([]), [attempts, setAttempts] = useState([]), [worker, setWorker] = useState(null), [workerInfo, setWorkerInfo] = useState(null);
   const [error, setError] = useState(""), [notice, setNotice] = useState(""), [busy, setBusy] = useState(false);
@@ -26,14 +26,11 @@ export default function AssessmentsPage({ websites, initialAssessmentId = null }
 
   const refresh = useCallback(async () => {
     const version = ++generation.current;
-    const [history, status, permissions] = await Promise.all([
+    const [history, status, ready] = await Promise.all([
       api.getAssessments(site, offset), api.assessmentWorkerStatus(),
-      site ? api.getAuthorizations({ websiteId: site }) : Promise.resolve([]),
+      site ? api.assessmentReadiness(site) : Promise.resolve(null),
     ]);
-    if (version === generation.current) {
-      setRows(history); setWorker(status.worker); setWorkerInfo(status); setAuthorizations(permissions);
-      setAuthorization(current => permissions.some(a => String(a.id) === current && a.status === "approved" && a.effective_status === "active") ? current : "");
-    }
+    if (version === generation.current) { setRows(history); setWorker(status.worker); setWorkerInfo(status); setReadiness(ready); }
   }, [site, offset]);
   useEffect(() => {
     let alive = true;
@@ -48,11 +45,10 @@ export default function AssessmentsPage({ websites, initialAssessmentId = null }
   }, []);
   useEffect(() => {
     let alive = true;
-    setAuthorizations([]); setAuthorization(""); setConfirmed(false); setSelected(null); detailGeneration.current++;
-    if (site) api.getAuthorizations({ websiteId: site }).then(values => { if (alive) setAuthorizations(values); }).catch(e => { if (alive) setError(e.message); });
+    setReadiness(null); setSelected(null); detailGeneration.current++;
     return () => { alive = false; };
   }, [site]);
-  useEffect(() => { key.current = null; setConfirmed(false); setNetworkConfirmed(false); }, [site, authorization, profile, note]);
+  useEffect(() => { key.current = null; setNetworkConfirmed(false); }, [site, profile, note]);
   useEffect(() => () => { detailGeneration.current++; }, []);
   useEffect(() => {
     if (initialAssessmentId) open(initialAssessmentId).catch(error => setError(error.message));
@@ -73,6 +69,7 @@ export default function AssessmentsPage({ websites, initialAssessmentId = null }
     setBusy(true); setError(""); setNotice("");
     try { await action(); await refresh(); if (successMessage) setNotice(successMessage); } catch (e) { setNotice(""); setError(e.message); } finally { setBusy(false); }
   }
+  const gate = runGate({ site, readiness, profileId: profile, attested: networkConfirmed, busy });
   const workerState = workerInfo?.state ?? "unknown";
   const workerMessage = { running: "Running", stale: "Stale: no heartbeat recently, the worker has stopped or is blocked",
     not_started: "Not started: no heartbeat has ever been recorded", unknown: "Status unavailable" }[workerState];
@@ -81,30 +78,32 @@ export default function AssessmentsPage({ websites, initialAssessmentId = null }
     <h1>Assessment requests</h1>
     <p className="assessment-banner">Permission preflight is network-free. HTTP profiles perform one authorised HEAD. Nmap checks only TCP ports 80 and 443 on one explicitly approved public IPv4 address, behind a container firewall. All observations require human validation.</p>
     <p data-testid="worker-status" data-state={workerState}>Assessment worker: {workerMessage} · last heartbeat {date(worker?.seen_at)}</p>
-    {(workerState === "stale" || workerState === "not_started") && <p role="status">Queued assessments will not run until the worker is started. In a terminal in the <b>backend</b> folder run: <code>{workerInfo.start_command}</code></p>}
+    {(workerState === "stale" || workerState === "not_started") && <p data-testid="worker-hint">Queued assessments will not run until the worker is started. In a terminal in the <b>backend</b> folder run: <code>{workerInfo.start_command}</code></p>}
     {error && <p role="alert" className="form-error">{error}</p>}{notice && <p role="status">{notice}</p>}
     <button className="secondary-button" disabled={busy} onClick={() => run(async () => { if (selected) await open(selected.id); }, "Assessment data refreshed. Worker heartbeat changes only when the worker runs.")}>Refresh assessments</button>
-    <form className="panel assessment-form" onSubmit={e => { e.preventDefault(); run(async () => {
+    <form className="panel assessment-form" onSubmit={e => { e.preventDefault(); if (!gate.enabled) return; run(async () => {
       key.current ??= crypto.randomUUID();
-      const row = await api.requestAssessment({ website_id: Number(site), authorization_id: Number(authorization), profile_id: profile,
-        explicitly_requested: confirmed, network_permission_confirmed: networkConfirmed, note, idempotency_key: key.current });
+      const host = websites.find(w => String(w.id) === String(site))?.name ?? "website";
+      const row = await api.requestAssessment({ website_id: Number(site), authorization_id: gate.item.authorization_id, profile_id: profile,
+        explicitly_requested: true, network_permission_confirmed: isNetwork && networkConfirmed,
+        note: note.trim().length >= 20 ? note.trim() : defaultNote(host, chosenProfile.name), idempotency_key: key.current });
       key.current = null;
-      setNotice(isNmap ? "Restricted TCP assessment recorded. Ports 80 and 443 may be checked when claimed." : isNetwork ? "HTTP assessment recorded. One authorised HEAD may run when claimed." : "Permission preflight request recorded. No security scan has started."); await open(row.id);
+      setNotice(isNmap ? "Restricted TCP assessment queued. Ports 80 and 443 may be checked when the worker claims it." : isNetwork ? "HTTP assessment queued. One authorised HEAD may run when the worker claims it." : "Permission preflight queued. No security scan has started."); await open(row.id);
     }); }}>
-      <h2>{isNmap ? "Request restricted Nmap assessment" : isRemote ? "Request Azure header analysis" : isNetwork ? "Request local HTTP assessment" : "Request permission preflight"}</h2>
-      <label>Assessment website<select aria-label="Assessment website" required value={site} onChange={e => { setSite(e.target.value); setOffset(0); }}>
+      <h2>Run an assessment</h2>
+      <label>1. Website<select aria-label="Assessment website" required value={site} onChange={e => { setSite(e.target.value); setOffset(0); }}>
         <option value="">Choose a website</option>{websites.map(w => <option key={w.id} value={w.id}>{w.name} · #{w.id}</option>)}
       </select></label>
-      <label>Assessment authorisation<select aria-label="Assessment authorisation" required value={authorization} onChange={e => setAuthorization(e.target.value)}>
-        <option value="">Choose currently valid approval</option>{authorizations.filter(a => a.status === "approved" && a.effective_status === "active").map(a => <option key={a.id} value={a.id}>{a.authorization_reference} · #{a.id}</option>)}
-      </select></label>
-      <p>The approval must include automated non-intrusive scanning and its current accepted evidence. Monitoring consent and passive reconnaissance permission alone are insufficient. The backend checks live permission again.</p>
-      {isNmap && <p>Nmap additionally requires TCP port discovery permission. Both the exact hostname and the public IPv4 address being scanned must appear in the reviewed authorisation scope. Web-only permission does not grant approval to scan shared hosting or CDN infrastructure.</p>}
-      <label>Assessment profile<select aria-label="Assessment profile" required value={profile} onChange={e => setProfile(e.target.value)}>{profiles.map(p => <option key={p.id} value={p.id} disabled={p.available === false}>{p.name} · version {p.version}</option>)}</select></label>
-      <label>Assessment request note<textarea required minLength={20} maxLength={2000} value={note} onChange={e => setNote(e.target.value)} /></label>
-      <label className="assessment-check"><input type="checkbox" required checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />{isNmap ? "I explicitly request this TCP port assessment for the selected authorisation and profile." : isNetwork ? "I explicitly request this HTTP assessment for the selected authorisation and profile." : "I explicitly request this permission preflight for the selected authorisation and profile. This does not execute a scan."}</label>
-      {isNetwork && <label className="assessment-check"><input type="checkbox" required checked={networkConfirmed} onChange={e => setNetworkConfirmed(e.target.checked)} />{isNmap ? "I inspected genuine written permission to discover TCP ports 80 and 443 on the scoped hostname and explicitly approved server IP." : "I inspected genuine written permission for this real network request. Synthetic preflight evidence is insufficient."}</label>}
-      <button className="primary-button" disabled={busy || !confirmed || !authorization || chosenProfile?.available === false || (isNetwork && !networkConfirmed)}>{isNmap ? "Queue restricted Nmap assessment" : isRemote ? "Queue Azure header analysis" : isNetwork ? "Queue local HTTP assessment" : "Queue permission preflight"}</button>
+      <label>2. Assessment profile<select aria-label="Assessment profile" required value={profile} onChange={e => setProfile(e.target.value)}>{profiles.map(p => <option key={p.id} value={p.id}>{p.name} · version {p.version}</option>)}</select></label>
+      {site && <p data-testid="permission-status" data-ready={gate.item?.ready ? "true" : "false"}>
+        {gate.item?.ready ? <>Permission: <b>valid</b> · authorisation {gate.item.authorization_reference} (#{gate.item.authorization_id}) until {date(gate.item.valid_until)}. Checked now without any network request; checked again before anything runs.</>
+          : <>Permission: <b>blocked</b> · {gate.item?.reason ?? gate.reason}</>}
+      </p>}
+      {isNmap && <p>Nmap checks TCP 80 and 443 on the one approved public IPv4 address only. Web-only permission does not cover shared hosting or CDN infrastructure.</p>}
+      <label>Note (optional)<textarea maxLength={2000} placeholder="Defaults to a generated description" value={note} onChange={e => setNote(e.target.value)} /></label>
+      {isNetwork && <label className="assessment-check"><input type="checkbox" checked={networkConfirmed} onChange={e => setNetworkConfirmed(e.target.checked)} />{isNmap ? "I inspected genuine written permission to discover TCP ports 80 and 443 on the scoped hostname and approved server IP." : "I inspected genuine written permission for this real network request."}</label>}
+      <button className="primary-button" disabled={!gate.enabled}>3. Run assessment</button>
+      {!gate.enabled && site && <p role="note" data-testid="run-blocked-reason">{gate.reason}</p>}
     </form>
     <h2>Assessment history</h2><p>Completion is profile-specific. Header observations are not confirmed vulnerabilities or a security rating.</p>
     <div className="panel table-scroll"><table><thead><tr><th>Request</th><th>Website</th><th>Status</th><th>Requested</th><th>Details</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}>

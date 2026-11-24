@@ -183,6 +183,73 @@ def permission(db, website_id, authorization_id, actor_id, profile_id, *, now=No
     }
 
 
+DENIAL_TEXT = {
+    "requester_not_active_administrator": "Your account may not request assessments.",
+    "authorization_website_mismatch": "The authorisation does not belong to this website.",
+    "authorization_not_currently_approved": "The authorisation is not approved (it is pending, rejected or revoked).",
+    "authorization_changed": "The authorisation changed while being checked. Refresh and retry.",
+    "authorization_outside_validity_window": "The authorisation is expired or not yet valid (UTC dates).",
+    "unsupported_assessment_destination": "The website URL is not a supported public hostname for assessment.",
+    "exact_domain_not_authorized": "The website's exact domain is not in the authorised scope.",
+    "profile_methods_not_authorized": "The authorisation does not permit the methods this profile needs.",
+    "explicit_public_ipv4_scope_required": "Nmap needs an explicitly approved public IPv4 address in the authorised scope.",
+    "audited_human_approval_required": "There is no audited human approval for this authorisation.",
+    "current_accepted_evidence_required": "The written evidence has not been accepted for the current authorisation revision.",
+    "evidence_relationship_mismatch": "Evidence on file does not belong to this website.",
+    "evidence_integrity_unavailable": "Stored evidence failed its integrity check or is unavailable.",
+    "profile_not_available": "This assessment profile does not exist.",
+    "profile_disabled": "This profile is disabled or its scanner image is not pinned in this environment.",
+    "no_approved_authorization": "This website has no approved authorisation. Add and approve written authorisation first.",
+    "assessment_already_active": "An assessment for this website is already queued or running.",
+}
+
+
+def readiness(db, actor_id, website_id):
+    """Network-free, read-only: which profiles can run for this website and under which authorisation.
+
+    An authorisation is only selected when permission() passes for it right now (approved, inside its UTC
+    window, exact domain, profile methods, accepted evidence). Nothing is written and nothing is scheduled;
+    create_request() and the worker re-check everything again.
+    """
+    website = db.get(Website, website_id)
+    if website is None:
+        raise HTTPException(404, "Website not found")
+    records = list(db.scalars(select(WebsiteAuthorization).where(WebsiteAuthorization.website_id == website_id)
+                              .order_by(WebsiteAuthorization.id.desc())))
+    approved = [r for r in records if r.status == "approved"]
+    active = db.scalar(select(Job.id).join(AssessmentRequest, AssessmentRequest.job_id == Job.id).where(
+        AssessmentRequest.website_id == website_id, Job.job_type == "assessment",
+        Job.status.in_(["queued", "running"])).limit(1)) is not None
+    out = []
+    for selected in PROFILES.values():
+        item = {"profile_id": selected["id"], "name": selected["name"], "version": selected["version"],
+                "network_execution": bool(selected["network_execution"]), "mode": selected.get("mode", "policy_only"),
+                "ready": False, "authorization_id": None, "authorization_reference": None,
+                "valid_until": None, "reason_code": None, "reason": None}
+        code = None
+        if selected["network_execution"] and not profile_available(selected):
+            code = "profile_disabled"
+        elif not approved:
+            code = "no_approved_authorization"
+        else:
+            for record in approved:  # newest first
+                try:
+                    snapshot = permission(db, website_id, record.id, actor_id, selected["id"])
+                except Denied as exc:
+                    code = code or exc.code  # report why the newest approval fails
+                    continue
+                item.update(ready=True, authorization_id=record.id, authorization_reference=record.authorization_reference,
+                            valid_until=snapshot["valid_until"])
+                code = None
+                break
+        if item["ready"] and active:
+            item["ready"], code = False, "assessment_already_active"
+        if code:
+            item.update(reason_code=code, reason=DENIAL_TEXT.get(code, code))
+        out.append(item)
+    return out
+
+
 def get_request(db, assessment_id):
     row = db.get(AssessmentRequest, assessment_id)
     if row is None:

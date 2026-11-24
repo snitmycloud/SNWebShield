@@ -216,21 +216,20 @@ test("monitoring requires separate consent, runs through the shared engine, and 
   await expect(page.locator(".monitor-page")).toContainText("Revoked");
 });
 
-async function openAssessmentForm(page, website, record, note) {
+async function openAssessmentForm(page, website, record, note, blocked = false) {
   await signIn(page);
   await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Assessments", exact: true }).click();
   await page.getByLabel("Assessment website", { exact: true }).selectOption(String(website.id));
-  await page.getByLabel("Assessment authorisation", { exact: true }).selectOption(String(record.id));
-  await page.getByLabel("Assessment request note", { exact: true }).fill(note);
-  await expect(page.getByRole("button", { name: "Queue permission preflight", exact: true })).toBeDisabled();
-  await page.getByLabel(/^I explicitly request this permission preflight/).check();
-  await page.getByRole("button", { name: "Queue permission preflight", exact: true }).click();
+  await page.getByLabel("Note (optional)", { exact: true }).fill(note);
+  if (blocked) return;
+  await expect(page.getByTestId("permission-status")).toContainText("Permission: valid");
+  await page.getByRole("button", { name:"3. Run assessment", exact: true }).click();
 }
 
 test("assessment explicitly queues a preflight and cancellation is audited", async ({ page, request }) => {
   const { website, record } = await asset(request, { approved: true, assessmentMethod: true });
   await openAssessmentForm(page, website, record, "Browser synthetic permission preflight, no network execution.");
-  await expect(page.getByRole("status")).toContainText("Permission preflight request recorded");
+  await expect(page.getByRole("status")).toContainText("Permission preflight queued");
   const details = page.getByRole("article", { name: "Assessment details" });
   await expect(details).toContainText("queued");
   await page.getByLabel("Assessment cancellation reason").fill("Cancel this synthetic browser preflight request.");
@@ -241,8 +240,10 @@ test("assessment explicitly queues a preflight and cancellation is audited", asy
 
 test("assessment profile rejects passive reconnaissance permission", async ({ page, request }) => {
   const { website, record } = await asset(request, { approved: true });
-  await openAssessmentForm(page, website, record, "Browser synthetic request with insufficient permitted methods.");
-  await expect(page.getByRole("alert")).toContainText("profile_methods_not_authorized");
+  await openAssessmentForm(page, website, record, "Browser synthetic request with insufficient permitted methods.", true);
+  await expect(page.getByTestId("permission-status")).toContainText("does not permit the methods this profile needs");
+  await expect(page.getByRole("button", { name: "3. Run assessment", exact: true })).toBeDisabled();
+  await expect(page.getByTestId("run-blocked-reason")).toContainText("does not permit the methods");
   await expect(page.getByRole("button", { name: "Cancel assessment request", exact: true })).toHaveCount(0);
 });
 
@@ -270,11 +271,10 @@ test("assessment refresh removes revoked approval and updates queued request det
   expect(revoked.status()).toBe(200);
   await page.getByRole("button", { name: "Refresh assessments", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Assessment data refreshed");
-  await expect(page.getByLabel("Assessment authorisation", { exact: true })).toHaveValue("");
-  await expect(page.getByLabel("Assessment authorisation", { exact: true }).locator(`option[value="${record.id}"]`)).toHaveCount(0);
+  await expect(page.getByTestId("permission-status")).toContainText("no approved authorisation");
   await expect(details).toContainText("cancelled");
   await expect(details).toContainText("authorization revoked");
-  await expect(page.getByRole("button", { name: "Queue permission preflight", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name:"3. Run assessment", exact: true })).toBeDisabled();
 });
 
 
@@ -283,11 +283,9 @@ test("local HTTP assessment requires separate consent and displays reviewable ob
   await signIn(page);
   await page.getByRole("navigation",{name:"Main navigation"}).getByRole("button",{name:"Assessments",exact:true}).click();
   await page.getByLabel("Assessment website",{exact:true}).selectOption(String(website.id));
-  await page.getByLabel("Assessment authorisation",{exact:true}).selectOption(String(record.id));
   await page.getByLabel("Assessment profile",{exact:true}).selectOption("local-http-headers-v1");
-  await page.getByLabel("Assessment request note",{exact:true}).fill("BROWSER_LOCAL synthetic network broker fixture, no real website traffic.");
-  await page.getByLabel(/^I explicitly request this HTTP assessment/).check();
-  const queue=page.getByRole("button",{name:"Queue local HTTP assessment",exact:true});
+  await page.getByLabel("Note (optional)",{exact:true}).fill("BROWSER_LOCAL synthetic network broker fixture, no real website traffic.");
+  const queue=page.getByRole("button",{name:"3. Run assessment",exact:true});
   await expect(queue).toBeDisabled();
   await page.getByLabel(/^I inspected genuine written permission/).check();
   await queue.click();
@@ -309,11 +307,9 @@ test("Azure header analysis displays execution usage and cleanup", async ({ page
   await signIn(page);
   await page.getByRole("navigation",{name:"Main navigation"}).getByRole("button",{name:"Assessments",exact:true}).click();
   await page.getByLabel("Assessment website",{exact:true}).selectOption(String(website.id));
-  await page.getByLabel("Assessment authorisation",{exact:true}).selectOption(String(record.id));
   await page.getByLabel("Assessment profile",{exact:true}).selectOption("remote-docker-headers-v1");
-  await page.getByLabel("Assessment request note",{exact:true}).fill("BROWSER_REMOTE simulated SSH and Docker; no external requests.");
-  await page.getByLabel(/^I explicitly request this HTTP assessment/).check();
-  const queue=page.getByRole("button",{name:"Queue Azure header analysis",exact:true});
+  await page.getByLabel("Note (optional)",{exact:true}).fill("BROWSER_REMOTE simulated SSH and Docker; no external requests.");
+  const queue=page.getByRole("button",{name:"3. Run assessment",exact:true});
   await expect(queue).toBeDisabled();
   await page.getByLabel(/^I inspected genuine written permission/).check();
   await queue.click();
@@ -336,12 +332,10 @@ test("analyst reviews track remediation, revisions and private reviewed exports"
   await signIn(page);
   await page.getByRole("navigation",{name:"Main navigation"}).getByRole("button",{name:"Assessments",exact:true}).click();
   await page.getByLabel("Assessment website",{exact:true}).selectOption(String(website.id));
-  await page.getByLabel("Assessment authorisation",{exact:true}).selectOption(String(record.id));
   await page.getByLabel("Assessment profile",{exact:true}).selectOption("remote-docker-headers-v1");
-  await page.getByLabel("Assessment request note",{exact:true}).fill("BROWSER_REMOTE synthetic analyst review acceptance; no website traffic.");
-  await page.getByLabel(/^I explicitly request this HTTP assessment/).check();
+  await page.getByLabel("Note (optional)",{exact:true}).fill("BROWSER_REMOTE synthetic analyst review acceptance; no website traffic.");
   await page.getByLabel(/^I inspected genuine written permission/).check();
-  await page.getByRole("button",{name:"Queue Azure header analysis",exact:true}).click();
+  await page.getByRole("button",{name:"3. Run assessment",exact:true}).click();
   await expect(async()=>{
     await page.getByRole("button",{name:"Refresh assessments",exact:true}).click();
     await expect(page.getByRole("region",{name:"Analyst review and remediation"})).toBeVisible();
@@ -456,11 +450,9 @@ test("restricted Nmap profile requires consent and displays port observations", 
   await signIn(page);
   await page.getByRole("navigation",{name:"Main navigation"}).getByRole("button",{name:"Assessments",exact:true}).click();
   await page.getByLabel("Assessment website",{exact:true}).selectOption(String(website.id));
-  await page.getByLabel("Assessment authorisation",{exact:true}).selectOption(String(record.id));
   await page.getByLabel("Assessment profile",{exact:true}).selectOption("remote-nmap-web-ports-v1");
-  await page.getByLabel("Assessment request note",{exact:true}).fill("BROWSER_NMAP synthetic two-port TCP profile; no target traffic.");
-  await page.getByLabel(/^I explicitly request this TCP port assessment/).check();
-  const queue=page.getByRole("button",{name:"Queue restricted Nmap assessment",exact:true});
+  await page.getByLabel("Note (optional)",{exact:true}).fill("BROWSER_NMAP synthetic two-port TCP profile; no target traffic.");
+  const queue=page.getByRole("button",{name:"3. Run assessment",exact:true});
   await expect(queue).toBeDisabled();
   await page.getByLabel(/^I inspected genuine written permission to discover TCP ports/).check();
   await queue.click();
@@ -481,11 +473,9 @@ test("Nmap rejects a web-only approval", async ({ page, request }) => {
   await signIn(page);
   await page.getByRole("navigation",{name:"Main navigation"}).getByRole("button",{name:"Assessments",exact:true}).click();
   await page.getByLabel("Assessment website",{exact:true}).selectOption(String(website.id));
-  await page.getByLabel("Assessment authorisation",{exact:true}).selectOption(String(record.id));
   await page.getByLabel("Assessment profile",{exact:true}).selectOption("remote-nmap-web-ports-v1");
-  await page.getByLabel("Assessment request note",{exact:true}).fill("BROWSER_NMAP denied synthetic web-only authorisation.");
-  await page.getByLabel(/^I explicitly request this TCP port assessment/).check();
+  await page.getByLabel("Note (optional)",{exact:true}).fill("BROWSER_NMAP denied synthetic web-only authorisation.");
   await page.getByLabel(/^I inspected genuine written permission to discover TCP ports/).check();
-  await page.getByRole("button",{name:"Queue restricted Nmap assessment",exact:true}).click();
-  await expect(page.getByRole("alert")).toContainText("profile_methods_not_authorized");
+  await expect(page.getByTestId("permission-status")).toContainText("does not permit the methods this profile needs");
+  await expect(page.getByRole("button",{name:"3. Run assessment",exact:true})).toBeDisabled();
 });
