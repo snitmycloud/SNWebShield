@@ -28,7 +28,7 @@ SNWebShield is an internal platform for a website cybersecurity services team. I
 - Current database: SQLite with additive Alembic migrations; PostgreSQL deployment is unverified
 - Background jobs: shared durable SQLAlchemy job engine with separate scheduler, monitoring worker and notification dispatcher
 - Evidence: private local files with authenticated retrieval; encrypted object storage is future work
-- Reports: HTML templates rendered to PDF
+- Reports: PDFs rendered locally with `reportlab`, released only after human approval
 - Development: Git + GitHub
 
 The application runs locally on Windows (React frontend, FastAPI backend, workers); only the isolated scanner container runs on the Azure VM. It has been hardened for single-team production use behind HTTPS but has not been independently penetration tested; see the open items in [docs/AUDIT_MATRIX.md](docs/AUDIT_MATRIX.md).
@@ -119,7 +119,7 @@ Migration `0013_production_hardening` closes the authentication risks: every log
 
 Three roles now exist: `analyst`, `lead_analyst` (also approves reports, accepts risk, closes and reopens closures) and `admin` (everything; the bootstrap account). `SEPARATION_OF_DUTIES_ENABLED=true` adds dual sign-off: the analyst who assessed a finding cannot approve it, the report creator cannot approve the report, and whoever handled remediation cannot close the assessment. It is off by default so one admin can run the whole workflow. Once an assessment is closed, its findings and remediation are locked until a lead analyst or admin formally reopens the closure with an audited reason. Evidence purging now overwrites the file before unlinking it while keeping the document's SHA-256 as immutable audit proof, and `python -m app.cli.evidence_retention` reports expired documents without deleting anything.
 
-`backend/tests/test_e2e_lifecycle.py` drives the whole workflow from client registration to closure and checks the audit trail at every stage. Verified with @@BE@@ backend tests, @@FE@@ frontend tests and a passing production build. The per-risk status and test references are in [docs/AUDIT_MATRIX.md](docs/AUDIT_MATRIX.md).
+`backend/tests/test_e2e_lifecycle.py` drives the whole workflow from client registration to closure and checks the audit trail at every stage. Verified with 580 backend tests, 53 frontend tests and a passing production build. The per-risk status and test references are in [docs/AUDIT_MATRIX.md](docs/AUDIT_MATRIX.md).
 
 ## Setup, run, test and deploy
 

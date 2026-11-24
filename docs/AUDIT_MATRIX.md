@@ -11,7 +11,7 @@
 | After Milestone 3 (Module F) | **470 backend tests, 31 frontend unit tests, production build: all passing** |
 | After Milestone 4 (Module G) | **501 backend tests, 40 frontend unit tests, production build: all passing** |
 | After Milestone 5 (Module H) | **540 backend tests, 49 frontend unit tests, production build: all passing** |
-| After Milestone 6 (production hardening) | **@@BE@@ backend tests (incl. @@HARD@@ in `test_production_hardening.py` and 1 end-to-end lifecycle test), @@FE@@ frontend unit tests, production build: all passing** |
+| After Milestone 6 (production hardening) | **580 backend tests (incl. 39 in `test_production_hardening.py` and 1 end-to-end lifecycle test), 53 frontend unit tests, production build: all passing** |
 | Database | Alembic head is `0013_production_hardening` after Milestone 6 (`0012_remediation_retesting` after Milestone 5). Pre-0013 backup: `backups/db-*-pre-0013/` (gitignored, integrity-checked). `0013` was applied to a **copy** of the development database and verified (data, triggers and `integrity_check` intact); the development database file itself is migrated by the operator with `python -m alembic upgrade head` (see Milestone 6 manual steps). |
 
 **Status legend.** ✅ Fully implemented and tested · 🟡 Partially implemented · 🧪 Implemented but not tested · ❌ Missing · 🔧 Broken or requiring improvement
@@ -352,10 +352,10 @@ Security tests cover: retests rejected for revoked, expired, out-of-scope, metho
 | Suite | Result |
 |---|---|
 | `python -m pytest tests/test_e2e_lifecycle.py` | **1 passed** |
-| `python -m pytest tests/test_production_hardening.py` | **@@HARD@@ passed** |
-| Backend `pytest` (full regression) | **@@BE@@ passed**, 1 deprecation warning (540 before, plus @@NEW@@ new) |
-| Frontend unit (`npm test`) | **@@FE@@ passed** (49 before, plus 3 in `api.test.js` and 1 in `remediation.test.js`) |
-| `npm run build` | @@BUILD@@ |
+| `python -m pytest tests/test_production_hardening.py` | **39 passed** (32 test functions; `test_password_policy` is parametrised over 8 cases) |
+| Backend `pytest` (full regression) | **580 passed**, 1 deprecation warning (540 before, plus 40 new: 39 hardening plus 1 end-to-end) |
+| Frontend unit (`npm test`) | **53 passed** (49 before, plus 3 in `api.test.js` and 1 in `remediation.test.js`) |
+| `npm run build` | Passed |
 | Playwright journeys | Not re-run (no journey touches the changed screens) |
 | Migration | `0013` applied to a copy of the development database: version, data, triggers and `PRAGMA integrity_check` verified; `H::test_migration_0013_…` covers a 0012 → head upgrade with data |
 
