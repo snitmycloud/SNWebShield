@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from app.core.rbac import require_closure_role, require_remediation_role
 from app.core.security import get_current_admin
 from app.core.time import as_utc
 from app.db.session import get_db
@@ -13,6 +14,7 @@ from app.models.admin import Admin
 from app.models.assessment import AssessmentRequest
 from app.models.jobs import Job, JobResult, JobAttempt, ExecutionEvent, WorkerHeartbeat
 from app.services import assessments as service
+from app.services import remediation as remediation_service
 
 router = APIRouter(prefix="/assessments", tags=["Assessments"], dependencies=[Depends(get_current_admin)])
 
@@ -101,6 +103,22 @@ def listing(website_id: int | None = Query(default=None, gt=0), limit: int = Que
 @router.get("/{assessment_id}")
 def detail(assessment_id: UUID, db: Session = Depends(get_db)):
     return read(db, service.get_request(db, str(assessment_id)))
+
+
+class Closure(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    human_validation_confirmed: Literal[True]
+    justification: str = Field(min_length=20, max_length=4000)
+
+
+@router.get("/{assessment_id}/closure")
+def closure(assessment_id: UUID, db: Session = Depends(get_db), admin: Admin = Depends(require_remediation_role)):
+    return remediation_service.closure_state(db, str(assessment_id))
+
+
+@router.post("/{assessment_id}/close")
+def close(assessment_id: UUID, payload: Closure, db: Session = Depends(get_db), admin: Admin = Depends(require_closure_role)):
+    return remediation_service.close_assessment(db, str(assessment_id), admin.id, payload.justification)
 
 
 @router.get("/{assessment_id}/reviews")

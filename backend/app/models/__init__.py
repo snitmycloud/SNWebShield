@@ -15,3 +15,4 @@ from app.models.vulnerability import (Vulnerability, VulnerabilityEvent, Vulnera
                                       VulnerabilityOccurrence, VulnerabilityRiskAssessment, VulnerabilitySignoff,
                                       VulnerabilitySuppression)
 from app.models.report import VaptReport, VaptReportApproval, VaptReportArtifact, VaptReportEvent
+from app.models.remediation import AssessmentClosure, RemediationEvent, RetestRequest, VulnerabilityRemediation

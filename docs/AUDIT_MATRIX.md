@@ -10,7 +10,8 @@
 | After Milestone 2 (Module E) | **430 backend tests, 22 frontend unit tests, production build: all passing** |
 | After Milestone 3 (Module F) | **470 backend tests, 31 frontend unit tests, production build: all passing** |
 | After Milestone 4 (Module G) | **501 backend tests, 40 frontend unit tests, production build: all passing** |
-| Database | Alembic head is `0011_vapt_reports` after Milestone 4 (`0010_analyst_workbench` after Milestone 3). Pre-0011 backup: `backups/db-*-pre-0011/` (gitignored, integrity-checked). The development database file itself is migrated by the operator with `python -m alembic upgrade head` (see Milestone 4 manual steps). |
+| After Milestone 5 (Module H) | **540 backend tests, 49 frontend unit tests, production build: all passing** |
+| Database | Alembic head is `0012_remediation_retesting` after Milestone 5 (`0011_vapt_reports` after Milestone 4). Pre-0012 backup: `backups/db-*-pre-0012/` (gitignored, integrity-checked). The development database file itself is migrated by the operator with `python -m alembic upgrade head` (see Milestone 5 manual steps). |
 
 **Status legend.** ✅ Fully implemented and tested · 🟡 Partially implemented · 🧪 Implemented but not tested · ❌ Missing · 🔧 Broken or requiring improvement
 
@@ -130,16 +131,24 @@ Service functions are in `backend/app/services/reports.py`, routes in `backend/a
 
 **Known limits.** One analyst can generate and approve the same report (R14, Milestone 6). Reports cover one assessment each, and there is no client-facing portal. PDFs use the built-in Latin-1 fonts, so characters outside Latin-1 in client or target text print as `?`. The PDF is stored in the database, not on the evidence volume.
 
-## H. Remediation and retesting
+## H. Remediation, retesting and closure (Milestone 5: complete)
+
+Service functions are in `backend/app/services/remediation.py`, routes in `backend/app/api/routes/remediation.py` (`/api/v1/remediation`) plus `GET /assessments/{id}/closure` and `POST /assessments/{id}/close` in `api/routes/assessments.py`, models in `backend/app/models/remediation.py`, migration `0012_remediation_retesting`, role gates in `core/rbac.py` (`require_remediation_role`, `ensure_risk_acceptor`, `require_closure_role`), UI in `frontend/src/RemediationPage.jsx` and `frontend/src/lib/remediation.js`. The older observation-level fields (`remediation_status`, `FindingDueDate`, `retest_assessment_id`, `test_findings.py`) belong to Module D reviews and are unchanged; Module H tracks the confirmed `Vulnerability` entities from Modules E and F.
 
 | Sub-feature | Status | Evidence |
 |---|---|---|
-| Remediation tracking | ✅ | `remediation_status`, owner, due dates with history (`FindingDueDate`, `test_findings.py`) |
-| Client updates | ❌ | No client-facing view or notifications |
-| Retest requests | 🟡 | Resolution needs a later completed same-target assessment (`retest_assessment_id`, `test_resolution_requires_later_same_target_retest`). No retest-request workflow. |
-| Verification of fixes | 🟡 | Analyst links the retest. No automatic comparison of the check result. |
-| Reopening unresolved issues | ✅ | `test_resolved_not_overdue_and_reopened_uses_same_deadline` |
-| Final assessment closure | ❌ | No engagement or closure entity |
+| Remediation lifecycle per confirmed finding | ✅ | `VulnerabilityRemediation` (`open` is implicit until the first update), statuses `open`, `in_progress`, `fix_submitted`, `retest_requested`, `verified_fixed`, `reopened`, `risk_accepted`; `update_status()` with `MANUAL_TRANSITIONS` and optimistic `expected_version`. `retest_requested` and `verified_fixed` can only be reached through a retest. Tests: `test_confirmed_findings_start_open_and_status_changes_record_client_updates`, `test_illegal_transitions_stale_versions_and_unconfirmed_findings_are_refused`, `test_invalid_updates_are_rejected_without_writes` |
+| Client notes, target dates and actor/UTC history | ✅ | Notes and target date (within 730 days) are stored on the record and in the append-only `RemediationEvent` ledger with actor, UTC time and from/to status (`add_event()`); `GET /remediation/{id}` returns the history. Tests: `test_confirmed_findings_start_open_and_status_changes_record_client_updates`, `test_hostile_notes_are_stored_as_inert_bounded_text` |
+| Formal risk acceptance | ✅ | `risk_accepted` needs a 20-character justification, an explicit attestation and the separate `RISK_ACCEPTANCE_ROLES` allow-list; only a reopen leaves it. Tests: `test_risk_acceptance_needs_attestation_and_a_real_justification`, `test_role_allow_lists_gate_remediation_risk_acceptance_and_closure_separately` |
+| Authorisation-gated retest requests | ✅ | `request_retest()` needs `fix_submitted`, an explicit request and network confirmation, and then calls the existing `assessments.create_request()`, so the live written authorisation, exact domain, methods, evidence, DNS pinning and the worker's execution-time revalidation apply unchanged; any denial is audited by that path and nothing is recorded. No local fallback, one retest at a time, at most 10 per finding. Tests: `test_retest_needs_a_submitted_fix_and_explicit_confirmation`, `test_retest_requests_revalidate_authorisation_scope_and_methods` (revoked, expired, out of scope, method not permitted, unknown authorisation), `test_retest_is_refused_when_the_website_target_no_longer_matches_the_finding`, `test_revocation_after_a_retest_request_fails_the_retest_closed`, `test_one_retest_at_a_time_and_a_retest_cannot_be_reopened_mid_flight` |
+| Fix verification and automatic reopening | ✅ | `reconcile()` resolves a retest from its job and the scanner's stored, hash-checked occurrence: not detected → `verified_fixed`, detected → automatic `reopened` with the fresh occurrence and evidence hash linked, no applicable or tampered observation → `inconclusive` (back to `fix_submitted`), failed or cancelled job → `failed`. Only conclusive outcomes increment `retest_attempts`. It runs from the worker hook (`vulnerabilities.ingest_after_assessment` → `on_assessment_ingested()`) and lazily on reads. Tests: `test_a_retest_that_no_longer_detects_the_weakness_verifies_the_fix`, `test_a_retest_that_still_reproduces_reopens_with_fresh_evidence_and_counts_the_attempt`, `test_retest_waits_for_ingestion_then_resolves_through_the_worker_hook`, `test_a_retest_without_an_applicable_observation_is_inconclusive`, `test_retest_evidence_that_fails_its_hash_check_is_inconclusive_not_verified` |
+| Manual analyst reopening | ✅ | `reopen()` from `verified_fixed`, `risk_accepted` or `fix_submitted` with a 20-character reason; refused while a retest is pending. Tests: `test_analysts_can_reopen_verified_accepted_and_submitted_findings_with_a_reason`, `test_open_findings_cannot_be_reopened` |
+| Final assessment closure | ✅ | `closure_state()` / `close_assessment()`: every confirmed finding detected in the assessment must be `verified_fixed` or `risk_accepted` (blocked by `open`, `in_progress`, `fix_submitted`, `retest_requested`, `reopened`); attested justification; immutable `AssessmentClosure` with a status snapshot and SHA-256; cannot close twice. Detected findings an analyst has not yet reviewed do not block closure but are reported as `unreviewed_count`. Tests: `test_closure_is_blocked_while_confirmed_findings_are_unresolved`, `test_assessment_closes_once_every_confirmed_finding_is_verified_or_formally_accepted`, `test_closure_of_unknown_assessments_and_assessments_without_confirmed_findings` |
+| Immutable audit records | ✅ | ORM guards plus SQLite triggers: append-only remediation events and closures, retest request columns frozen after the request, a finished retest's result is final, no deletes. Tests: `test_orm_and_database_block_rewriting_history_closures_and_finished_retests`, `test_migration_installs_remediation_tables_and_triggers_preserving_data` |
+| Authentication, RBAC and sanitisation | ✅ | Router-level `require_remediation_role`; closure also needs `require_closure_role`; strict pydantic bodies (`extra="forbid"`), `strip_controls()` on every note. Tests: `test_every_remediation_and_closure_route_rejects_unauthenticated_callers`, `test_forged_role_tokens_and_deactivated_admins_are_rejected_without_writes`, `test_role_allow_lists_gate_remediation_risk_acceptance_and_closure_separately`, `test_unknown_findings_and_malformed_ids_and_filters`, `test_listing_filters_counts_search_and_pagination` |
+| Frontend | ✅ | `RemediationPage.jsx`: status filters and counts, remediation updates, retest request with authorisation choice, retest history and outcomes, manual reopen, closure panel with blocking reasons. `tests/remediation.test.js` (9 tests: API paths and tokens, server refusals, allowed transitions, risk acceptance, retest gating, outcome labels, reopen, closure gating, blocking statuses) |
+
+**Known limits.** `verified_fixed` is recorded by the scanner comparison without a second analyst sign-off (R14, Milestone 6). Client fix updates are entered by analysts; there is no client-facing portal or notification. The existing 60-second cooldown and one-pending-assessment-per-website rule also apply to retests. Closing an assessment does not block later updates to its findings. A retest whose scanner report fails ingestion stays `retest_requested` until ingestion succeeds. Only header profiles can be retested (the Nmap profile creates no vulnerabilities).
 
 ---
 
@@ -158,6 +167,7 @@ Service functions are in `backend/app/services/reports.py`, routes in `backend/a
 | R9 | Evidence retention is not enforced automatically; deletion is not a secure wipe | Medium | Open. Add a scheduled retention report. Recommend BitLocker on the evidence volume. |
 | R10 | PDF or executive reports; no publication approval | Medium (product) | **Closed in Milestone 4.** Reports contain only eligible findings, an official PDF exists only after a human approval, and every download re-verifies its SHA-256. Residual risk is R14 (single analyst may generate and approve). |
 | R14 | One analyst can both assess and approve (findings and reports); only the `admin` role exists | Medium | Open. Milestone 6: distinct analyst/reviewer roles, second-analyst approval for high and critical findings and for report approval (`pending_approval` is reserved for this). |
+| R15 | `verified_fixed` and assessment closure need no second analyst; a retest can be inconclusive or stuck if ingestion fails | Low–Med | Open. Milestone 6: second-analyst confirmation of fix verification and closure; surface stuck ingestion on the dashboard. |
 | R11 | Starlette/httpx test-client deprecation warning | Low | Upgrade dependency in a maintenance pass |
 | R12 | Real-target acceptance with genuine written authorisation not yet performed for the hardened build | Medium | User step (below) |
 | R13 | Single global assessment slot and 60-second cooldown limit throughput | Low | Accepted for local use |
@@ -264,6 +274,42 @@ Security tests cover: exclusion of unassessed, unconfirmed, dismissed, stale-rev
 
 ---
 
+## Milestone 5: remediation, retesting and closure (Module H)
+
+**Status: complete, verified and committed on `feat/snwebshield-hardening`.**
+
+| Area | Change | Files |
+|---|---|---|
+| Migration | `0012_remediation_retesting`: `vulnerability_remediations`, `remediation_events`, `retest_requests`, `assessment_closures` plus SQLite triggers (append-only events and closures, frozen retest request columns, final retest results, no deletes). Additive; downgrade is refused to preserve history. | `backend/migrations/versions/0012_remediation_retesting.py` |
+| Models | `VulnerabilityRemediation`, `RemediationEvent`, `RetestRequest`, `AssessmentClosure` with ORM guards; triggers also attached through `after_create` | `backend/app/models/remediation.py` |
+| Service | Status workflow, retest request through the existing assessment path, reconciliation, closure | `backend/app/services/remediation.py` |
+| Worker hook | After a scanner report is ingested, linked retests are reconciled (failures never affect the recorded scanner result) | `backend/app/services/vulnerabilities.py` (`ingest_after_assessment`) |
+| API / RBAC | `/api/v1/remediation/*`, `GET /assessments/{id}/closure`, `POST /assessments/{id}/close`; separate remediation, risk acceptance and closure allow-lists; startup refuses to run without the new tables | `api/routes/remediation.py`, `api/routes/assessments.py`, `core/rbac.py`, `main.py` |
+| Frontend | Remediation and retesting page, pure helpers, API client calls, navigation entry | `RemediationPage.jsx`, `lib/remediation.js`, `lib/api.js`, `App.jsx` |
+| Test fixes | Three existing assertions that pinned the Alembic head now expect `0012_remediation_retesting` | `test_migrations.py`, `test_workbench.py`, `test_reports.py` |
+
+### Test results (2026-11-24, Windows, run sequentially)
+
+| Suite | Result |
+|---|---|
+| `python -m pytest tests/test_remediation.py` | **39 passed** |
+| Backend `pytest` (full regression) | **540 passed**, 1 deprecation warning (501 before, plus 39 new) |
+| Frontend unit (`npm test`) | **49 passed** (40 before, plus 9 in `tests/remediation.test.js`) |
+| `npm run build` | Passed |
+| Playwright journeys | Not re-run (no existing journey touches remediation) |
+
+Security tests cover: retests rejected for revoked, expired, out-of-scope, method-denied and unknown authorisations with no assessment or retest recorded; revocation after a request cancels the job, makes no target request and fails the retest closed; fix verification versus automatic reopen with fresh linked evidence; tampered or missing retest evidence never verifies a fix; closure blocked by every unresolved status and succeeding only when all confirmed findings are verified or formally accepted; unauthenticated, forged-role, deactivated-admin and role-allow-list rejection; ORM and raw-SQL immutability.
+
+### Manual configuration
+
+1. Back up, then migrate the development database: `cd backend; .\.venv\Scripts\python.exe -m alembic upgrade head` (a pre-0012 copy is in `backups/`). Restart the API; startup refuses to run without the new tables.
+2. Restart the `assessment-worker` so it loads the retest reconciliation hook.
+3. No new dependencies, `.env` settings, Azure, VM or Docker changes. The Milestone 1 manual VM steps are still pending.
+4. A retest uses the existing assessment profile settings (for example `ASSESSMENT_LOCAL_HTTP_ENABLED` or the remote Docker settings) and the existing 60-second cooldown. It needs a currently valid approved authorisation for the exact domain.
+5. Run `pytest`, `npm test` and `npm run build` one after another, never together.
+
+---
+
 ## Remaining roadmap
 
 Each milestone follows the CLAUDE.md workflow: back up the database, add migrations, unit/API/security tests, frontend tests and a build, update this file and the README, and commit locally.
@@ -274,5 +320,5 @@ Each milestone follows the CLAUDE.md workflow: back up the database, add migrati
 | M2 — Vulnerability management (E) | Done | M1 |
 | M3 — Analyst workbench (F) | Done | M2 |
 | M4 — VAPT reporting (G) | Done | M3 |
-| **M5 — Remediation and retesting (H)** | Retest request workflow tied to a fresh authorisation check; automatic before/after check comparison; client update log; engagement closure with a final report | M4 |
+| M5 — Remediation, retesting and closure (H) | Done | M4 |
 | **M6 — Production hardening** | **R1** auth audit log; **R2** login throttling; **R3** server-side logout (`jti` denylist); **R14** distinct analyst roles and second-analyst approval; R8 Nmap runner isolation inspection; R6 orphan-container report; R9 evidence retention report; client/website edit and archive with audit | M3 |

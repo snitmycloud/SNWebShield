@@ -233,6 +233,18 @@ export const api = {
   reportEvents: id => request(`/reports/${encodeURIComponent(id)}/events?limit=100`),
   approveReport: (id, data) => jsonPost(`/reports/${encodeURIComponent(id)}/approve`, data),
   rejectReport: (id, data) => jsonPost(`/reports/${encodeURIComponent(id)}/reject`, data),
+  // Module H: remediation, retesting and closure. A retest is a normal authorised assessment request.
+  remediationList: (filters = {}, offset = 0) => {
+    const params = new URLSearchParams({ limit: "50", offset: String(offset) });
+    for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
+    return request(`/remediation?${params}`);
+  },
+  remediation: id => request(`/remediation/${encodeURIComponent(id)}`),
+  updateRemediation: (id, data) => jsonPost(`/remediation/${encodeURIComponent(id)}/update`, data),
+  reopenRemediation: (id, data) => jsonPost(`/remediation/${encodeURIComponent(id)}/reopen`, data),
+  requestRetest: (id, data) => jsonPost(`/remediation/${encodeURIComponent(id)}/retests`, data),
+  assessmentClosure: id => request(`/assessments/${encodeURIComponent(id)}/closure`),
+  closeAssessment: (id, data) => jsonPost(`/assessments/${encodeURIComponent(id)}/close`, data),
   downloadReportPdf: (id, official) =>
     request(`/reports/${encodeURIComponent(id)}/${official ? "pdf" : "preview"}`, { binary: true }),
 

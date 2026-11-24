@@ -302,6 +302,8 @@ def ingest_after_assessment(assessment_id):
         try:
             for report_id in pending_reports(db, assessment_id, 1):
                 ingest_one(db, report_id)
+            from app.services import remediation  # retests resolve once their observation is ingested
+            remediation.on_assessment_ingested(db, assessment_id)
         except Exception:
             db.rollback()
             request = db.get(AssessmentRequest, assessment_id)

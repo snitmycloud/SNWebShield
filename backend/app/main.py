@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect
 
-from app.api.routes import auth, authorizations, clients, health, websites, evidence, monitoring, assessments, findings, vulnerabilities, workbench, reports
+from app.api.routes import auth, authorizations, clients, health, websites, evidence, monitoring, assessments, findings, vulnerabilities, workbench, reports, remediation
 from app.core.config import settings
 from app.db.session import engine
 from app.models import (  # noqa: F401 - register the model relationships
@@ -41,6 +41,8 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("Analyst workbench migration required: python -m alembic upgrade head")
     if not all(inspector.has_table(name) for name in ("vapt_reports", "vapt_report_approvals", "vapt_report_artifacts", "vapt_report_events")):
         raise RuntimeError("VAPT reporting migration required: python -m alembic upgrade head")
+    if not all(inspector.has_table(name) for name in ("vulnerability_remediations", "remediation_events", "retest_requests", "assessment_closures")):
+        raise RuntimeError("Remediation migration required: python -m alembic upgrade head")
     yield
 
 
@@ -78,3 +80,4 @@ app.include_router(findings.router, prefix="/api/v1")
 app.include_router(vulnerabilities.router, prefix="/api/v1")
 app.include_router(workbench.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
+app.include_router(remediation.router, prefix="/api/v1")
