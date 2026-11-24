@@ -5,6 +5,7 @@ from email.message import EmailMessage
 import multiprocessing
 import smtplib
 import ssl
+import threading
 import time
 from uuid import uuid4
 from sqlalchemy import select, update, or_
@@ -116,9 +117,20 @@ def notification_tick():
         db.commit()
 
 
+def _heartbeat_loop(name, stop, interval=10):
+    """Heartbeat independently of the job loop so a long scan is not reported as a dead worker."""
+    while not stop.wait(interval):
+        try:
+            with SessionLocal() as db: engine.heartbeat(db, name); db.commit()
+        except Exception: pass  # a missed beat is itself the signal; never log details
+
+
 def main():
     parser = argparse.ArgumentParser(); parser.add_argument("role", choices=["scheduler", "worker", "notifications", "assessment-worker"])
     parser.add_argument("--once", action="store_true"); args = parser.parse_args()
+    stop = threading.Event()
+    if args.role == "assessment-worker" and not args.once:
+        threading.Thread(target=_heartbeat_loop, args=("assessment-worker", stop), daemon=True).start()
     try:
         while True:
             try:
@@ -134,6 +146,7 @@ def main():
             if args.once: break
             time.sleep(2)
     except KeyboardInterrupt: pass
+    finally: stop.set()
 
 
 if __name__ == "__main__": main()

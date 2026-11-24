@@ -8,13 +8,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.core.rbac import require_closure_reopen_role, require_closure_role, require_remediation_role
 from app.core.security import get_current_admin
-from app.core.time import as_utc
+from app.core.time import as_utc, utc_now
 from app.db.session import get_db
 from app.models.admin import Admin
 from app.models.assessment import AssessmentRequest
 from app.models.jobs import Job, JobResult, JobAttempt, ExecutionEvent, WorkerHeartbeat
 from app.services import assessments as service
 from app.services import remediation as remediation_service
+
+WORKER_STALE_SECONDS = 45  # worker heartbeats every ~10 s from a dedicated thread
 
 router = APIRouter(prefix="/assessments", tags=["Assessments"], dependencies=[Depends(get_current_admin)])
 
@@ -82,7 +84,13 @@ def profiles():
 @router.get("/worker-status")
 def worker_status(db: Session = Depends(get_db)):
     row = db.get(WorkerHeartbeat, "assessment-worker")
-    return {"worker": serial(row) if row else None, "mode": "profile_controlled",
+    # The server clock decides health; the browser clock is never trusted.
+    age = None if row is None else max(0, int((utc_now() - as_utc(row.seen_at)).total_seconds()))
+    state = "not_started" if row is None else "running" if age <= WORKER_STALE_SECONDS else "stale"
+    return {"worker": serial(row) if row else None, "state": state, "age_seconds": age,
+            "stale_after_seconds": WORKER_STALE_SECONDS,
+            "start_command": r".\.venv\Scripts\python.exe -m app.cli.operations assessment-worker",
+            "mode": "profile_controlled",
             "scanner_tools_enabled": service.profile_available(service.PROFILES[service.NMAP_PROFILE_ID])}
 
 

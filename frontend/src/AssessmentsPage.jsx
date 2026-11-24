@@ -13,7 +13,7 @@ export default function AssessmentsPage({ websites, initialAssessmentId = null }
   const [authorization, setAuthorization] = useState(""), [profile, setProfile] = useState("");
   const [note, setNote] = useState(""), [confirmed, setConfirmed] = useState(false);
   const [rows, setRows] = useState([]), [offset, setOffset] = useState(0), [selected, setSelected] = useState(null);
-  const [events, setEvents] = useState([]), [attempts, setAttempts] = useState([]), [worker, setWorker] = useState(null);
+  const [events, setEvents] = useState([]), [attempts, setAttempts] = useState([]), [worker, setWorker] = useState(null), [workerInfo, setWorkerInfo] = useState(null);
   const [error, setError] = useState(""), [notice, setNotice] = useState(""), [busy, setBusy] = useState(false);
   const [reason, setReason] = useState("");
   const [networkConfirmed, setNetworkConfirmed] = useState(false);
@@ -31,7 +31,7 @@ export default function AssessmentsPage({ websites, initialAssessmentId = null }
       site ? api.getAuthorizations({ websiteId: site }) : Promise.resolve([]),
     ]);
     if (version === generation.current) {
-      setRows(history); setWorker(status.worker); setAuthorizations(permissions);
+      setRows(history); setWorker(status.worker); setWorkerInfo(status); setAuthorizations(permissions);
       setAuthorization(current => permissions.some(a => String(a.id) === current && a.status === "approved" && a.effective_status === "active") ? current : "");
     }
   }, [site, offset]);
@@ -73,12 +73,15 @@ export default function AssessmentsPage({ websites, initialAssessmentId = null }
     setBusy(true); setError(""); setNotice("");
     try { await action(); await refresh(); if (successMessage) setNotice(successMessage); } catch (e) { setNotice(""); setError(e.message); } finally { setBusy(false); }
   }
-  const workerRecent = worker && Date.now() - new Date(worker.seen_at).getTime() < 90000;
+  const workerState = workerInfo?.state ?? "unknown";
+  const workerMessage = { running: "Running", stale: "Stale: no heartbeat recently, the worker has stopped or is blocked",
+    not_started: "Not started: no heartbeat has ever been recorded", unknown: "Status unavailable" }[workerState];
   return <section className="assessment-page">
     <div className="eyebrow">ASSESSMENT CONTROLS · STAGE ONE</div>
     <h1>Assessment requests</h1>
     <p className="assessment-banner">Permission preflight is network-free. HTTP profiles perform one authorised HEAD. Nmap checks only TCP ports 80 and 443 on one explicitly approved public IPv4 address, behind a container firewall. All observations require human validation.</p>
-    <p>Assessment worker: {workerRecent ? "Recent heartbeat" : "Not running / stale"} · {date(worker?.seen_at)}</p>
+    <p data-testid="worker-status" data-state={workerState}>Assessment worker: {workerMessage} · last heartbeat {date(worker?.seen_at)}</p>
+    {(workerState === "stale" || workerState === "not_started") && <p role="status">Queued assessments will not run until the worker is started. In a terminal in the <b>backend</b> folder run: <code>{workerInfo.start_command}</code></p>}
     {error && <p role="alert" className="form-error">{error}</p>}{notice && <p role="status">{notice}</p>}
     <button className="secondary-button" disabled={busy} onClick={() => run(async () => { if (selected) await open(selected.id); }, "Assessment data refreshed. Worker heartbeat changes only when the worker runs.")}>Refresh assessments</button>
     <form className="panel assessment-form" onSubmit={e => { e.preventDefault(); run(async () => {

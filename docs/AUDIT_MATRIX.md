@@ -384,3 +384,23 @@ Milestone 6 closes the planned series. Each milestone followed the CLAUDE.md wor
 | M4 — VAPT reporting (G) | Done | M3 |
 | M5 — Remediation, retesting and closure (H) | Done | M4 |
 | M6 — Production hardening | Done: R1, R2, R3, R14, closed-assessment lock, evidence retention hardening, end-to-end test. Not done: R8 Nmap runner inspection, R6 orphan-container report, second-analyst sign-off on `verified_fixed`, stuck-ingestion indicator, client/website edit and archive | M3 |
+
+---
+
+## Assessment module stabilisation (branch `feature/assessment-module-stabilise`)
+
+### Worker "Not running / stale" (diagnosed 2026-11-24)
+Root cause was **process startup, not a code defect**: no `assessment-worker` process was running (last heartbeat 2026-11-24 07:25 UTC) because the worker is a separate process that nothing starts. Heartbeat timestamps and UTC serialisation were correct. Two real defects were fixed alongside:
+- The browser compared its own clock with the heartbeat; the server now computes `state` (`running` / `stale` / `not_started`), `age_seconds` and the start command (`GET /assessments/worker-status`, stale after 45 s).
+- Heartbeats only ran between ticks, so a long scan could make a healthy worker look dead; the worker now heartbeats every 10 s from a dedicated thread.
+The page now names the state and shows the exact start command. `scripts/start-workers.ps1` starts any missing local role.
+
+### Implementation matrix (from inspection; not every row re-verified end to end this session)
+| Area | Status |
+|---|---|
+| Permission preflight (network-free), explicit request, live revalidation, idempotency, one active assessment | Implemented, covered by `test_assessments.py` (49 pass) |
+| HTTP HEAD profile, remote Docker header profile, Nmap 80/443 profile | Implemented in M1; VM runner redeploy and isolation attestation still pending the user |
+| Job states, lease expiry, cancel, late-result rejection | Implemented and tested |
+| Worker health | Fixed here |
+| Observations, analyst validation, vulnerability ingestion, PDF reports | Implemented in M2-M4 |
+| Not yet done | One-click "request from website" flow and UI simplification; R8 Nmap runner inspection; R6 orphan-container report; stuck-job recovery review after worker restart |
