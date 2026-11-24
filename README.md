@@ -97,6 +97,10 @@ The scanner worker now uses one fixed, hardened SSH transport for both remote pr
 
 The full audit, risk register, test evidence, manual VM steps and remaining roadmap are in [docs/AUDIT_MATRIX.md](docs/AUDIT_MATRIX.md). No schema migration was added.
 
+## Milestone 2: vulnerability management (Module E)
+
+Migration `0009_vulnerabilities` adds a normalised `Vulnerability` entity, per-assessment `VulnerabilityOccurrence` records and an append-only event history. Repeated detections of the same check on the same website and target share a fingerprint, so they are deduplicated across assessments while each occurrence keeps its own evidence hash. Each vulnerability carries scanner and analyst severity, a confidence score with its factors, reproduction steps, and a validation state. Nothing becomes confirmed without an explicit human analyst validation, and analyst comments are recorded in the audit history. The API is under `/api/v1/vulnerabilities` and the dashboard has a new Vulnerabilities page. Verified with 430 backend tests, 22 frontend tests and a passing production build. Back up the database before running `alembic upgrade head`.
+
 ## Local authorisation evidence milestone
 
 Private document upload, authenticated retrieval, human reviews, retention/holds and the approval evidence gate are implemented for local testing. Follow [the evidence guide](docs/AUTHORIZATION_EVIDENCE.md) for migration `0003_evidence`, configuration, API details, backup limitations and Windows validation. See the monitoring guide for current validation limits; no GitHub push is required.

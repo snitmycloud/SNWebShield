@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect
 
-from app.api.routes import auth, authorizations, clients, health, websites, evidence, monitoring, assessments, findings
+from app.api.routes import auth, authorizations, clients, health, websites, evidence, monitoring, assessments, findings, vulnerabilities
 from app.core.config import settings
 from app.db.session import engine
 from app.models import (  # noqa: F401 - register the model relationships
@@ -35,6 +35,8 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("Analyst review migration required: python -m alembic upgrade head")
     if not inspector.has_table("finding_due_dates"):
         raise RuntimeError("Findings migration required: python -m alembic upgrade head")
+    if not inspector.has_table("vulnerabilities"):
+        raise RuntimeError("Vulnerability migration required: python -m alembic upgrade head")
     yield
 
 
@@ -69,3 +71,4 @@ app.include_router(monitoring.router, prefix="/api/v1")
 
 app.include_router(assessments.router, prefix="/api/v1")
 app.include_router(findings.router, prefix="/api/v1")
+app.include_router(vulnerabilities.router, prefix="/api/v1")

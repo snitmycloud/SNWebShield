@@ -198,6 +198,18 @@ export const api = {
   setFindingDeadline: (id, check, data) => jsonPost(`/findings/${id}/${encodeURIComponent(check)}/deadline`, data),
   findingDeadlineHistory: (id, check, offset = 0) => request(`/findings/${id}/${encodeURIComponent(check)}/deadline-history?limit=50&offset=${offset}`),
 
+  // Module E: normalised, deduplicated vulnerabilities. Ingestion reads stored reports only.
+  getVulnerabilities: (filters = {}, offset = 0) => {
+    const params = new URLSearchParams({ limit: "50", offset: String(offset) });
+    for (const [key, value] of Object.entries(filters)) if (value !== "" && value != null) params.set(key, String(value));
+    return request(`/vulnerabilities?${params}`);
+  },
+  vulnerability: id => request(`/vulnerabilities/${encodeURIComponent(id)}`),
+  vulnerabilityHistory: (id, collection, offset = 0) => request(`/vulnerabilities/${encodeURIComponent(id)}/${collection === "occurrences" ? "occurrences" : "events"}?limit=20&offset=${offset}`),
+  ingestVulnerabilities: (assessmentId = null) => jsonPost("/vulnerabilities/ingest", assessmentId ? { assessment_id: assessmentId } : {}),
+  commentVulnerability: (id, comment) => jsonPost(`/vulnerabilities/${encodeURIComponent(id)}/comments`, { comment }),
+  decideVulnerability: (id, data) => jsonPost(`/vulnerabilities/${encodeURIComponent(id)}/validation`, data),
+
   // Health
   health: () => request("/health", { auth: false }),
 

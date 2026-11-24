@@ -390,7 +390,12 @@ def worker_tick():
             engine.event(db,"remote_docker_execution_finished",db.get(Job,row.job_id), detail={
                 "execution": execution, "error": payload.get("error")})
             db.commit()
-        engine.finish(db,*claimed,payload)
+        finished = engine.finish(db,*claimed,payload)
+    if finished and payload.get("state") == "up":
+        # Separate transaction after the result commits; ingestion failure is audited
+        # and retryable from the API, never a reason to lose the scanner result.
+        from app.services.vulnerabilities import ingest_after_assessment
+        ingest_after_assessment(row.id)
 
 
 engine.register("assessment", AssessmentHandler)

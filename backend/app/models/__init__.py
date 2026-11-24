@@ -11,3 +11,5 @@ from app.models.evidence import AuthorizationEvidence, EvidenceReview, EvidenceE
 from app.models.jobs import Job, JobAttempt, JobResult, ExecutionEvent, WorkerHeartbeat, ExecutionSlot
 from app.models.monitoring import MonitoringConfig, MonitoringConsent, MonitoringIncident, NotificationDelivery
 from app.models.assessment import AssessmentRequest, AssessmentReport, ObservationReview, ReviewedAssessmentExport, FindingDueDate
+from app.models.vulnerability import (Vulnerability, VulnerabilityEvent, VulnerabilityIngestion,
+                                      VulnerabilityOccurrence, VulnerabilitySuppression)

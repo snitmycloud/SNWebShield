@@ -7,7 +7,8 @@
 | Commits | `3ee099e` is the pre-existing uncommitted Module D–H work, committed unchanged as a baseline. The Milestone 1 hardening commit follows it. |
 | Baseline before changes | 299 backend tests, 14 frontend unit tests, production build: all passing |
 | After Milestone 1 | **393 backend tests, 17 frontend unit tests, 18 Chromium journeys, production build: all passing** |
-| Database | `backend/snwebshield_dev.db` at Alembic head `0008_findings_dashboard`; backed up to `backups/db-20261124T080620Z/` (gitignored, integrity-checked). No migration added. |
+| After Milestone 2 (Module E) | **430 backend tests, 22 frontend unit tests, production build: all passing** |
+| Database | `backend/snwebshield_dev.db` at Alembic head `0009_vulnerabilities` after Milestone 2 (was `0008_findings_dashboard` after Milestone 1); backed up to `backups/db-20261124T080620Z/` (gitignored, integrity-checked). No migration added. |
 
 **Status legend.** ✅ Fully implemented and tested · 🟡 Partially implemented · 🧪 Implemented but not tested · ❌ Missing · 🔧 Broken or requiring improvement
 
@@ -71,16 +72,19 @@ Test paths are relative to `backend/tests/`. Browser journeys are in `frontend/t
 | Lease vs execution budget | ✅ | **M1:** per-handler lease (assessment 120 s ≥ worst-case 55 s + 30 s margin); `test_assessment_lease_exceeds_every_bounded_remote_budget` |
 | Restricted Nmap (TCP 80/443) | ✅ | `nmap_*` services, `scanner/nmap/*`; `test_nmap.py`. Now shares the hardened SSH transport. |
 
-## E. Vulnerability management
+## E. Vulnerability management (Milestone 2: complete)
 
 | Sub-feature | Status | Evidence |
 |---|---|---|
-| Normalised finding records | 🟡 | Findings are derived from the latest confirmed `ObservationReview` per `(report, check)` (`services/findings.py`, `GET /findings`). There is no dedicated normalised Finding entity across assessments. |
-| Severity and confidence | 🟡 | Analyst severity exists; scanner `severity_suggestion` exists. No confidence field. |
-| Evidence and reproduction steps | 🟡 | `supporting_evidence` text and `evidence_ref`. No structured reproduction steps. |
-| Duplicate detection | ❌ | Repeated assessments are deliberately kept separate. No cross-assessment fingerprinting. |
-| False-positive management | 🟡 | `dismissed` and `not_applicable` dispositions with history. No suppression rules carried to later assessments. |
-| Human validation and analyst comments | ✅ | `POST /assessments/{id}/reviews/{check}` requires `human_validation_confirmed`; `test_observation_reviews.py` |
+| Normalised finding records | ✅ | `Vulnerability` entity with a unique fingerprint per website, check and target (`models/vulnerability.py`, migration `0009_vulnerabilities`); `services/vulnerabilities.py`; `GET /vulnerabilities`, `GET /vulnerabilities/{id}`; `test_vulnerabilities.py` |
+| Severity and confidence | ✅ | `scanner_severity`, `analyst_severity`, `confidence`, `confidence_score` and `confidence_factors`; `test_vulnerabilities.py` |
+| Evidence and reproduction steps | ✅ | `VulnerabilityOccurrence` with `evidence` and `evidence_sha256`; `reproduction_template` and analyst `reproduction_steps`; `GET /vulnerabilities/{id}/occurrences` |
+| Duplicate detection | ✅ | Fingerprint dedup across assessments, with `detection_count`, `not_detected_count` and first/last seen; `POST /vulnerabilities/ingest` |
+| False-positive management | ✅ | Validation states with append-only events (`GET /vulnerabilities/{id}/events`); suppressed occurrences flagged |
+| Human validation and analyst comments | ✅ | `POST /vulnerabilities/{id}/validation` and `/comments`, with `revision` concurrency; no vulnerability is confirmed without analyst action |
+| Frontend | ✅ | `VulnerabilitiesPage.jsx`, `lib/vulnerabilities.js`; `tests/vulnerabilities.test.js` |
+
+**Test evidence (2026-11-24):** 430 backend tests (`python -m pytest`), 22 frontend unit tests (`npm test`) and `npm run build` all passed. The suite now resolves `app` through `pythonpath = ["."]` in `backend/pyproject.toml`.
 
 ## F. Security analyst workbench
 
@@ -128,7 +132,7 @@ Test paths are relative to `backend/tests/`. Browser journeys are in `frontend/t
 | R7 | The HEAD broker runs on the Windows host, not in a container | Low | By design: CLAUDE.md requires `--network none` for analysis, so the target request must be made elsewhere. Mitigated with Python `-I -S`, a Job Object (256 MiB, CPU cap), header-only parsing and a 32 KiB limit. |
 | R8 | The Nmap guard container runs as root with `NET_ADMIN` on a bridge network (needed for its egress firewall) and is not covered by per-run inspection | Medium | Open. Milestone 2: extend inspection to `scanner/nmap/runner.py`. |
 | R9 | Evidence retention is not enforced automatically; deletion is not a secure wipe | Medium | Open. Add a scheduled retention report. Recommend BitLocker on the evidence volume. |
-| R10 | Findings are not normalised or deduplicated; no PDF or executive reports; no publication approval | Medium (product) | Roadmap: Milestones 3–5 |
+| R10 | PDF or executive reports; no publication approval | Medium (product) | Findings are now normalised and deduplicated (Milestone 2). Remaining: PDF and executive reports, publication approval. |
 | R11 | Starlette/httpx test-client deprecation warning | Low | Upgrade dependency in a maintenance pass |
 | R12 | Real-target acceptance with genuine written authorisation not yet performed for the hardened build | Medium | User step (below) |
 | R13 | Single global assessment slot and 60-second cooldown limit throughput | Low | Accepted for local use |
@@ -185,7 +189,7 @@ Each milestone follows the CLAUDE.md workflow: back up the database, add migrati
 | Milestone | Scope | Depends on |
 |---|---|---|
 | **M2 — Foundation and scanner security gaps** | R1 auth audit log; R2 login throttling; R3 server-side logout (`jti` denylist); client/website edit and archive with audit; extend per-run isolation inspection to the Nmap runner (R8); label-scoped orphan-container report (R6); evidence retention report (R9) | M1 |
-| **M3 — Vulnerability management (E)** | Normalised `Finding` entity with a stable fingerprint `(website, check, scope)`; dedup across assessments; confidence; structured reproduction steps; false-positive suppression carried forward with expiry and audit | M2 |
+| **M3 — Vulnerability management (E)** — delivered early as Milestone 2 | Normalised `Finding` entity with a stable fingerprint `(website, check, scope)`; dedup across assessments; confidence; structured reproduction steps; false-positive suppression carried forward with expiry and audit | M2 |
 | **M4 — Analyst workbench (F)** | Likelihood, impact and business-context risk rating (CVSS-style optional); second-analyst approval for high and critical findings | M3 |
 | **M5 — VAPT reporting (G)** | Report entity (draft → in review → approved → published); executive summary; scope and methodology from the authorisation snapshot; locally rendered PDF with a SHA-256 manifest; human approval gate before publish | M3, M4 |
 | **M6 — Remediation and retesting (H)** | Retest request workflow tied to a fresh authorisation check; automatic before/after check comparison; client update log; engagement closure with a final report | M5 |

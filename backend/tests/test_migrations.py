@@ -21,7 +21,7 @@ def test_new_database_migrates_and_upgrade_is_idempotent(tmp_path):
     migrate(path)
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0008_findings_dashboard"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0009_vulnerabilities"
         columns = {row[1] for row in db.execute("PRAGMA table_info(website_authorizations)")}
         assert "timestamps_verified" in columns
         assert db.execute("SELECT COUNT(*) FROM admins").fetchone()[0] == 0
@@ -100,3 +100,22 @@ def test_stage_one_intents_and_accounts_survive_local_upgrade(tmp_path):
         assert db.execute('SELECT execution_snapshot FROM assessment_requests').fetchone()==(None,)
         assert db.execute('SELECT password_hash FROM admins').fetchone()==('preserved-password-hash',)
         assert db.execute('SELECT COUNT(*) FROM assessment_reports').fetchone()==(0,)
+
+
+def test_vulnerability_migration_preserves_reports_reviews_and_deadlines(tmp_path):
+    path = tmp_path / 'pre-vulnerabilities.db'
+    migrate(path, '0008_findings_dashboard')
+    tables = ('admins', 'assessment_reports', 'observation_reviews', 'finding_due_dates', 'execution_events')
+    with sqlite3.connect(path) as db:
+        db.execute("INSERT INTO admins (id,email,full_name,password_hash,role,is_active) VALUES (1,'synthetic@example.com','Test Admin','preserved-password-hash','admin',1)")
+        before = {table: db.execute(f'SELECT * FROM {table}').fetchall() for table in tables}
+    migrate(path)
+    migrate(path)
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0009_vulnerabilities"
+        assert {table: db.execute(f'SELECT * FROM {table}').fetchall() for table in tables} == before
+        for table in ('vulnerabilities', 'vulnerability_occurrences', 'vulnerability_events',
+                      'vulnerability_suppressions', 'vulnerability_ingestions'):
+            assert db.execute(f'SELECT COUNT(*) FROM {table}').fetchone() == (0,)
+        checks = db.execute("SELECT sql FROM sqlite_master WHERE name='vulnerabilities'").fetchone()[0]
+        assert "ck_vulnerability_state" in checks and "fingerprint" in checks
