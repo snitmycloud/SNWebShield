@@ -91,6 +91,12 @@ SNWebShield/
 
 **Application foundation and authorisation review implemented; stabilisation required.** Administrator login and protected client, website and authorisation APIs exist. The React UI supports client/website creation and authorisation review decisions with audit history. Authorisation creation currently has an API but no UI form. UTC normalisation, computed validity states, atomic decisions, session expiry and exact authorisation summaries now have regression coverage. Alembic migrations are included. The monitoring engine is implemented for local validation; scanner execution, analyst workflows, reporting and production hardening remain planned. Neither website registration nor authorisation approval starts a scan.
 
+## Milestone 1: scanner worker hardening (Module D)
+
+The scanner worker now uses one fixed, hardened SSH transport for both remote profiles: the Windows OpenSSH client is pinned by absolute path, and command-line options override any `ssh_config` that would enable agent/X11/port forwarding, proxies, passwords or session reuse. A missing client, an unreachable VM, an unavailable Docker daemon or the wrong runner/image fails the job with a specific audited error, with no local fallback. Assessment jobs hold a 120-second lease that exceeds every bounded remote stage budget. The HEAD broker requires TLS 1.2 or later, records the negotiated version, and classifies redirects into fixed categories without following them or storing the `Location` value. The VM runner can now inspect each created container and refuse to start it unless network, user, filesystem, capability, resource, IPC, mount and port settings match policy. This only takes effect after the runner is redeployed manually.
+
+The full audit, risk register, test evidence, manual VM steps and remaining roadmap are in [docs/AUDIT_MATRIX.md](docs/AUDIT_MATRIX.md). No schema migration was added.
+
 ## Local authorisation evidence milestone
 
 Private document upload, authenticated retrieval, human reviews, retention/holds and the approval evidence gate are implemented for local testing. Follow [the evidence guide](docs/AUTHORIZATION_EVIDENCE.md) for migration `0003_evidence`, configuration, API details, backup limitations and Windows validation. See the monitoring guide for current validation limits; no GitHub push is required.

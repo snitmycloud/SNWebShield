@@ -194,7 +194,11 @@ def test_runner_cleans_up_success_and_timeout(runner, monkeypatch, failure):
             return json.dumps({"analysis": analyze(data), "usage": {"analyzer_cpu_seconds": .01}}).encode()
         if args[1] == "inspect":
             return json.dumps([{"State": {"Running": False, "ExitCode": 0,
-                "StartedAt": "2026-11-23T00:00:00+00:00", "FinishedAt": "2026-11-23T00:00:00.040000+00:00"}}]).encode()
+                "StartedAt": "2026-11-23T00:00:00+00:00", "FinishedAt": "2026-11-23T00:00:00.040000+00:00"},
+                "Image": IMAGE, "Mounts": [], "Config": {"User": "65532:65532", "Labels": {runner.LABEL: "a" * 32}},
+                "HostConfig": {"NetworkMode": "none", "ReadonlyRootfs": True, "Privileged": False, "CapDrop": ["ALL"],
+                    "SecurityOpt": ["no-new-privileges=true"], "Memory": 67108864, "MemorySwap": 67108864,
+                    "NanoCpus": 250000000, "PidsLimit": 16, "IpcMode": "none", "RestartPolicy": {"Name": "no"}}}]).encode()
         return b""
     cleanup = []
     monkeypatch.setattr(runner, "docker", docker)
@@ -202,8 +206,9 @@ def test_runner_cleans_up_success_and_timeout(runner, monkeypatch, failure):
     result = runner.execute("a" * 32, data, IMAGE)
     assert cleanup == [("a" * 32, IMAGE)]
     assert result["execution"]["cleanup_confirmed"] is True
+    assert result["execution"]["isolation_verified"] is True
     assert ("error" in result) == failure
-    assert calls[1][1] == "start"
+    assert [c[1] for c in calls[:3]] == ["create", "inspect", "start"]
 
 
 def test_runner_refuses_to_remove_unowned_container(runner, monkeypatch):

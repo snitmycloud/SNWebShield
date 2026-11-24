@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./lib/api.js";
+import { describeIsolation, describeRedirect, describeTls } from "./lib/scanner.js";
 import AssessmentReviews from "./AssessmentReviews.jsx";
 import "./assessments.css";
 
@@ -119,6 +120,8 @@ export default function AssessmentsPage({ websites, initialAssessmentId = null }
         {selected.result.payload.report.execution && <p>
           Container execution: {selected.result.payload.report.execution.container_duration_ms} ms · Runner: {selected.result.payload.report.execution.duration_ms} ms · {selected.mode === "remote_nmap" ? `Scanner CPU: ${selected.result.payload.report.execution.scanner_cpu_seconds} s · Scanner peak memory: ${Math.round(selected.result.payload.report.execution.scanner_peak_rss_bytes / 1024)} KiB` : `Analyzer CPU: ${selected.result.payload.report.execution.analyzer_cpu_seconds} s · Analyzer peak memory: ${Math.round(selected.result.payload.report.execution.analyzer_peak_rss_bytes / 1024)} KiB`} · Cleanup: {selected.result.payload.report.execution.cleanup_confirmed ? "confirmed" : "unconfirmed"}
         </p>}
+        {selected.result.payload.report.execution && selected.mode === "remote_docker" && <p>{describeIsolation(selected.result.payload.report.execution)}</p>}
+        {selected.mode !== "remote_nmap" && <p>{describeTls(selected.result.payload.report.transport)}{describeRedirect(selected.result.payload.report.transport) ? ` · ${describeRedirect(selected.result.payload.report.transport)}` : ""}</p>}
         <ul>{selected.result.payload.report.analysis.observations.map(item => <li key={item.check}>
           {label(item.check)}: {item.port_state ?? (item.observed === null ? "not applicable" : item.observed ? "observed" : "review needed")} · Suggested severity: {item.severity_suggestion}. {item.explanation}
         </li>)}</ul>

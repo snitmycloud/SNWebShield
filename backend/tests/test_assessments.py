@@ -150,9 +150,12 @@ def test_expired_lease_no_retry(assessed):
     with SessionLocal() as db:
         old=engine.claim(db,'assessment',NOW);assert old
         assert engine.claim(db,'assessment',NOW) is None
-        assert engine.claim(db,'assessment',NOW+timedelta(seconds=61)) is None
+        lease=engine.lease_seconds('assessment')
+        assert engine.claim(db,'assessment',NOW+timedelta(seconds=lease-1)) is None
+        assert db.get(Job,row['job_id']).status=='running'
+        assert engine.claim(db,'assessment',NOW+timedelta(seconds=lease+1)) is None
         assert db.get(Job,row['job_id']).status=='failed'
-        assert not engine.finish(db,*old,{'state':'up','mode':'policy_only','network_execution':False},NOW+timedelta(seconds=62))
+        assert not engine.finish(db,*old,{'state':'up','mode':'policy_only','network_execution':False},NOW+timedelta(seconds=lease+2))
 
 
 def test_audit_failure_rolls_back_request_and_result(assessed):

@@ -53,7 +53,8 @@ def main():
                 if not permitted(): raise RuntimeError("permission_changed")
                 return {"result":{"status":200,"tls_verified":True,"connected_ip":"8.8.8.8",
                     "dns_addresses":["8.8.8.8"],"response_ms":12.5,"header_bytes":100,
-                    "certificate_not_after":None,"redirect_followed":False,"facts":{},
+                    "certificate_not_after":None,"redirect_followed":False,"facts":{},"tls_version":"TLSv1.3",
+                    "redirect":{"is_redirect":False,"location":None,"followed":False},
                     "selected_headers":{"content-security-policy":"default-src 'self'","server":"Synthetic-fixture"}}}
             return actual_invoke(script,payload,permitted,seconds)
         local_runtime.invoke = fixture_invoke
@@ -67,7 +68,7 @@ def main():
             if operation == "cleanup": return {"cleanup_confirmed": True}
             return {"analysis": analyze(payload["data"]), "execution": {
                 "id": payload["id"], "image_id": os.environ["ASSESSMENT_REMOTE_IMAGE_ID"],
-                "cleanup_confirmed": True, "duration_ms": 50, "container_duration_ms": 40, "analyzer_cpu_seconds": .01,
+                "cleanup_confirmed": True, "isolation_verified": True, "duration_ms": 50, "container_duration_ms": 40, "analyzer_cpu_seconds": .01,
                 "analyzer_peak_rss_bytes": 1000000, "analyzer_duration_ms": 1,
                 "limits": {"memory_bytes": 67108864, "cpus": .25, "pids": 16, "timeout_seconds": 8}}}
         remote_runtime.ssh_exchange = fixture_ssh

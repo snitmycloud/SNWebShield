@@ -286,6 +286,10 @@ def cancel_for_authorization(db, authorization_id, actor_id):
 
 
 class AssessmentHandler:
+    # Remote stage budgets total ~55 s; the lease leaves margin for permission
+    # polling and result recording. A lapsed lease is failure, never a retry.
+    lease_seconds = 120
+
     @staticmethod
     def eligible(db, job, lock=False):
         row = db.scalar(select(AssessmentRequest).where(AssessmentRequest.job_id == job.id))

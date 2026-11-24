@@ -48,6 +48,7 @@ def claim(db, kind, now=None):
     candidate = db.scalar(select(Job).where(Job.job_type == kind, Job.status == "queued", Job.due_at <= now).order_by(Job.due_at, Job.id).limit(1))
     if candidate is None: return None
     token = str(uuid4())
+    lease = timedelta(seconds=lease_seconds(kind))
     # Initial execution policy: one active job per handler pool and at least
     # five seconds between completed probes, enforced across worker processes.
     if db.get(ExecutionSlot, kind) is None:
@@ -56,10 +57,10 @@ def claim(db, kind, now=None):
         except IntegrityError:
             db.rollback(); return None
     acquired = db.execute(update(ExecutionSlot).where(ExecutionSlot.job_type == kind,
-        ExecutionSlot.available_at <= now).values(token=token, available_at=now + timedelta(seconds=60)).execution_options(synchronize_session=False))
+        ExecutionSlot.available_at <= now).values(token=token, available_at=now + lease).execution_options(synchronize_session=False))
     if acquired.rowcount != 1: db.rollback(); return None
     changed = db.execute(update(Job).where(Job.id == candidate.id, Job.status == "queued", Job.due_at <= now).values(
-        status="running", claim_token=token, lease_until=now + timedelta(seconds=60), attempts=Job.attempts + 1
+        status="running", claim_token=token, lease_until=now + lease, attempts=Job.attempts + 1
     ).execution_options(synchronize_session=False))
     if changed.rowcount != 1: db.rollback(); return None
     db.refresh(candidate)
@@ -104,6 +105,12 @@ def finish(db, job_id, token, payload, now=None):
 
 
 HANDLERS = {}
+DEFAULT_LEASE_SECONDS = 60
+
+
+def lease_seconds(kind):
+    # Handlers with longer bounded execution budgets declare a longer lease.
+    return int(getattr(HANDLERS[kind], "lease_seconds", DEFAULT_LEASE_SECONDS))
 
 
 def scheduler_tick(db):

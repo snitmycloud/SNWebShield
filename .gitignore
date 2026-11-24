@@ -36,3 +36,6 @@ Thumbs.db
 *.db-*
 *.sqlite
 *.sqlite3
+
+# Local database backups (contain application data and password hashes)
+backups/

@@ -79,9 +79,39 @@ def create_args(token, image):
             "--label", LABEL + "=" + token, "--network=none", "--user=65532:65532",
             "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges=true",
             "--memory=64m", "--memory-swap=64m", "--cpus=0.25", "--pids-limit=16",
-            "--ulimit", "nofile=32:32", "--ulimit", "core=0:0", "--restart=no",
+            "--ipc=none", "--ulimit", "nofile=32:32", "--ulimit", "core=0:0", "--restart=no",
             "--log-driver=none", "--interactive", "--entrypoint=python", image,
             "-I", "-S", "-B", "/app/container_entry.py"]
+
+
+def verify_isolation(info, token, image):
+    """Check what Docker actually created, not only what was requested.
+
+    Raises before the container is ever started, so a daemon default, plugin or
+    mistaken edit that weakens isolation can never run analysis code.
+    """
+    host, config = info["HostConfig"], info["Config"]
+    checks = {
+        "image": info["Image"] == image,
+        "owner_label": config.get("Labels", {}).get(LABEL) == token,
+        "network_none": host["NetworkMode"] == "none",
+        "non_root_user": config["User"] == "65532:65532",
+        "read_only_rootfs": host["ReadonlyRootfs"] is True,
+        "not_privileged": host["Privileged"] is False,
+        "all_capabilities_dropped": "ALL" in (host.get("CapDrop") or []) and not host.get("CapAdd"),
+        "no_new_privileges": any("no-new-privileges" in item for item in host.get("SecurityOpt") or []),
+        "memory": host["Memory"] == LIMITS["memory_bytes"] and host["MemorySwap"] == LIMITS["memory_bytes"],
+        "cpu": host["NanoCpus"] == int(LIMITS["cpus"] * 1e9),
+        "pids": host["PidsLimit"] == LIMITS["pids"],
+        "ipc_none": host.get("IpcMode") == "none",
+        "no_mounts": not info.get("Mounts") and not host.get("Binds"),
+        "no_published_ports": not host.get("PortBindings"),
+        "no_devices": not host.get("Devices"),
+        "no_restart": (host.get("RestartPolicy") or {}).get("Name") in ("no", ""),
+    }
+    if not all(checks.values()):
+        raise RunnerError("container_isolation_mismatch")
+    return True
 
 
 def execute(token, data, image):
@@ -91,6 +121,8 @@ def execute(token, data, image):
                             "cleanup_confirmed": False}}
     try:
         docker(create_args(token, image))
+        result["execution"]["isolation_verified"] = verify_isolation(
+            json.loads(docker(["container", "inspect", name]))[0], token, image)
         raw = docker(["container", "start", "--attach", "--interactive", name],
                      data=json.dumps(data, separators=(",", ":")).encode() + b"\n", seconds=8)
         state = json.loads(docker(["container", "inspect", name]))[0]["State"]

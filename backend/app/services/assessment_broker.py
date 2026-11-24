@@ -13,13 +13,44 @@ import socket
 import ssl
 import threading
 import time
-from urllib.parse import urlunsplit
+from urllib.parse import urljoin, urlunsplit
 
 _spec = importlib.util.spec_from_file_location("public_monitor_policy", Path(__file__).with_name("monitor_probe.py"))
 policy = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(policy)
 MAX_HEADERS = 32768
 TIMEOUT = 10
+REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+
+
+def classify_redirect(url, status, locations):
+    """Describe a redirect WITHOUT following it or retaining the Location value.
+
+    The Location header is attacker-controlled. Only a fixed category leaves this
+    function, so no target-supplied URL, host, path or token is persisted.
+    """
+    if status not in REDIRECT_STATUSES:
+        return {"is_redirect": False, "location": None, "followed": False}
+    if not locations:
+        category = "missing"
+    elif len(locations) > 1:
+        category = "ambiguous"
+    else:
+        try:
+            origin, host, port = policy.target(url)
+            next_url, next_host, next_port = policy.target(urljoin(url, locations[0].strip()))
+        except policy.Blocked:
+            category = "invalid_or_unsupported"
+        else:
+            if (next_url.scheme, next_host, next_port) == (origin.scheme, host, port):
+                category = "same_origin"
+            elif next_host == host and origin.scheme == "http" and next_url.scheme == "https":
+                category = "https_upgrade_same_host"
+            elif next_host == host:
+                category = "same_host_scheme_or_port_change"
+            else:
+                category = "different_host_not_followed"
+    return {"is_redirect": True, "location": category, "followed": False}
 
 
 def collect(url, permitted):
@@ -51,11 +82,14 @@ def collect(url, permitted):
         sock.connect(address)
         if ipaddress.ip_address(sock.getpeername()[0]) != ipaddress.ip_address(address[0]):
             raise policy.Blocked("peer_address_mismatch")
-        cert_expiry = None
+        cert_expiry = tls_version = None
         if parsed.scheme == "https":
             sock.settimeout(remaining())
-            sock = ssl.create_default_context().wrap_socket(sock, server_hostname=host)
+            context = ssl.create_default_context()
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            sock = context.wrap_socket(sock, server_hostname=host)
             cert_expiry = sock.getpeercert().get("notAfter")
+            tls_version = sock.version()
         path = urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
         if len(path.encode("ascii")) > 2048:
             raise policy.Blocked("request_path_too_long")
@@ -84,6 +118,7 @@ def collect(url, permitted):
         # Only selected security-header semantics survive. Never persist cookies,
         # authentication headers, bodies, Location, CSP nonces or raw header values.
         headers = {}
+        locations = []
         allowed = {"strict-transport-security", "content-security-policy", "x-content-type-options", "x-frame-options", "referrer-policy", "permissions-policy", "server", "x-powered-by"}
         for line in lines[1:-2]:
             if ":" not in line or line[0].isspace() or any(ord(c) < 32 or ord(c) == 127 for c in line):
@@ -92,6 +127,8 @@ def collect(url, permitted):
             if not name or any(not (c.isascii() and (c.isalnum() or c in "!#$%&'*+-.^_`|~")) for c in name):
                 raise ValueError("invalid_response_header")
             name = name.lower()
+            if name == "location":
+                locations.append(value)  # Classified below, then discarded.
             if name in allowed:
                 if name in headers:
                     raise ValueError("ambiguous_security_header")
@@ -112,7 +149,8 @@ def collect(url, permitted):
         return {"status": status, "connected_ip": address[0], "dns_addresses": sorted({a[0] for _, a in answers}),
                 "headers_sha256": sha256(bytes(data)).hexdigest(), "response_ms": round((time.monotonic() - started) * 1000, 2), "header_bytes": len(data),
                 "tls_verified": parsed.scheme == "https", "certificate_not_after": cert_expiry,
-                "redirect_followed": False, "facts": facts, "selected_headers": {k: v[:2048] for k, v in headers.items()}}
+                "tls_version": tls_version, "redirect_followed": False,
+                "redirect": classify_redirect(url, status, locations), "facts": facts, "selected_headers": {k: v[:2048] for k, v in headers.items()}}
     finally:
         if sock is not None:
             sock.close()

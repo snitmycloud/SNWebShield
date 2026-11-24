@@ -32,6 +32,31 @@ If SSH fails, no local-analysis fallback occurs. If SSH disconnects after contai
 
 The SSH identity has Docker access, which is effectively host-administrator access with a rootful daemon. Protect the Windows account, SSH agent and VM runner. Networkless Docker isolation does not make arbitrary images trusted; review the small fixed source and base image. Docker controls are documented in the [official run reference](https://docs.docker.com/reference/cli/docker/container/run/).
 
+## Milestone 1 hardening (2026-11-24)
+
+- **SSH transport.** `backend/app/services/ssh_transport.py` is the only place SSH argv is built. It uses `%SystemRoot%\System32\OpenSSH\ssh.exe` (or `/usr/bin/ssh`) instead of a `PATH` lookup, and these command-line options override `~/.ssh/config`: `BatchMode=yes`, `StrictHostKeyChecking=yes`, `UpdateHostKeys=no`, `PasswordAuthentication=no`, `KbdInteractiveAuthentication=no`, `ForwardAgent=no`, `ForwardX11=no`, `ClearAllForwardings=yes`, `PermitLocalCommand=no`, `ProxyCommand=none`, `ProxyJump=none`, `ControlMaster=no`, `ControlPath=none` and `RequestTTY=no`. The `IdentityFile` from your config is still used. The options were checked with `ssh -G` on Windows OpenSSH 9.5, and `app.cli.scanner_check` passed live through this transport.
+- **Fail closed.** A missing client gives `ssh_client_unavailable`. An unreachable VM gives `adapter_exited_without_result`. Docker or image problems give `remote_preflight_failed`. Each is recorded on the job and in the `remote_docker_execution_finished` event. No target HEAD is sent after a failed preflight.
+- **Per-run isolation inspection (requires runner redeploy).** After `docker container create`, the runner inspects the container. It refuses to start it unless the image, owner label, `NetworkMode=none`, UID 65532, read-only rootfs, non-privileged mode, `CapDrop=ALL` with no `CapAdd`, no-new-privileges, 64 MiB memory/swap, 0.25 CPU, 16 PIDs, `IpcMode=none`, no mounts/binds/ports/devices and no restart policy all match. It reports `isolation_verified: true`, which the backend stores as `isolation_attested`. Runners installed before this change report `isolation_attested: false`. Once the new runner is installed, set `ASSESSMENT_REMOTE_REQUIRE_ISOLATION_ATTESTATION=true` so runs without an attestation fail.
+
+### Redeploying the Milestone 1 runner (manual)
+
+The VM steps are manual because they need `sudo`. No image rebuild is needed: the analyser image and `container_entry.py` are unchanged, so `ASSESSMENT_REMOTE_IMAGE_ID` stays the same.
+
+```powershell
+# From the Windows repository root: copy only the runner and verifier.
+scp scanner/remote_runner.py scanner/verify_host.py azureuser@57.159.27.58:snwebshield-scanner/scanner/
+```
+
+```bash
+# On the VM: review the diff against the installed copy, then install.
+diff /usr/local/libexec/snwebshield-header-runner ~/snwebshield-scanner/scanner/remote_runner.py
+sudo install -o root -g root -m 755 ~/snwebshield-scanner/scanner/remote_runner.py /usr/local/libexec/snwebshield-header-runner
+/usr/local/libexec/snwebshield-header-runner --check
+/usr/bin/python3 -I ~/snwebshield-scanner/scanner/verify_host.py
+```
+
+Then on Windows, run `.\.venv\Scripts\python.exe -m app.cli.scanner_check` from `backend` and expect `"isolation_attested": true`. Set `ASSESSMENT_REMOTE_REQUIRE_ISOLATION_ATTESTATION=true` in the private `.env` and restart the API and assessment worker.
+
 ## Manual VM setup (user-operated; not executed by this change)
 
 First finish key authentication from the Windows account that runs the backend. Keep private keys outside the repository, application environment and containers; use the OS SSH agent/config. Verify the VM's host fingerprint through a trusted channel before populating known_hosts. Never disable host checking or enable port 2375. Test from Windows:

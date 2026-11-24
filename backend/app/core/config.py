@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     assessment_remote_docker_enabled: bool = False
     # Immutable image ID, not a tag or arbitrary Docker arguments. SSH uses the OS agent/config.
     assessment_remote_image_id: str = Field(default="", pattern=r"^(sha256:[0-9a-f]{64})?$")
+    # Set true once the VM runner from Milestone 1 (per-run isolation inspection) is installed.
+    assessment_remote_require_isolation_attestation: bool = False
     assessment_nmap_enabled: bool = False
     assessment_nmap_image_id: str = Field(default="", pattern=r"^(sha256:[0-9a-f]{64})?$")
 

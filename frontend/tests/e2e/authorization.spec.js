@@ -325,6 +325,8 @@ test("Azure header analysis displays execution usage and cleanup", async ({ page
     await expect(details).toContainText("Cleanup: confirmed");
   }).toPass({timeout:15000});
   await expect(details).toContainText("Analyzer CPU: 0.01 s");
+  await expect(details).toContainText("Container isolation: verified by the runner before start");
+  await expect(details).toContainText("TLS: TLSv1.3");
   await expect(details).toContainText("remote docker execution finished");
 });
 

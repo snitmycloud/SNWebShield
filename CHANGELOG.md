@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — Milestone 1: scanner worker hardening
+
+- Centralise SSH for header and Nmap runners in `ssh_transport.py`. Pin the OS `ssh` binary, disable forwarding, proxies, passwords, local commands and multiplexing, and allow only fixed runner paths and operations.
+- Fail closed with specific audited codes when the SSH client is missing, the VM is unreachable, Docker is unavailable or the runner/image is wrong. Never fall back to local execution.
+- Give assessment jobs a 120-second lease, set per handler in the job engine, so bounded remote stages (~55 s worst case) cannot race lease expiry. Monitoring keeps 60 s.
+- Broker: require TLS 1.2 or later, record the TLS version, and classify redirects (same origin, HTTPS upgrade, different host, invalid, missing, ambiguous) without following them or persisting `Location`.
+- Runner: add `--ipc=none`, inspect each created container and refuse to start it if isolation differs from policy. Report `isolation_verified`, which the backend records as `isolation_attested`. The new `ASSESSMENT_REMOTE_REQUIRE_ISOLATION_ATTESTATION` setting makes it mandatory (default off until the runner is redeployed).
+- Dashboard shows isolation attestation, TLS version and the redirect category.
+- Add 94 backend security tests: SSRF ranges, DNS pinning and rebinding, unsafe URLs, redirect classification, revalidation at execution time, revocation during a run, real-process cancellation and deadlines, SSH/Docker unavailability, isolation weakening and untrusted runner output. Add 3 frontend unit tests and extend the Azure browser journey.
+
 ## Unreleased — restricted Docker Nmap profile
 
 - Add fixed non-root TCP connect discovery on ports 80/443 behind a dedicated default-DROP container network policy; no scripts, banners, OS detection, custom ports or local fallback.
