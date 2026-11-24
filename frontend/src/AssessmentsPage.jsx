@@ -156,6 +156,7 @@ export default function AssessmentsPage({ websites, initialAssessmentId = null }
         })}
         onDownload={exportId => run(async () => download(await api.downloadReviewedReport(selected.id, exportId), `reviewed-assessment-${exportId}.json`))}
       />}
+      {selected.recovery && <p role="note" data-testid="recovery-note" data-state={selected.recovery.state}>{selected.recovery.message}</p>}
       {["queued", "running"].includes(selected.job.status) && <div>
         <label>Assessment cancellation reason<textarea minLength={10} maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} /></label>
         <button disabled={busy || reason.trim().length < 10} onClick={() => run(async () => { await api.cancelAssessment(selected.id, { reason }); await open(selected.id); setNotice("Assessment request cancelled."); })}>Cancel assessment request</button>

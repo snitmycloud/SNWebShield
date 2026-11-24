@@ -404,7 +404,7 @@ The page now names the state and shows the exact start command. `scripts/start-w
 | Worker health | Fixed here |
 | Observations, analyst validation, vulnerability ingestion, PDF reports | Implemented in M2-M4 |
 | One-step request flow and simplified UI | Done and verified (below) |
-| Not yet done | stuck-job recovery review after worker restart; VM runner redeploy and live verification of the new checks (user) |
+| Not yet done | VM runner redeploy and live verification of the new checks (user) |
 
 ### One-step request flow (verified 2026-11-24)
 Select website, pick a profile, and the page shows permission status and enables **Run assessment**. `GET /assessments/readiness?website_id=` is network-free and writes nothing; it reuses `permission()` and selects an authorisation only if it is approved, inside its UTC window, covers the exact domain, permits the profile's methods and has currently accepted evidence. Otherwise the button is disabled and the exact reason is shown. The browser never chooses an authorisation. `create_request()` and the `assessment-worker` re-check permission again before any network call (TOCTOU preserved). The separate authorisation picker, note requirement and "explicitly request" checkbox were removed; clicking Run is the explicit request, and network profiles keep one written-permission attestation.
@@ -438,3 +438,29 @@ Not exercised: a real Azure VM scan or real target traffic (all adapters were si
 | Playwright browser tests | 19 passed, 0 failed (new housekeeping spec) |
 
 **Not verified (important).** Everything here ran against synthetic Docker output and fake SSH. The checks have **not** been run against the real VM's Docker, so exact `inspect` field values (for example how Docker renders `NetworkMode` for a shared namespace, or whether the guard's tmpfs appears under `Mounts`) are unconfirmed. The checks fail closed, so a mismatch would stop Nmap scans rather than weaken isolation. Deploying is a manual step: install both updated runners and run `--check` and `--orphans` on the VM (see README), keep `ASSESSMENT_NMAP_ENABLED=false` until a real run is confirmed.
+
+
+---
+
+## Stuck-job recovery review (branch `feature/stuck-job-recovery`, verified 2026-11-24)
+
+Reviewed `job_engine.claim/finish`, the assessment worker loop, ingestion and the retest hook for what happens when a worker dies, hangs or restarts.
+
+| # | Finding | Result |
+|---|---|---|
+| 1 | Dead run: expired leases are failed by the next `claim()` of that job type, once, with no retry (`max_attempts=1`); slot is released by its own expiry | **Sound.** Now covered by tests (single `lease_expired` event, attempt outcome, no result invented, never re-executed, website usable again) |
+| 2 | Lease not yet expired when a worker restarts | **Sound.** Left alone, since the old worker may still be alive; its token check rejects late results |
+| 3 | The threaded heartbeat added in the first milestone **masked a hung worker** (the thread kept beating while the loop was stuck) | **Bug, fixed.** The beat now requires recent main-loop progress, limited to lease + 15 s (135 s); legitimate scans (worst case 55 s) never look hung |
+| 4 | A crash after a result commits but before ingestion left a completed report with no observations, retried only by a manual API call | **Gap, fixed.** `recover_on_start()` ingests such reports when the worker starts. Ingestion is idempotent and creates unconfirmed observations only. A tampered or invalid report is rejected and audited, not looped |
+| 5 | A stuck job looked like a normal "running" or "queued" job, and blocks new requests for that website | **Gap, fixed.** The API returns `recovery` (`lease_expired`, or `waiting_for_worker` after 2 minutes) and the page shows the explanation. Cancel already works on both states without a worker (tested) |
+| 6 | Retests on a failed or cancelled assessment | **Sound (code review).** `reconcile` is idempotent and runs on reads, marking the retest failed; not changed |
+| 7 | Orphan containers after a killed worker | Covered by the runner's own SIGHUP cleanup, the guard's 35 s alarm and the orphan report; not changed |
+
+| Suite | Result |
+|---|---|
+| Backend `pytest tests` (full) | 669 passed, 0 failed (17m29s) |
+| New `test_job_recovery.py` | 13 passed |
+| Frontend `npm test` / build | 61 passed / succeeded |
+| Playwright | 19 passed |
+
+**Limits.** A crash is simulated as database state (claim without finish, then clock advanced and a fresh worker tick), which is faithful for the job engine but is not a real killed process. The new page note is covered by the API tests and the build only; there is no browser test for it. A poisoned report is re-rejected, with one audit event, on each worker start. SQLite single-writer locking under a very busy worker was not load-tested.

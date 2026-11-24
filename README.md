@@ -271,3 +271,7 @@ Open Assessments, choose a website and a profile. The page checks permission wit
 ## Scanner VM housekeeping
 
 After updating `scanner/remote_runner.py` and `scanner/nmap/runner.py`, install them on the VM as described above and run `--check` once. Then the Assessments page button "Check VM for leftover containers" lists SNWebShield-labelled containers older than two minutes. It is read-only; remove anything it flags manually and only after you approve (`/usr/local/libexec/snwebshield-nmap-runner --cleanup <token>` removes just a matching labelled container). The Nmap runner now inspects its guard and scanner containers before starting them; results from older runners show "not attested".
+
+## After a worker crash or restart
+
+Start the assessment worker again. It fails any run whose lease expired (once, never repeated), ingests results that were stored but not yet turned into observations, and records a `worker_startup_recovery` audit event. A request that cannot progress is labelled on the Assessments page, and it can be cancelled at any time without a worker.

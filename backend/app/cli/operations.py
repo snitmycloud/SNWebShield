@@ -117,9 +117,20 @@ def notification_tick():
         db.commit()
 
 
-def _heartbeat_loop(name, stop, interval=10):
-    """Heartbeat independently of the job loop so a long scan is not reported as a dead worker."""
+def should_beat(progress_at, now, limit):
+    """A heartbeat is evidence the worker is making progress, not merely that its process exists."""
+    return now - progress_at <= limit
+
+
+def _heartbeat_loop(name, stop, progress, limit, interval=10):
+    """Heartbeat independently of the job loop so a long scan is not reported as a dead worker.
+
+    The beat stops once the main loop has made no progress for `limit` seconds (longer than any
+    legitimate job), so a hung worker still turns stale instead of being masked by this thread.
+    """
     while not stop.wait(interval):
+        if not should_beat(progress["at"], time.monotonic(), limit):
+            continue
         try:
             with SessionLocal() as db: engine.heartbeat(db, name); db.commit()
         except Exception: pass  # a missed beat is itself the signal; never log details
@@ -129,10 +140,16 @@ def main():
     parser = argparse.ArgumentParser(); parser.add_argument("role", choices=["scheduler", "worker", "notifications", "assessment-worker"])
     parser.add_argument("--once", action="store_true"); args = parser.parse_args()
     stop = threading.Event()
-    if args.role == "assessment-worker" and not args.once:
-        threading.Thread(target=_heartbeat_loop, args=("assessment-worker", stop), daemon=True).start()
+    progress = {"at": time.monotonic()}
+    if args.role == "assessment-worker":
+        try: assessments.recover_on_start()  # a crash between a result and its ingestion must not lose it
+        except Exception: print("assessment-worker: startup recovery failed; check execution history", flush=True)
+        if not args.once:
+            limit = engine.lease_seconds("assessment") + 15  # beyond this a tick has overrun its own lease
+            threading.Thread(target=_heartbeat_loop, args=("assessment-worker", stop, progress, limit), daemon=True).start()
     try:
         while True:
+            progress["at"] = time.monotonic()
             try:
                 if args.role == "scheduler":
                     with SessionLocal() as db: engine.scheduler_tick(db)
@@ -143,6 +160,7 @@ def main():
                 # Never print URLs, credentials or response contents.
                 print(f"{args.role}: operation failed; inspect execution history and configuration", flush=True)
                 if args.once: raise
+            progress["at"] = time.monotonic()
             if args.once: break
             time.sleep(2)
     except KeyboardInterrupt: pass

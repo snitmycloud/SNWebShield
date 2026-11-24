@@ -409,6 +409,42 @@ def report_bytes(content):
     return json.dumps(content,sort_keys=True,separators=(",",":"),ensure_ascii=True).encode()
 
 
+def recovery_state(job):
+    """Explain a job that cannot progress. Read-only; the engine fails expired leases when a worker next polls."""
+    if job is None: return None
+    now = utc_now()
+    if job.status == "running" and job.lease_until and as_utc(job.lease_until) <= now:
+        return {"state": "lease_expired",
+                "message": "The worker holding this run stopped or lost its lease. It will be marked failed (never "
+                           "repeated automatically) when the assessment worker next runs. You can also cancel it now."}
+    if job.status == "queued" and as_utc(job.created_at) <= now - timedelta(minutes=2):
+        return {"state": "waiting_for_worker",
+                "message": "Queued for over two minutes. Check that the assessment worker is running."}
+    return None
+
+
+def recover_on_start(limit=50):
+    """Run once when the assessment worker starts.
+
+    A process that dies after a result commits but before ingestion leaves a completed report that no
+    observation has been created from. Ingestion is idempotent, so retry those now. Expired leases are
+    failed by the engine's first claim; retests reconcile themselves from the job state on read.
+    """
+    from app.db.session import SessionLocal
+    from app.services import vulnerabilities as vulns
+    with SessionLocal() as db:
+        assessments = []
+        for report_id in vulns.pending_reports(db, limit=limit):
+            report = db.get(AssessmentReport, report_id)
+            if report and report.assessment_id not in assessments: assessments.append(report.assessment_id)
+    for assessment_id in assessments:
+        vulns.ingest_after_assessment(assessment_id)  # audits its own failures; never raises
+    with SessionLocal() as db:
+        engine.event(db, "worker_startup_recovery", detail={"assessments_checked": len(assessments)})
+        db.commit()
+    return len(assessments)
+
+
 def still_permitted(job_id,token):
     from app.db.session import SessionLocal
     with SessionLocal() as db:

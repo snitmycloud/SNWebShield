@@ -73,7 +73,7 @@ def read(db, row):
     job = db.get(Job, row.job_id)
     result = db.get(JobResult, row.job_id)
     return {**serial(row), "mode": (row.execution_snapshot or {}).get("mode", "policy_only"), "job": serial(job),
-            "result": serial(result) if result else None}
+            "result": serial(result) if result else None, "recovery": service.recovery_state(job)}
 
 
 @router.get("/profiles")
