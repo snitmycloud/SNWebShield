@@ -94,3 +94,12 @@ def enforce_distinct(actor_id: int, prior_ids, action: str) -> None:
             status_code=403,
             detail=f"Separation of duties: a second person must {action}; you took part in this work",
         )
+
+
+INFRASTRUCTURE_ROLES = frozenset({"admin", "lead_analyst"})
+
+
+def require_infrastructure_role(admin: Admin = Depends(get_current_admin)) -> Admin:
+    if admin.role not in INFRASTRUCTURE_ROLES:
+        raise HTTPException(status_code=403, detail="Infrastructure role required")
+    return admin

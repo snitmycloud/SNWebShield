@@ -31,7 +31,7 @@ The helper must report policy readiness before the scanner is created. The runne
 
 ## SSH and lifecycle
 
-The adapter invokes only `/usr/local/libexec/snwebshield-nmap-runner`, `--check` and `--cleanup <generated_hex_id>`. Targets are bounded JSON stdin, never shell commands or Docker arguments. SSH uses the existing OS configuration/key, BatchMode and strict host verification. Private keys remain outside the repository, application environment and containers.
+The adapter invokes only `/usr/local/libexec/snwebshield-nmap-runner`, `--check`, `--orphans` (read-only inventory) and `--cleanup <generated_hex_id>`. Targets are bounded JSON stdin, never shell commands or Docker arguments. SSH uses the existing OS configuration/key, BatchMode and strict host verification. Private keys remain outside the repository, application environment and containers.
 
 Preflight is bounded to eight seconds, the DNS broker to five, remote execution to 32 and targeted cleanup to eight. Nmap itself is bounded to eight seconds under a ten-second entry alarm; Docker attach is bounded to 12. Cancellation/termination invokes targeted cleanup of scanner first, then helper, checking both labels/role and approved image ID. No pre-existing container, image, volume or data is deleted. If connectivity or the daemon fails, cleanup remains unconfirmed; inspect only the exact scanner execution ID before any approved manual deletion. No broad prune is implemented. Process/VM crashes can leave stopped orphans despite independent process deadlines.
 

@@ -267,3 +267,7 @@ A default-off fixed HTTP profile reuses assessment jobs and live authorisation/e
 ## Running an assessment
 
 Open Assessments, choose a website and a profile. The page checks permission without any network request, shows which authorisation will be used or the exact reason it is blocked, and enables **Run assessment** only when permission is valid. The worker re-checks permission immediately before execution. Observations are unconfirmed until an analyst validates them in Vulnerability Management.
+
+## Scanner VM housekeeping
+
+After updating `scanner/remote_runner.py` and `scanner/nmap/runner.py`, install them on the VM as described above and run `--check` once. Then the Assessments page button "Check VM for leftover containers" lists SNWebShield-labelled containers older than two minutes. It is read-only; remove anything it flags manually and only after you approve (`/usr/local/libexec/snwebshield-nmap-runner --cleanup <token>` removes just a matching labelled container). The Nmap runner now inspects its guard and scanner containers before starting them; results from older runners show "not attested".

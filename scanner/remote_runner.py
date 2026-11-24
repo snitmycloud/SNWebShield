@@ -114,6 +114,21 @@ def verify_isolation(info, token, image):
     return True
 
 
+def orphans(limit=50):
+    """Read-only inventory of containers carrying this runner's label. Never removes anything."""
+    raw = docker(["container", "ls", "--all", "--no-trunc", "--quiet", "--filter", "label=" + LABEL])
+    ids = [i for i in raw.decode().split() if re.fullmatch(r"[0-9a-f]{64}", i)][:limit]
+    found = []
+    for cid in ids:
+        info = json.loads(docker(["container", "inspect", cid]))[0]
+        token = (info["Config"].get("Labels") or {}).get(LABEL)
+        found.append({"name": str(info["Name"]).lstrip("/")[:80], "id": cid[:12],
+                      "token": token if isinstance(token, str) and re.fullmatch(r"[0-9a-f]{32}", token) else None,
+                      "role": "analysis", "state": str(info["State"]["Status"])[:20],
+                      "created_at": str(info["Created"])[:40]})
+    return {"runner": VERSION, "label": LABEL, "orphans": found, "truncated": len(ids) == limit}
+
+
 def execute(token, data, image):
     name = container_name(token)
     started = time.monotonic()
@@ -167,6 +182,8 @@ def main():
         if docker(["info", "--format", "{{.OSType}}"]).strip() != b"linux":
             raise RunnerError("linux_docker_required")
         return {"runner": VERSION, "image_id": image}
+    if args == ["--orphans"]:
+        return orphans()
     if len(args) == 2 and args[0] == "--cleanup":
         return {"cleanup_confirmed": cleanup(args[1], image)}
     if args:

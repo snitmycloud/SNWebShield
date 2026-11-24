@@ -29,3 +29,20 @@ export function describeIsolation(execution) {
     ? "Container isolation: verified by the runner before start"
     : "Container isolation: not attested by this runner version";
 }
+
+// Read-only VM inventory (R6). Text comes from fixed categories and counts, never from remote strings.
+export function describeOrphanReport(report) {
+  if (!report || !Array.isArray(report.sections)) return [];
+  return report.sections.map(section => {
+    const orphaned = (section.containers ?? []).filter(c => c.status === "orphaned").length;
+    const recent = (section.containers ?? []).length - orphaned;
+    const text = {
+      disabled: "Not checked: this scanner is disabled, so the VM was not contacted.",
+      unsupported: "The installed runner cannot list containers. Redeploy the runner to enable this report.",
+      unavailable: "The VM could not be checked (" + String(section.error ?? "unavailable").replace(/[^a-z0-9_ ]/gi, "") + ").",
+      ok: orphaned ? `${orphaned} leftover container${orphaned === 1 ? "" : "s"} found${recent ? `, ${recent} recent` : ""}. Review and remove manually.`
+        : recent ? `No leftover containers; ${recent} recent (likely still running).` : "No leftover containers.",
+    }[section.status] ?? "Status unavailable.";
+    return { scanner: section.scanner, status: section.status, orphaned, text };
+  });
+}

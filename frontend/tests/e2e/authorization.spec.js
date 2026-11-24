@@ -479,3 +479,15 @@ test("Nmap rejects a web-only approval", async ({ page, request }) => {
   await expect(page.getByTestId("permission-status")).toContainText("does not permit the methods this profile needs");
   await expect(page.getByRole("button",{name:"3. Run assessment",exact:true})).toBeDisabled();
 });
+
+test("VM housekeeping report is explicit, read-only and flags leftover containers", async ({ page }) => {
+  await signIn(page);
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Assessments", exact: true }).click();
+  await expect(page.getByTestId("orphan-report")).toHaveCount(0); // never runs on page load
+  await page.getByRole("button", { name: "Check VM for leftover containers", exact: true }).click();
+  const report = page.getByTestId("orphan-report");
+  await expect(report).toContainText("1 leftover container found");
+  await expect(report).toContainText("No leftover containers");
+  await expect(report).toContainText("Nothing was removed");
+  await expect(page.getByRole("status")).toContainText("Nothing was changed");
+});

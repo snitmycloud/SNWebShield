@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from app.core import rbac
 from app.core.rbac import require_closure_reopen_role, require_closure_role, require_remediation_role
 from app.core.security import get_current_admin
 from app.core.time import as_utc, utc_now
@@ -98,6 +99,13 @@ def worker_status(db: Session = Depends(get_db)):
 def readiness(website_id: int = Query(gt=0), db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
     """Network-free permission preflight for every profile; schedules nothing and writes nothing."""
     return service.readiness(db, admin.id, website_id)
+
+
+@router.get("/orphan-containers")
+def orphan_containers(db: Session = Depends(get_db), admin: Admin = Depends(rbac.require_infrastructure_role)):
+    """Explicit, read-only VM inventory of leftover scanner containers (lead analyst or admin; audited)."""
+    from app.services import orphan_report
+    return orphan_report.collect(db, admin.id)
 
 
 @router.post("", status_code=201)

@@ -183,9 +183,9 @@ Service functions are in `backend/app/services/remediation.py`, routes in `backe
 | R3 | Logout is client-side only | Medium | **Closed (M6).** `jti` denylist plus role-bound tokens. `H::test_logout_revokes_only_the_presented_token_and_is_audited`, `H::test_revoked_entries_expire_and_a_stale_role_claim_is_rejected`. Residual: a token is valid until logout or expiry (20 minutes); there is no "revoke all sessions" action |
 | R4 | Installed VM header runner predates per-run isolation inspection | Medium | **Mitigated in code; manual VM step pending (user).** Redeploy the runner, then set `ASSESSMENT_REMOTE_REQUIRE_ISOLATION_ATTESTATION=true` (Milestone 1 manual steps; `test_scanner_hardening.py`). Not verifiable from this repository |
 | R5 | The SSH identity can use Docker on the VM (root-equivalent) | Medium | **Open (accepted, user step).** Key is restricted with `restrict`; adding a `command=` forced-command wrapper in `authorized_keys` is recommended |
-| R6 | A VM or runner crash can leave an orphaned analysis container | Low–Med | **Open (accepted).** Cleanup state is audited as unconfirmed; a label-scoped orphan report was not built in this milestone and no broad prune is ever run |
+| R6 | A VM or runner crash can leave an orphaned analysis container | Low–Med | **Mitigated in code; needs runner redeploy (R4).** `GET /assessments/orphan-containers` (admin or lead analyst, audited, explicit button only) asks each runner for a label-scoped, read-only inventory and flags containers older than 120 s. Nothing is ever removed or pruned automatically; removal stays a manual, approved step. Tests: `test_nmap_inspection.py` |
 | R7 | The HEAD broker runs on the Windows host, not in a container | Low | **Accepted by design.** Python `-I -S`, Windows Job Object limits, header-only parsing; `test_scanner_hardening.py`, `test_local_assessment.py` |
-| R8 | The Nmap guard container runs as root with `NET_ADMIN` on a bridge network and is not covered by per-run inspection | Medium | **Open.** It needs those privileges for its egress firewall; extending the runner's isolation inspection was not done in this milestone. Keep `ASSESSMENT_NMAP_ENABLED=false` unless needed |
+| R8 | The Nmap guard container runs as root with `NET_ADMIN` on a bridge network and is not covered by per-run inspection | Medium | **Mitigated in code; needs runner redeploy (R4).** The Nmap runner now inspects the guard and the scanner after create and before start, checking 17 properties each (no privileged mode, guard has exactly NET_ADMIN, scanner has no added capability and shares only the guard netns, read-only rootfs, resource limits, no mounts/devices/ports/host namespaces, labels, image). A mismatch fails closed and the container is never started. Runs report `isolation_verified`; older runners show as "not attested". The guard still needs root and NET_ADMIN by design |
 | R9 | Evidence retention not enforced; deletion not a secure wipe | Medium | **Mitigated (M6).** Hardened expiry checks, overwrite-then-unlink purge, immutable audit hash, report-only retention CLI. Remaining: purging is operator-initiated, and overwrite is best effort on SSD/copy-on-write media (use BitLocker). `H::test_purge_*`, `H::test_retention_report_*`, `H::test_secure_erase_*`, `H::test_evidence_identity_hash_and_history_are_immutable_in_orm_and_database` |
 | R10 | PDF reports without a publication approval gate | Medium (product) | **Closed (M4).** `test_reports.py` (human approval gate, hash-verified downloads) |
 | R11 | Starlette/httpx test-client deprecation warning | Low | **Open (accepted).** One warning in the test run; upgrade in a maintenance pass |
@@ -383,7 +383,7 @@ Milestone 6 closes the planned series. Each milestone followed the CLAUDE.md wor
 | M3 — Analyst workbench (F) | Done | M2 |
 | M4 — VAPT reporting (G) | Done | M3 |
 | M5 — Remediation, retesting and closure (H) | Done | M4 |
-| M6 — Production hardening | Done: R1, R2, R3, R14, closed-assessment lock, evidence retention hardening, end-to-end test. Not done: R8 Nmap runner inspection, R6 orphan-container report, second-analyst sign-off on `verified_fixed`, stuck-ingestion indicator, client/website edit and archive | M3 |
+| M6 — Production hardening | Done: R1, R2, R3, R14, closed-assessment lock, evidence retention hardening, end-to-end test. Later milestone: R8 and R6 (see the Nmap inspection section). Not done: second-analyst sign-off on `verified_fixed`, stuck-ingestion indicator, client/website edit and archive | M3 |
 
 ---
 
@@ -404,7 +404,7 @@ The page now names the state and shows the exact start command. `scripts/start-w
 | Worker health | Fixed here |
 | Observations, analyst validation, vulnerability ingestion, PDF reports | Implemented in M2-M4 |
 | One-step request flow and simplified UI | Done and verified (below) |
-| Not yet done | R8 Nmap runner inspection; R6 orphan-container report; stuck-job recovery review after worker restart; VM runner redeploy (user) |
+| Not yet done | stuck-job recovery review after worker restart; VM runner redeploy and live verification of the new checks (user) |
 
 ### One-step request flow (verified 2026-11-24)
 Select website, pick a profile, and the page shows permission status and enables **Run assessment**. `GET /assessments/readiness?website_id=` is network-free and writes nothing; it reuses `permission()` and selects an authorisation only if it is approved, inside its UTC window, covers the exact domain, permits the profile's methods and has currently accepted evidence. Otherwise the button is disabled and the exact reason is shown. The browser never chooses an authorisation. `create_request()` and the `assessment-worker` re-check permission again before any network call (TOCTOU preserved). The separate authorisation picker, note requirement and "explicitly request" checkbox were removed; clicking Run is the explicit request, and network profiles keep one written-permission attestation.
@@ -419,3 +419,22 @@ Select website, pick a profile, and the page shows permission status and enables
 | Playwright browser tests | 18 passed, 0 failed (assessment specs rewritten for the new form) |
 
 Not exercised: a real Azure VM scan or real target traffic (all adapters were simulated), and a live worker against the dev database.
+
+
+---
+
+## Nmap runner inspection and orphan report (branch `feature/nmap-inspection-orphan-report`, verified 2026-11-24)
+
+**R8.** `scanner/nmap/runner.py` gained `isolation_failures()` / `verify_isolation()`. It reads `docker inspect` for the guard and the scanner right after create and before start, so what Docker actually created is checked, not what was requested. `execution.isolation_verified` is reported only when both pass; the backend records `isolation_attested` (same contract as the header profile, optional unless `ASSESSMENT_REMOTE_REQUIRE_ISOLATION_ATTESTATION=true`) and the page shows it for Nmap results.
+
+**R6.** Both runners accept a new read-only `--orphans` operation (label-filtered `container ls` plus `inspect`, capped at 50, no remove/stop/prune). The backend's fixed SSH allow-list gained only that operation. The Assessments page has a "Check VM for leftover containers" button; nothing runs on page load, disabled scanners are not contacted, and each report is audited (`orphan_report_generated`).
+
+| Suite | Result |
+|---|---|
+| Backend `pytest tests` (full) | 656 passed, 0 failed (16m34s) |
+| New `test_nmap_inspection.py` | 56 passed: compliant containers, 34 single-property weakenings each caught and named, malformed inspect output fails closed, noncompliant guard/scanner never started and cleaned up, attestation contract, read-only runner listing, bounded output, SSH allow-list, age classification, disabled/unreachable/old runner, hostile output sanitised, 401/403/200 role matrix |
+| Frontend `npm test` | 61 passed, 0 failed |
+| Frontend `npm run build` | Succeeded |
+| Playwright browser tests | 19 passed, 0 failed (new housekeeping spec) |
+
+**Not verified (important).** Everything here ran against synthetic Docker output and fake SSH. The checks have **not** been run against the real VM's Docker, so exact `inspect` field values (for example how Docker renders `NetworkMode` for a shared namespace, or whether the guard's tmpfs appears under `Mounts`) are unconfirmed. The checks fail closed, so a mismatch would stop Nmap scans rather than weaken isolation. Deploying is a manual step: install both updated runners and run `--check` and `--orphans` on the VM (see README), keep `ASSESSMENT_NMAP_ENABLED=false` until a real run is confirmed.

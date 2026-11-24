@@ -57,6 +57,85 @@ def create_args(token, image, *, guard):
         "-I", "-S", "-B", "/app/nmap_guard.py" if guard else "/app/nmap_entry.py"]
 
 
+EXPECTED = {  # what create_args() requests; verify_isolation() checks what Docker actually created
+    "guard": {"user": "0:0", "memory": 67108864, "nano_cpus": 100000000},
+    "scan": {"user": "65532:65532", "memory": 134217728, "nano_cpus": 500000000},
+}
+
+
+def _caps(values):
+    return sorted(str(v).upper().removeprefix("CAP_") for v in values or [])
+
+
+def isolation_failures(info, token, image, role, carrier_name=None, carrier_id=None):
+    """Names of every inspected property that differs from policy (empty list means compliant).
+
+    Run on each container after create and BEFORE start, so a daemon default, plugin or edit that
+    weakens isolation can never execute. The guard legitimately keeps root and NET_ADMIN; it is
+    checked exactly (NET_ADMIN only, no privileged mode, no mounts but its tmpfs, bounded resources)
+    rather than trusted. The scanner must have no added capability and share only the guard's netns.
+    """
+    want = EXPECTED[role]
+    host, config = info.get("HostConfig") or {}, info.get("Config") or {}
+    labels = config.get("Labels") or {}
+    mounts = [m for m in info.get("Mounts") or []
+              if not (role == "guard" and m.get("Type") == "tmpfs" and m.get("Destination") == "/run")]
+    tmpfs = host.get("Tmpfs") or {}
+    network = host.get("NetworkMode")
+    if role == "guard":
+        network_ok = network in ("bridge", "default")
+        tmpfs_ok = set(tmpfs) <= {"/run"}
+        caps_ok = _caps(host.get("CapAdd")) == ["NET_ADMIN"]
+    else:
+        network_ok = (isinstance(network, str) and network.startswith("container:")
+                      and network[len("container:"):] in {carrier_name, carrier_id} - {None})
+        tmpfs_ok = not tmpfs
+        caps_ok = not host.get("CapAdd")
+    checks = {
+        "image": info.get("Image") == image,
+        "owner_label": labels.get(LABEL) == token and labels.get(LABEL + ".role") == role,
+        "network": network_ok,
+        "user": config.get("User") == want["user"],
+        "read_only_rootfs": host.get("ReadonlyRootfs") is True,
+        "not_privileged": host.get("Privileged") is False,
+        "capabilities": "ALL" in _caps(host.get("CapDrop")) and caps_ok,
+        "no_new_privileges": any("no-new-privileges" in str(i) for i in host.get("SecurityOpt") or []),
+        "memory": host.get("Memory") == want["memory"] and host.get("MemorySwap") == want["memory"],
+        "cpu": host.get("NanoCpus") == want["nano_cpus"],
+        "pids": host.get("PidsLimit") == 16,
+        "no_host_namespaces": host.get("PidMode") in ("", None, "private")
+                              and not str(host.get("IpcMode") or "").startswith(("host", "container")),
+        "no_mounts": not mounts and not host.get("Binds") and tmpfs_ok,
+        "no_published_ports": not host.get("PortBindings"),
+        "no_devices": not host.get("Devices"),
+        "no_restart": (host.get("RestartPolicy") or {}).get("Name") in ("no", ""),
+        "no_logging": (host.get("LogConfig") or {}).get("Type") == "none",
+    }
+    return [name for name, ok in checks.items() if not ok]
+
+
+def verify_isolation(info, token, image, role, carrier_name=None, carrier_id=None):
+    if isolation_failures(info, token, image, role, carrier_name, carrier_id):
+        raise RunnerError("container_isolation_mismatch")
+    return True
+
+
+def orphans(limit=50):
+    """Read-only inventory of containers carrying this runner's label. Never removes anything."""
+    raw = docker(["container", "ls", "--all", "--no-trunc", "--quiet", "--filter", "label=" + LABEL])
+    ids = [i for i in raw.decode().split() if re.fullmatch(r"[0-9a-f]{64}", i)][:limit]
+    found = []
+    for cid in ids:
+        info = json.loads(docker(["container", "inspect", cid]))[0]
+        labels = info["Config"].get("Labels") or {}
+        token = labels.get(LABEL)
+        found.append({"name": str(info["Name"]).lstrip("/")[:80], "id": cid[:12],
+            "token": token if isinstance(token, str) and re.fullmatch(r"[0-9a-f]{32}", token) else None,
+            "role": labels.get(LABEL + ".role") if labels.get(LABEL + ".role") in ("scan", "guard") else None,
+            "state": str(info["State"]["Status"])[:20], "created_at": str(info["Created"])[:40]})
+    return {"runner": policy.VERSION, "label": LABEL, "orphans": found, "truncated": len(ids) == limit}
+
+
 def cleanup(token, image):
     for name, role in zip(names(token), ("scan", "guard")):
         raw = docker(["container", "inspect", name], allow_missing=True)
@@ -87,7 +166,9 @@ def execute(token, target, image, permitted=gate):
     error_file = tempfile.TemporaryFile()
     try:
         docker(create_args(token, image, guard=True))
-        attached = subprocess.Popen(["/usr/bin/docker", "container", "start", "--attach", "--interactive", carrier],
+        guard_info = json.loads(docker(["container", "inspect", carrier]))[0]
+        verify_isolation(guard_info, token, image, "guard")  # before the root/NET_ADMIN guard ever starts
+        attached =subprocess.Popen(["/usr/bin/docker", "container", "start", "--attach", "--interactive", carrier],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=error_file, env={"PATH": "/usr/bin:/bin"})
         ready = queue.Queue(maxsize=1)
         def read_ready():
@@ -104,6 +185,9 @@ def execute(token, target, image, permitted=gate):
         if not info["State"]["Running"]: raise RunnerError("egress_policy_exited")
         if not permitted(): raise RunnerError("permission_changed")
         docker(create_args(token, image, guard=False))
+        verify_isolation(json.loads(docker(["container", "inspect", scan]))[0], token, image, "scan",
+                         carrier_name=carrier, carrier_id=guard_info.get("Id"))
+        result["execution"]["isolation_verified"] = True  # both containers inspected before start
         raw = docker(["container", "start", "--attach", "--interactive", scan],
             data=json.dumps({"ip": target["ip"]}).encode() + b"\n", seconds=12)
         state = json.loads(docker(["container", "inspect", scan]))[0]["State"]
@@ -143,6 +227,7 @@ def main():
     if args == ["--check"]:
         if docker(["info", "--format", "{{.OSType}}"]).strip() != b"linux": raise RunnerError("linux_required")
         return {"runner": policy.VERSION, "image_id": image, "ports": list(policy.PORTS)}
+    if args == ["--orphans"]: return orphans()
     if len(args) == 2 and args[0] == "--cleanup": return {"cleanup_confirmed": cleanup(args[1], image)}
     if args: raise RunnerError("unsupported_operation")
     signal.alarm(4)

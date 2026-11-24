@@ -42,7 +42,16 @@ def validate_execution(value, token, image, ip):
         number = value.get(key)
         if type(number) not in (float, int) or not math.isfinite(number) or number < 0:
             raise RemoteFailure("nmap_usage_contract_invalid")
-    return {key: value[key] for key in ("id", "image_id", "limits", "cleanup_confirmed", "egress_ip", "egress_tcp_ports", *fields)}
+    # Runners from this milestone inspect both containers before starting them. Older installed runners
+    # do not report it: record that honestly, and fail closed only when attestation is required.
+    attestation = value.get("isolation_verified")
+    if attestation is not None and attestation is not True:  # identity: 1 == True must not pass
+        raise RemoteFailure("nmap_isolation_attestation_invalid")
+    if attestation is None and settings.assessment_remote_require_isolation_attestation:
+        raise RemoteFailure("nmap_isolation_attestation_required")
+    accepted = {key: value[key] for key in ("id", "image_id", "limits", "cleanup_confirmed", "egress_ip", "egress_tcp_ports", *fields)}
+    accepted["isolation_attested"] = attestation is True
+    return accepted
 
 
 class NmapAdapter:

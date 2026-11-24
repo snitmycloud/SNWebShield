@@ -63,6 +63,8 @@ def command(runner, operation, execution_id=None):
     args.extend([REMOTE_HOST, runner])
     if operation == "check":
         args.append("--check")
+    elif operation == "orphans":
+        args.append("--orphans")  # read-only, label-scoped inventory; removes nothing
     elif operation == "cleanup":
         if not isinstance(execution_id, str) or not EXECUTION_ID.fullmatch(execution_id):
             raise ValueError("invalid_execution_id")

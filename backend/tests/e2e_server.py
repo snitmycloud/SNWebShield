@@ -66,6 +66,7 @@ def main():
             if operation == "check":
                 return {"runner": remote_runtime.VERSION, "image_id": os.environ["ASSESSMENT_REMOTE_IMAGE_ID"]}
             if operation == "cleanup": return {"cleanup_confirmed": True}
+            if operation == "orphans": return {"orphans": [], "truncated": False}
             return {"analysis": analyze(payload["data"]), "execution": {
                 "id": payload["id"], "image_id": os.environ["ASSESSMENT_REMOTE_IMAGE_ID"],
                 "cleanup_confirmed": True, "isolation_verified": True, "duration_ms": 50, "container_duration_ms": 40, "analyzer_cpu_seconds": .01,
@@ -82,10 +83,13 @@ def main():
             image = os.environ["ASSESSMENT_NMAP_IMAGE_ID"]
             if operation == "check": return {"runner": nmap_policy.VERSION, "image_id": image, "ports": [80, 443]}
             if operation == "cleanup": return {"cleanup_confirmed": True}
+            if operation == "orphans":  # synthetic stuck guard container, read-only inventory
+                return {"orphans": [{"name": "snws-nmap-" + "a" * 32 + "-guard", "id": "1" * 12, "token": "a" * 32,
+                                     "role": "guard", "state": "running", "created_at": "2026-01-01T00:00:00Z"}], "truncated": False}
             states = {"80": "open", "443": "closed"}
             return {"states": states, "analysis": nmap_policy.analysis(states), "execution": {
                 "id": payload["id"], "image_id": image, "limits": nmap_policy.LIMITS, "cleanup_confirmed": True,
-                "egress_ip": "8.8.8.8", "egress_tcp_ports": [80, 443], "duration_ms": 100,
+                "egress_ip": "8.8.8.8", "egress_tcp_ports": [80, 443], "duration_ms": 100, "isolation_verified": True,
                 "container_duration_ms": 80, "scanner_cpu_seconds": .01, "scanner_peak_rss_bytes": 16000000,
                 "scanner_duration_ms": 60}}
         nmap_runtime.invoke = fixture_nmap_broker

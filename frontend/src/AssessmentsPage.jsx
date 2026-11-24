@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./lib/api.js";
-import { describeIsolation, describeRedirect, describeTls } from "./lib/scanner.js";
+import { describeIsolation, describeOrphanReport, describeRedirect, describeTls } from "./lib/scanner.js";
 import AssessmentReviews from "./AssessmentReviews.jsx";
 import { runGate, defaultNote } from "./lib/runGate.js";
 import "./assessments.css";
@@ -10,7 +10,7 @@ const label = value => value?.replaceAll("_", " ") ?? "Unknown";
 
 export default function AssessmentsPage({ websites, initialAssessmentId = null }) {
   const [site, setSite] = useState("");
-  const [readiness, setReadiness] = useState(null), [profiles, setProfiles] = useState([]);
+  const [readiness, setReadiness] = useState(null), [orphans, setOrphans] = useState(null), [profiles, setProfiles] = useState([]);
   const [profile, setProfile] = useState(""), [note, setNote] = useState("");
   const [rows, setRows] = useState([]), [offset, setOffset] = useState(0), [selected, setSelected] = useState(null);
   const [events, setEvents] = useState([]), [attempts, setAttempts] = useState([]), [worker, setWorker] = useState(null), [workerInfo, setWorkerInfo] = useState(null);
@@ -105,6 +105,13 @@ export default function AssessmentsPage({ websites, initialAssessmentId = null }
       <button className="primary-button" disabled={!gate.enabled}>3. Run assessment</button>
       {!gate.enabled && site && <p role="note" data-testid="run-blocked-reason">{gate.reason}</p>}
     </form>
+    <section className="panel" aria-label="Scanner VM housekeeping">
+      <h2>Scanner VM housekeeping</h2>
+      <p>Lists leftover SNWebShield scanner containers on the Azure VM. This is read-only: nothing is stopped or removed, and it runs only when you press the button.</p>
+      <button disabled={busy} onClick={() => run(async () => setOrphans(await api.orphanContainers()), "VM container check finished. Nothing was changed.")}>Check VM for leftover containers</button>
+      {orphans && <div data-testid="orphan-report">{describeOrphanReport(orphans).map(row => <p key={row.scanner} data-status={row.status}><b>{row.scanner}:</b> {row.text}</p>)}
+        <p>{orphans.guidance}</p></div>}
+    </section>
     <h2>Assessment history</h2><p>Completion is profile-specific. Header observations are not confirmed vulnerabilities or a security rating.</p>
     <div className="panel table-scroll"><table><thead><tr><th>Request</th><th>Website</th><th>Status</th><th>Requested</th><th>Details</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}>
       <td>{row.id}</td><td>{row.target_host}</td><td>{row.job.status === "completed" ? row.mode === "remote_nmap" ? "TCP port assessment completed" : ["local_http", "remote_docker"].includes(row.mode) ? "Header assessment completed" : "Preflight completed" : label(row.job.status)}</td><td>{date(row.requested_at)}</td>
@@ -122,7 +129,7 @@ export default function AssessmentsPage({ websites, initialAssessmentId = null }
         {selected.result.payload.report.execution && <p>
           Container execution: {selected.result.payload.report.execution.container_duration_ms} ms · Runner: {selected.result.payload.report.execution.duration_ms} ms · {selected.mode === "remote_nmap" ? `Scanner CPU: ${selected.result.payload.report.execution.scanner_cpu_seconds} s · Scanner peak memory: ${Math.round(selected.result.payload.report.execution.scanner_peak_rss_bytes / 1024)} KiB` : `Analyzer CPU: ${selected.result.payload.report.execution.analyzer_cpu_seconds} s · Analyzer peak memory: ${Math.round(selected.result.payload.report.execution.analyzer_peak_rss_bytes / 1024)} KiB`} · Cleanup: {selected.result.payload.report.execution.cleanup_confirmed ? "confirmed" : "unconfirmed"}
         </p>}
-        {selected.result.payload.report.execution && selected.mode === "remote_docker" && <p>{describeIsolation(selected.result.payload.report.execution)}</p>}
+        {selected.result.payload.report.execution && ["remote_docker", "remote_nmap"].includes(selected.mode) && <p>{describeIsolation(selected.result.payload.report.execution)}</p>}
         {selected.mode !== "remote_nmap" && <p>{describeTls(selected.result.payload.report.transport)}{describeRedirect(selected.result.payload.report.transport) ? ` · ${describeRedirect(selected.result.payload.report.transport)}` : ""}</p>}
         <ul>{selected.result.payload.report.analysis.observations.map(item => <li key={item.check}>
           {label(item.check)}: {item.port_state ?? (item.observed === null ? "not applicable" : item.observed ? "observed" : "review needed")} · Suggested severity: {item.severity_suggestion}. {item.explanation}
