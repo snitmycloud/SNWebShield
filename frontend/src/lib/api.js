@@ -210,6 +210,17 @@ export const api = {
   commentVulnerability: (id, comment) => jsonPost(`/vulnerabilities/${encodeURIComponent(id)}/comments`, { comment }),
   decideVulnerability: (id, data) => jsonPost(`/vulnerabilities/${encodeURIComponent(id)}/validation`, data),
 
+  // Module F: analyst workbench (analyst role required by the API)
+  workbenchQueue: (filters = {}, offset = 0) => {
+    const params = new URLSearchParams({ limit: "50", offset: String(offset) });
+    for (const [key, value] of Object.entries(filters)) if (value !== "" && value != null) params.set(key, String(value));
+    return request(`/workbench/queue?${params}`);
+  },
+  workbenchDetail: id => request(`/workbench/${encodeURIComponent(id)}`),
+  workbenchAudit: id => request(`/workbench/${encodeURIComponent(id)}/audit?limit=100`),
+  saveWorkbenchAssessment: (id, data) => jsonPost(`/workbench/${encodeURIComponent(id)}/assessment`, data),
+  signoffWorkbench: (id, data) => jsonPost(`/workbench/${encodeURIComponent(id)}/signoff`, data),
+
   // Health
   health: () => request("/health", { auth: false }),
 

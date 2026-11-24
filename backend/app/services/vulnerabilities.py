@@ -19,8 +19,10 @@ from app.core.time import as_utc, utc_now
 from app.models.assessment import AssessmentReport, AssessmentRequest
 from app.models.client import Client
 from app.models.jobs import Job
-from app.models.vulnerability import (SEVERITIES, Vulnerability, VulnerabilityEvent, VulnerabilityIngestion,
-                                      VulnerabilityOccurrence, VulnerabilitySuppression)
+from app.models.admin import Admin
+from app.models.vulnerability import (BUSINESS_IMPACTS, LIKELIHOODS, SEVERITIES, Vulnerability, VulnerabilityEvent,
+                                      VulnerabilityIngestion, VulnerabilityOccurrence, VulnerabilityRiskAssessment,
+                                      VulnerabilitySignoff, VulnerabilitySuppression)
 from app.models.website import Website
 from app.services import assessments, job_engine
 
@@ -382,6 +384,7 @@ def detail(db, vulnerability_id):
         select(VulnerabilitySuppression).where(VulnerabilitySuppression.vulnerability_id == vulnerability.id)
         .order_by(VulnerabilitySuppression.created_at.desc()))]
     value["allowed_decisions"] = sorted(TRANSITIONS[vulnerability.validation_state])
+    value["report_eligible"] = report_eligible(db, vulnerability)
     return value
 
 
@@ -424,6 +427,7 @@ def decide(db, vulnerability_id, actor_id, payload):
     if target not in TRANSITIONS[current]:
         raise HTTPException(409, f"Cannot move from {current} to {target}")
     detail = {"human_validation_confirmed": True, "revision": vulnerability.revision + 1}
+    assessment = None
     values = {"validation_state": target, "revision": vulnerability.revision + 1, "updated_at": now}
     if target == "confirmed":
         source = db.scalar(select(AssessmentReport).join(VulnerabilityOccurrence,
@@ -432,8 +436,16 @@ def decide(db, vulnerability_id, actor_id, payload):
             .order_by(VulnerabilityOccurrence.observed_at.desc()).limit(1))
         if source is None or not report_intact(source):
             raise HTTPException(409, "Source evidence is missing or failed its integrity check")
+        # Sign-off gate: a human-authored risk assessment for this exact revision must exist, and the
+        # confirmed severity is that assessment's rating, never a scanner or client-supplied value.
+        assessment = current_assessment(db, vulnerability)
+        if assessment is None:
+            raise HTTPException(409, "Save a risk assessment for the current revision before confirming")
+        if payload.severity != assessment.risk_rating:
+            raise HTTPException(409, "Severity must match the saved risk assessment rating")
         values.update(analyst_severity=payload.severity, reproduction_steps=payload.reproduction_steps)
-        detail.update(severity=payload.severity, evidence_report_id=source.id, evidence_report_sha256=source.sha256)
+        detail.update(severity=payload.severity, evidence_report_id=source.id, evidence_report_sha256=source.sha256,
+                      risk_assessment_id=assessment.id, risk_assessment_version=assessment.version)
     else:
         values["analyst_severity"] = None
     suppression = None
@@ -458,6 +470,9 @@ def decide(db, vulnerability_id, actor_id, payload):
             detail["suppressions_revoked"] = revoked.rowcount
         if suppression:
             db.add(suppression)
+        recorded = add_signoff(db, vulnerability, target, actor_id, current, vulnerability.revision + 1,
+                               payload.justification, detail, now, assessment)
+        detail["signoff_id"] = recorded.id
         add_event(db, vulnerability, "validation_changed", actor_id=actor_id, from_state=current, to_state=target,
                   comment=payload.justification, detail=detail, now=now)
         db.commit()
@@ -474,3 +489,210 @@ def decide(db, vulnerability_id, actor_id, payload):
 def detail_after(db, vulnerability_id):
     db.expire_all()
     return detail(db, vulnerability_id)
+
+
+# --- Module F: analyst workbench ---------------------------------------------------------
+
+RATING_ORDER = ("informational", "low", "medium", "high", "critical")
+SIGNOFF_FOR_STATE = {"confirmed": "approved", "false_positive": "rejected", "not_applicable": "rejected", "unconfirmed": "reopened"}
+STAGES = ("needs_assessment", "ready_for_signoff", "report_eligible", "dismissed", "all")
+
+
+def calculate_rating(likelihood, impact):
+    """Transparent likelihood x impact matrix (1-5 each). The analyst may override with a reason."""
+    product = (LIKELIHOODS.index(likelihood) + 1) * (BUSINESS_IMPACTS.index(impact) + 1)
+    return ("informational" if product <= 2 else "low" if product <= 6 else "medium" if product <= 12
+            else "high" if product <= 16 else "critical")
+
+
+def current_assessment(db, vulnerability):
+    """The latest assessment, only if it was written against the vulnerability's current revision."""
+    row = db.scalar(select(VulnerabilityRiskAssessment).where(
+        VulnerabilityRiskAssessment.vulnerability_id == vulnerability.id).order_by(
+        VulnerabilityRiskAssessment.version.desc()).limit(1))
+    return row if row is not None and row.vulnerability_revision == vulnerability.revision else None
+
+
+def report_eligible(db, vulnerability):
+    """Eligible for VAPT reporting only while confirmed AND the latest approval produced this revision."""
+    if vulnerability.validation_state != "confirmed":
+        return False
+    last = db.scalar(select(VulnerabilitySignoff).where(VulnerabilitySignoff.vulnerability_id == vulnerability.id)
+                     .order_by(VulnerabilitySignoff.sequence.desc()).limit(1))
+    return (last is not None and last.decision == "approved" and last.vulnerability_revision == vulnerability.revision
+            and last.risk_assessment_id is not None)
+
+
+def add_signoff(db, vulnerability, target, actor_id, from_state, revision, justification, detail, now, assessment=None):
+    sequence = (db.scalar(select(func.max(VulnerabilitySignoff.sequence)).where(
+        VulnerabilitySignoff.vulnerability_id == vulnerability.id)) or 0) + 1
+    row = VulnerabilitySignoff(id=str(uuid4()), vulnerability_id=vulnerability.id, sequence=sequence,
+        decision=SIGNOFF_FOR_STATE[target], analyst_id=actor_id, from_state=from_state, to_state=target,
+        vulnerability_revision=revision, risk_assessment_id=assessment.id if assessment else None,
+        justification=justification, detail={k: v for k, v in detail.items() if k != "human_validation_confirmed"},
+        occurred_at=now)
+    db.add(row)
+    db.flush()
+    return row
+
+
+def _row(row, **extra):
+    return {**{c.name: as_utc(v).isoformat() if c.name.endswith("_at") and v is not None else v
+               for c in row.__table__.columns for v in [getattr(row, c.name)]}, **extra}
+
+
+def _names(db, ids):
+    wanted = {i for i in ids if i}
+    return {a.id: a.full_name for a in db.scalars(select(Admin).where(Admin.id.in_(wanted)))} if wanted else {}
+
+
+def _has_current_assessment():
+    latest = select(func.max(VulnerabilityRiskAssessment.version)).where(
+        VulnerabilityRiskAssessment.vulnerability_id == Vulnerability.id).correlate(Vulnerability).scalar_subquery()
+    return exists().where(VulnerabilityRiskAssessment.vulnerability_id == Vulnerability.id,
+                          VulnerabilityRiskAssessment.vulnerability_revision == Vulnerability.revision,
+                          VulnerabilityRiskAssessment.version == latest)
+
+
+def _eligible_clause():
+    latest = select(func.max(VulnerabilitySignoff.sequence)).where(
+        VulnerabilitySignoff.vulnerability_id == Vulnerability.id).correlate(Vulnerability).scalar_subquery()
+    return and_(Vulnerability.validation_state == "confirmed", exists().where(
+        VulnerabilitySignoff.vulnerability_id == Vulnerability.id, VulnerabilitySignoff.decision == "approved",
+        VulnerabilitySignoff.vulnerability_revision == Vulnerability.revision,
+        VulnerabilitySignoff.risk_assessment_id.is_not(None), VulnerabilitySignoff.sequence == latest))
+
+
+def queue(db, *, stage="needs_assessment", severity=None, website_id=None, search="", limit=50, offset=0):
+    now = utc_now()
+    ready = _has_current_assessment()
+    stages = {"needs_assessment": and_(Vulnerability.validation_state == "unconfirmed", ~ready),
+              "ready_for_signoff": and_(Vulnerability.validation_state == "unconfirmed", ready),
+              "report_eligible": _eligible_clause(),
+              "dismissed": Vulnerability.validation_state.in_(("false_positive", "not_applicable"))}
+    base = (select(Vulnerability, Website, Client).join(Website, Website.id == Vulnerability.website_id)
+            .join(Client, Client.id == Website.client_id))
+    if severity: base = base.where(effective_severity() == severity)
+    if website_id: base = base.where(Vulnerability.website_id == website_id)
+    if search:
+        base = base.where(or_(*(func.lower(column).contains(search.lower(), autoescape=True) for column in (
+            Vulnerability.title, Vulnerability.check_id, Vulnerability.target_host, Website.name, Client.company_name))))
+    summary = db.execute(base.with_only_columns(*[
+        func.coalesce(func.sum(case((clause, 1), else_=0)), 0).label(name) for name, clause in stages.items()],
+        maintain_column_froms=True)).mappings().one()
+    priority = case({"critical": 0, "high": 1, "medium": 2, "low": 3, "informational": 4}, value=effective_severity(), else_=5)
+    selected = base if stage == "all" else base.where(stages[stage])
+    rows = db.execute(selected.order_by(priority, Vulnerability.confidence_score.desc(),
+                                        Vulnerability.last_seen_at.desc(), Vulnerability.id)
+                      .offset(offset).limit(limit)).all()
+    items = []
+    for v, w, c in rows:
+        item = serial(db, v, w, c, now)
+        item["report_eligible"] = report_eligible(db, v)
+        if v.validation_state == "unconfirmed":
+            item["stage"] = "ready_for_signoff" if current_assessment(db, v) else "needs_assessment"
+        elif v.validation_state == "confirmed":
+            item["stage"] = "report_eligible" if report_eligible(db, v) else "signed_off"
+        else:
+            item["stage"] = "dismissed"
+        items.append(item)
+    return {"items": items, "summary": {k: int(v) for k, v in summary.items()}, "stage": stage,
+            "limit": limit, "offset": offset}
+
+
+def workbench_detail(db, vulnerability_id):
+    vulnerability = get(db, vulnerability_id)
+    value = detail(db, vulnerability_id)
+    history = list(db.scalars(select(VulnerabilityRiskAssessment).where(
+        VulnerabilityRiskAssessment.vulnerability_id == vulnerability.id).order_by(VulnerabilityRiskAssessment.version.desc())))
+    names = _names(db, [a.author_id for a in history])
+    current = current_assessment(db, vulnerability)
+    if vulnerability.validation_state == "confirmed":
+        # A confirmed record shows the exact assessment its approval was signed against.
+        last = db.scalar(select(VulnerabilitySignoff).where(VulnerabilitySignoff.vulnerability_id == vulnerability.id)
+                         .order_by(VulnerabilitySignoff.sequence.desc()).limit(1))
+        current = db.get(VulnerabilityRiskAssessment, last.risk_assessment_id) if last and last.risk_assessment_id else None
+    value["current_assessment"] = _row(current, author_name=names.get(current.author_id)) if current else None
+    value["assessments"] = [_row(a, author_name=names.get(a.author_id), current=bool(current and a.id == current.id))
+                            for a in history]
+    value["can_assess"] = vulnerability.validation_state == "unconfirmed"
+    value["can_approve"] = vulnerability.validation_state == "unconfirmed" and current is not None
+    return value
+
+
+def save_assessment(db, vulnerability_id, actor_id, payload):
+    vulnerability = get(db, vulnerability_id)
+    if vulnerability.revision != payload.expected_revision:
+        raise HTTPException(409, "Vulnerability changed; refresh before assessing")
+    if vulnerability.validation_state != "unconfirmed":
+        raise HTTPException(409, "Only unconfirmed vulnerabilities can be assessed; reopen it first")
+    calculated = calculate_rating(payload.likelihood, payload.business_impact)
+    if payload.risk_rating != calculated and not payload.override_reason:
+        raise HTTPException(422, f"Rating differs from the calculated '{calculated}'; an override reason is required")
+    if payload.risk_rating == calculated and payload.override_reason:
+        raise HTTPException(422, "An override reason is only accepted when the rating differs from the calculated one")
+    now = utc_now()
+    version = (db.scalar(select(func.max(VulnerabilityRiskAssessment.version)).where(
+        VulnerabilityRiskAssessment.vulnerability_id == vulnerability.id)) or 0) + 1
+    row = VulnerabilityRiskAssessment(id=str(uuid4()), vulnerability_id=vulnerability.id, version=version,
+        vulnerability_revision=vulnerability.revision, author_id=actor_id, likelihood=payload.likelihood,
+        business_impact=payload.business_impact, business_context=payload.business_context,
+        calculated_rating=calculated, risk_rating=payload.risk_rating, override_reason=payload.override_reason,
+        remediation=payload.remediation, remediation_priority=payload.remediation_priority, created_at=now)
+    try:
+        db.add(row)
+        db.flush()
+        add_event(db, vulnerability, "risk_assessment_saved", actor_id=actor_id, from_state="unconfirmed",
+                  to_state="unconfirmed", now=now, comment=payload.override_reason or "",
+                  detail={"assessment_id": row.id, "version": version, "risk_rating": payload.risk_rating,
+                          "calculated_rating": calculated, "likelihood": payload.likelihood,
+                          "business_impact": payload.business_impact, "remediation_priority": payload.remediation_priority})
+        db.commit()
+    except (IntegrityError, OperationalError) as error:
+        db.rollback()
+        raise HTTPException(409, "Assessment changed concurrently; refresh and retry") from error
+    return workbench_detail(db, vulnerability_id)
+
+
+class _Decision:
+    """Adapter presenting a workbench sign-off with the shape `decide` expects."""
+    def __init__(self, target, severity, payload):
+        self.decision, self.severity = target, severity
+        self.expected_revision = payload.expected_revision
+        self.justification = payload.justification
+        self.reproduction_steps = payload.reproduction_steps if target == "confirmed" else None
+        self.suppress_until = payload.suppress_until if target in ("false_positive", "not_applicable") else None
+
+
+def signoff(db, vulnerability_id, actor_id, payload):
+    """Approve (confirm) or reject (dismiss) as an attested analyst sign-off, or reopen a decided record."""
+    vulnerability = get(db, vulnerability_id)
+    if payload.decision == "approve":
+        assessment = current_assessment(db, vulnerability)
+        if assessment is None:
+            raise HTTPException(409, "Save a risk assessment for the current revision before approving")
+        mapped = _Decision("confirmed", assessment.risk_rating, payload)
+    elif payload.decision == "reject":
+        mapped = _Decision(payload.rejection_outcome, None, payload)
+    else:
+        mapped = _Decision("unconfirmed", None, payload)
+    decide(db, vulnerability_id, actor_id, mapped)
+    return workbench_detail(db, vulnerability_id)
+
+
+def signoffs(db, vulnerability_id, limit, offset):
+    get(db, vulnerability_id)
+    rows = list(db.scalars(select(VulnerabilitySignoff).where(VulnerabilitySignoff.vulnerability_id == vulnerability_id)
+                           .order_by(VulnerabilitySignoff.sequence.desc()).offset(offset).limit(limit)))
+    names = _names(db, [r.analyst_id for r in rows])
+    return [_row(r, analyst_name=names.get(r.analyst_id)) for r in rows]
+
+
+def audit(db, vulnerability_id, limit, offset):
+    """Immutable analyst decision trail with analyst identity: events plus the sign-off ledger."""
+    get(db, vulnerability_id)
+    rows = list(db.scalars(select(VulnerabilityEvent).where(VulnerabilityEvent.vulnerability_id == vulnerability_id)
+                           .order_by(VulnerabilityEvent.sequence.desc()).offset(offset).limit(limit)))
+    names = _names(db, [r.actor_id for r in rows])
+    return {"events": [_row(r, actor_name=names.get(r.actor_id)) for r in rows],
+            "signoffs": signoffs(db, vulnerability_id, limit, 0)}

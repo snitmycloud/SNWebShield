@@ -85,7 +85,22 @@ def decide(client, vulnerability, **changes):
     return client.post(f"{API}/{vulnerability['id']}/validation", json=body)
 
 
+def assess(client, vulnerability, **changes):
+    """Save the human risk assessment that the sign-off gate requires (default: medium risk)."""
+    body = {"expected_revision": vulnerability["revision"], "likelihood": "possible", "business_impact": "moderate",
+            "business_context": "Public marketing site; no customer data is processed on this host.",
+            "risk_rating": "medium", "remediation": "Add the header at the CDN edge and verify with a HEAD request.",
+            "remediation_priority": "planned"} | changes
+    return client.post(f"/api/v1/workbench/{vulnerability['id']}/assessment", json=body)
+
+
 def confirm(client, vulnerability, **changes):
+    severity = changes.get("severity", "medium")
+    if severity in ("informational", "low", "medium", "high", "critical") and vulnerability["validation_state"] == "unconfirmed":
+        # Assess with the same rating (override reason when it differs from the matrix) so the gate passes.
+        calculated = vulns.calculate_rating("possible", "moderate")
+        extra = {} if severity == calculated else {"override_reason": "Analyst judgement differs from the matrix for this target."}
+        assess(client, vulnerability, risk_rating=severity, **extra)  # stale revisions are rejected, as in decide
     values = {"decision": "confirmed", "severity": "medium",
               "reproduction_steps": "curl -sI the authorised URL and observe the header is absent."} | changes
     return decide(client, vulnerability, **values)

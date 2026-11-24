@@ -28,6 +28,7 @@ import {
   ShieldAlert,
   Bug,
   Users,
+  UserCheck,
   X,
 } from "lucide-react";
 import { api, API_BASE_URL } from "./lib/api.js";
@@ -36,6 +37,7 @@ import MonitoringPage from "./MonitoringPage.jsx";
 import AssessmentsPage from "./AssessmentsPage.jsx";
 import FindingsPage from "./FindingsPage.jsx";
 import VulnerabilitiesPage from "./VulnerabilitiesPage.jsx";
+import WorkbenchPage from "./WorkbenchPage.jsx";
  
 
 const NAV_ITEMS = [
@@ -46,6 +48,7 @@ const NAV_ITEMS = [
   { id: "monitoring", label: "Monitoring", icon: Activity },
   { id: "assessments", label: "Assessments", icon: FileText },
   { id: "vulnerabilities", label: "Vulnerabilities", icon: Bug },
+  { id: "workbench", label: "Analyst workbench", icon: UserCheck },
   { id: "findings", label: "Findings", icon: ShieldAlert },
 ];
 
@@ -231,6 +234,7 @@ function Dashboard({ admin, onLogout }) {
       monitoring: "Monitoring",
       assessments: "Assessments",
       vulnerabilities: "Vulnerabilities",
+      workbench: "Analyst workbench",
       findings: "Findings",
     }[activePage] || "Overview"}
   </strong>
@@ -308,6 +312,7 @@ function Dashboard({ admin, onLogout }) {
           {activePage === "monitoring" && <MonitoringPage websites={websites} />}
           {activePage === "assessments" && <AssessmentsPage websites={websites} initialAssessmentId={assessmentToOpen} />}
           {activePage === "vulnerabilities" && <VulnerabilitiesPage websites={websites} onOpenAssessment={id => { setAssessmentToOpen(id); setActivePage("assessments"); }} />}
+          {activePage === "workbench" && <WorkbenchPage websites={websites} />}
           {activePage === "findings" && <FindingsPage clients={clients} websites={websites} onOpenAssessment={id => { setAssessmentToOpen(id); setActivePage("assessments"); }} />}
 
           <footer className="content-footer">

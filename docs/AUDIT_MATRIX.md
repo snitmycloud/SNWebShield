@@ -8,11 +8,12 @@
 | Baseline before changes | 299 backend tests, 14 frontend unit tests, production build: all passing |
 | After Milestone 1 | **393 backend tests, 17 frontend unit tests, 18 Chromium journeys, production build: all passing** |
 | After Milestone 2 (Module E) | **430 backend tests, 22 frontend unit tests, production build: all passing** |
-| Database | `backend/snwebshield_dev.db` at Alembic head `0009_vulnerabilities` after Milestone 2 (was `0008_findings_dashboard` after Milestone 1); backed up to `backups/db-20261124T080620Z/` (gitignored, integrity-checked). No migration added. |
+| After Milestone 3 (Module F) | **470 backend tests, 31 frontend unit tests, production build: all passing** |
+| Database | Alembic head is `0010_analyst_workbench` after Milestone 3 (`0009_vulnerabilities` after Milestone 2). Pre-0010 backup: `backups/db-*-pre-0010/` (gitignored, integrity-checked). The development database file itself is migrated by the operator with `python -m alembic upgrade head` (see Milestone 3 manual steps). |
 
 **Status legend.** ✅ Fully implemented and tested · 🟡 Partially implemented · 🧪 Implemented but not tested · ❌ Missing · 🔧 Broken or requiring improvement
 
-Test paths are relative to `backend/tests/`. Browser journeys are in `frontend/tests/e2e/authorization.spec.js`. All API routes are under `/api/v1`.
+Test paths are relative to `backend/tests/`. Module E and F test names below are real function names in `test_vulnerabilities.py` and `test_workbench.py`. Browser journeys are in `frontend/tests/e2e/authorization.spec.js`. All API routes are under `/api/v1`.
 
 ---
 
@@ -24,9 +25,9 @@ Test paths are relative to `backend/tests/`. Browser journeys are in `frontend/t
 | FastAPI backend | ✅ | `backend/app/main.py`, `GET /health` (`test_api.py::test_health_endpoint`) |
 | Admin authentication | ✅ | `POST /auth/login`, `GET /auth/me` (`api/routes/auth.py`); bcrypt plus constant-time unknown-user check; `test_auth.py` |
 | JWT | ✅ | `core/security.py`: `iss`, `aud`, `nbf`, `exp` and `jti` required; 20-minute default; `test_auth_claims.py` (invalid claims, deactivated admin invalidates token) |
-| Logout / session expiry | 🟡 | Client-side idle timer and expiry (`frontend/src/lib/api.js`; `api.test.js`, e2e "idle token expiry"). **No server-side revocation:** a token stays valid until `exp` after logout. |
-| Authentication audit logging | ❌ | Login success and failure are not recorded (`auth.py` only sets `last_login_at`). This breaks a CLAUDE.md invariant. See risk R1. |
-| Login brute-force protection | ❌ | No rate limiting or lockout (R2) |
+| Logout / session expiry | 🟡 | Client-side idle timer and expiry (`frontend/src/lib/api.js`; `api.test.js`, e2e "idle token expiry"). **No server-side revocation:** a token stays valid until `exp` after logout (R3, owned by Milestone 6). |
+| Authentication audit logging | ❌ | Login success and failure are not recorded (`auth.py` only sets `last_login_at`). This breaks a CLAUDE.md invariant. See risk R1, owned by **Milestone 6 (Production Hardening)**. |
+| Login brute-force protection | ❌ | No rate limiting or lockout (R2, owned by Milestone 6) |
 | Client and website management | 🟡 | Create, list and get only: `POST/GET /clients`, `POST/GET /websites` (`test_api.py`). No update, archive or delete, and no UI form to create authorisations. |
 | DB models / migrations | ✅ | `app/models/*`, Alembic `0001`–`0008`; `test_migrations.py` (fresh, legacy adoption, partial-schema refusal, data preservation) |
 | API protection | ✅ | Router-level `Depends(get_current_admin)`; unauthenticated tests in `test_auth.py`, `test_assessments.py::test_authentication_and_pagination`, `test_findings.py`, `test_evidence.py` |
@@ -74,26 +75,39 @@ Test paths are relative to `backend/tests/`. Browser journeys are in `frontend/t
 
 ## E. Vulnerability management (Milestone 2: complete)
 
+Service functions are in `backend/app/services/vulnerabilities.py`, routes in `backend/app/api/routes/vulnerabilities.py`, models in `backend/app/models/vulnerability.py`.
+
 | Sub-feature | Status | Evidence |
 |---|---|---|
-| Normalised finding records | ✅ | `Vulnerability` entity with a unique fingerprint per website, check and target (`models/vulnerability.py`, migration `0009_vulnerabilities`); `services/vulnerabilities.py`; `GET /vulnerabilities`, `GET /vulnerabilities/{id}`; `test_vulnerabilities.py` |
-| Severity and confidence | ✅ | `scanner_severity`, `analyst_severity`, `confidence`, `confidence_score` and `confidence_factors`; `test_vulnerabilities.py` |
-| Evidence and reproduction steps | ✅ | `VulnerabilityOccurrence` with `evidence` and `evidence_sha256`; `reproduction_template` and analyst `reproduction_steps`; `GET /vulnerabilities/{id}/occurrences` |
-| Duplicate detection | ✅ | Fingerprint dedup across assessments, with `detection_count`, `not_detected_count` and first/last seen; `POST /vulnerabilities/ingest` |
-| False-positive management | ✅ | Validation states with append-only events (`GET /vulnerabilities/{id}/events`); suppressed occurrences flagged |
-| Human validation and analyst comments | ✅ | `POST /vulnerabilities/{id}/validation` and `/comments`, with `revision` concurrency; no vulnerability is confirmed without analyst action |
+| Normalised finding records | ✅ | `Vulnerability` with unique `fingerprint` per website, check and target (`fingerprint()`, `_record()`, migration `0009_vulnerabilities`); `GET /vulnerabilities`, `GET /vulnerabilities/{id}` (`listing()`, `detail()`). Tests: `test_completed_assessment_ingests_unconfirmed_normalised_records`, `test_secure_response_creates_no_records`, `test_listing_filters_counts_and_ordering` |
+| Safe ingestion of untrusted scanner output | ✅ | `parse_observation()` (fixed vocabulary, strict booleans), `ingest_report()` (report SHA-256 re-check via `report_intact()`, 64-observation cap), `ingest_one()`, `ingest_pending()`. Tests: `test_untrusted_or_non_applicable_observations_are_not_ingested`, `test_hostile_report_cannot_confirm_or_inject_checks`, `test_oversized_observation_list_rejected`, `test_tampered_report_is_rejected_audited_and_left_pending`, `test_backfill_is_idempotent`, `test_ingestion_failure_never_loses_scanner_result`, `test_port_inventory_reports_are_marked_but_not_ingested` |
+| Severity and confidence | ✅ | `scanner_severity`, `analyst_severity`, `score()` (explainable `confidence_factors`). Tests: `test_confidence_scoring_is_deterministic_and_bounded`, `test_later_pass_is_recorded_lowers_confidence_and_never_auto_closes` |
+| Evidence and reproduction steps | ✅ | `VulnerabilityOccurrence` with `evidence` and `evidence_sha256` (`evidence()`); `reproduction()` and `safe_url()`; `occurrences()`. Tests: `test_reproduction_command_is_shell_inert`, `test_completed_assessment_ingests_unconfirmed_normalised_records` |
+| Duplicate detection | ✅ | Fingerprint dedup across assessments and profiles with `detection_count`, `not_detected_count`, first/last seen. Test: `test_deduplicates_across_assessments_and_profiles` |
+| False-positive management | ✅ | `decide()` creates `VulnerabilitySuppression` (future, at most 365 days); redetection reopens after expiry. Tests: `test_false_positive_suppression_carries_forward_then_expires`, `test_suppression_expiry_must_be_future_and_bounded`, `test_dismissal_needs_timezone_aware_expiry`, `test_reopen_revokes_suppression` |
+| Human validation and analyst comments | ✅ | `decide()` (`TRANSITIONS`, `expected_revision`, intact-source check), `comment()`, `events()`; `POST /vulnerabilities/{id}/validation`, `/comments`. Tests: `test_confirmation_requires_attested_analyst_decision`, `test_confirmation_requires_intact_source_evidence`, `test_comments_and_history_are_append_only`. **Milestone 3 tightened this:** confirmation now also needs a saved risk assessment (see F). |
+| Authentication and unknown records | ✅ | Router-level `get_current_admin`. Test: `test_authentication_and_unknown_records` |
 | Frontend | ✅ | `VulnerabilitiesPage.jsx`, `lib/vulnerabilities.js`; `tests/vulnerabilities.test.js` |
 
-**Test evidence (2026-11-24):** 430 backend tests (`python -m pytest`), 22 frontend unit tests (`npm test`) and `npm run build` all passed. The suite now resolves `app` through `pythonpath = ["."]` in `backend/pyproject.toml`.
+## F. Security analyst workbench (Milestone 3: complete)
 
-## F. Security analyst workbench
+Service functions are in `backend/app/services/vulnerabilities.py` (extended, not rebuilt), routes in `backend/app/api/routes/workbench.py` (`/api/v1/workbench`), the role gate in `backend/app/core/rbac.py`, migration `0010_analyst_workbench`, UI in `frontend/src/WorkbenchPage.jsx` and `frontend/src/lib/workbench.js`.
 
 | Sub-feature | Status | Evidence |
 |---|---|---|
-| Manual finding validation | ✅ | `AssessmentReviews.jsx`; e2e "analyst reviews track remediation…" |
-| Risk and business-impact assessment | ❌ | Only severity. No likelihood, impact, CVSS or business context fields. |
-| Remediation recommendations | ✅ | `recommendation` required for confirmed issues (schema validator) |
-| Analyst approval and audit history | ✅ | Append-only revisions with `expected_revision` concurrency (`test_concurrent_reviews…`). No second-analyst approval. |
+| Manual finding validation and review queue | ✅ | `GET /workbench/queue` (`queue()`): stages `needs_assessment`, `ready_for_signoff`, `report_eligible`, `dismissed`, `all`, with severity, website and search filters and per-stage counts. Test: `test_review_queue_stages_filters_and_counts` |
+| Risk and business-impact assessment | ✅ | `POST /workbench/{id}/assessment` (`save_assessment()`): likelihood x business impact matrix (`calculate_rating()`), analyst override only with a recorded reason, business context, append-only versions bound to the vulnerability revision. Tests: `test_risk_matrix_is_deterministic`, `test_assessment_records_business_impact_and_remediation`, `test_override_needs_reason_and_reason_needs_override`, `test_invalid_assessments_rejected_without_writes`, `test_assessment_rejects_stale_revision_and_decided_records` |
+| Tailored remediation recommendations | ✅ | `remediation` (min 20 characters) and `remediation_priority` are mandatory in every assessment version. Test: `test_assessment_records_business_impact_and_remediation` |
+| Mandatory analyst sign-off gate | ✅ | `POST /workbench/{id}/signoff` (`signoff()` → `decide()`): approve requires a current assessment, reproduction steps, justification and attestation; the confirmed severity is the assessed rating; reject dismisses with a bounded suppression; reopen voids the sign-off and stales the assessment. The legacy `/vulnerabilities/{id}/validation` route is gated by the same check in `decide()`. Tests: `test_approval_is_impossible_without_a_current_assessment`, `test_legacy_validation_cannot_bypass_the_assessed_rating`, `test_attested_approval_confirms_and_makes_report_eligible`, `test_rejection_dismisses_with_suppression_and_is_never_report_eligible`, `test_reopening_revokes_eligibility_and_stales_the_assessment`, `test_concurrent_signoffs_only_one_wins` |
+| VAPT report eligibility | ✅ | `report_eligible()` is true only while the record is confirmed **and** its latest sign-off is an approval bound to the current revision with a risk assessment. Tests: `test_eligibility_requires_the_signoff_to_match_the_current_revision`, queue stage `report_eligible`. The report itself is Milestone 4. |
+| Immutable analyst decision history | ✅ | `VulnerabilitySignoff` ledger (analyst id, UTC time, prior and new state, justification, revision, assessment id) plus `VulnerabilityEvent`; `GET /workbench/{id}/audit` and `/signoffs` resolve analyst names. Append-only in the ORM (`before_update`/`before_delete`) **and** by SQLite triggers on `vulnerability_events`, `vulnerability_risk_assessments`, `vulnerability_signoffs`. Tests: `test_audit_trail_records_analyst_identity_time_states_and_justification`, `test_orm_blocks_rewriting_assessments_signoffs_and_events`, `test_database_triggers_block_raw_sql_rewrites`, `test_migration_installs_tables_and_immutability_triggers_preserving_data` |
+| RBAC and session protection | ✅ | Every route depends on `require_analyst` (allow-list `ANALYST_ROLES`) on top of `get_current_admin` (signed token, `iss`/`aud`/`exp`/`jti`, active account). Tests: `test_every_workbench_route_rejects_unauthenticated_callers`, `test_workbench_rejects_tokens_for_other_roles_and_deactivated_analysts`, `test_role_allow_list_gates_every_workbench_route_and_writes_nothing`, `test_unknown_records_and_malformed_ids`. Only the `admin` role exists today; finer roles (and second-analyst approval) are tracked in Milestone 6. |
+| Safe handling of untrusted evidence | ✅ | API returns evidence as JSON only (`test_untrusted_text_is_stored_and_returned_as_inert_data`). The UI shows it as escaped text in `<pre>` through `safeText()` (control and bidi characters replaced, 20,000-character cap) with no `dangerouslySetInnerHTML`. Frontend tests: `untrusted evidence renders as escaped text, never as markup`, `safeText strips control and bidi characters…` |
+| Frontend workbench | ✅ | `WorkbenchPage.jsx`: queue, evidence viewer, assessment form, sign-off form, audit trail. `tests/workbench.test.js` (9 tests: matrix, override rule, transitions, attestation, escaping, API paths) |
+
+**Known limits.** No second-analyst approval yet (one attested analyst can approve). Assessments cannot be edited, only superseded by a new version. The CVSS vector is not captured.
+
+**Test evidence (2026-11-24):** 470 backend tests (`python -m pytest`), 31 frontend unit tests (`npm test`) and `npm run build` all passed.
 
 ## G. VAPT reporting
 
@@ -123,16 +137,17 @@ Test paths are relative to `backend/tests/`. Browser journeys are in `frontend/t
 
 | ID | Risk | Severity | Status and mitigation |
 |---|---|---|---|
-| R1 | Authentication events (login success/failure, inactive-account attempts) are not audit-logged, against a CLAUDE.md invariant | **High** | Open. Milestone 2. Add an append-only auth event table without storing passwords or tokens. |
-| R2 | No login rate limiting or lockout | Medium | Open. Milestone 2. |
-| R3 | Logout is client-side; a stolen token stays valid up to 20 minutes | Medium | Open. Milestone 2: `jti` denylist on logout. |
+| R1 | Authentication events (login success/failure, inactive-account attempts) are not audit-logged, against a CLAUDE.md invariant | **High** | Open. **Milestone 6 (Production Hardening).** Add an append-only auth event table without storing passwords or tokens. |
+| R2 | No login rate limiting or lockout | Medium | Open. **Milestone 6 (Production Hardening).** |
+| R3 | Logout is client-side; a stolen token stays valid up to 20 minutes | Medium | Open. **Milestone 6 (Production Hardening):** `jti` denylist on logout. |
 | R4 | The installed VM header runner predates per-run isolation inspection | Medium | Mitigated in code. Redeploy manually, then set `ASSESSMENT_REMOTE_REQUIRE_ISOLATION_ATTESTATION=true`. |
 | R5 | The SSH identity can use Docker on the VM, which is root-equivalent. A compromised Windows account means a compromised VM. | Medium | Key restricted with `restrict`. **Recommended:** add a `command="…"` forced-command wrapper in `authorized_keys` that allows only the two runner paths. |
 | R6 | A VM or runner crash can leave an orphaned analysis container (cleanup unconfirmed) | Low–Med | Audited as unconfirmed. Roadmap: label-scoped orphan report (`com.snwebshield.runner`), never a broad prune. |
 | R7 | The HEAD broker runs on the Windows host, not in a container | Low | By design: CLAUDE.md requires `--network none` for analysis, so the target request must be made elsewhere. Mitigated with Python `-I -S`, a Job Object (256 MiB, CPU cap), header-only parsing and a 32 KiB limit. |
-| R8 | The Nmap guard container runs as root with `NET_ADMIN` on a bridge network (needed for its egress firewall) and is not covered by per-run inspection | Medium | Open. Milestone 2: extend inspection to `scanner/nmap/runner.py`. |
+| R8 | The Nmap guard container runs as root with `NET_ADMIN` on a bridge network (needed for its egress firewall) and is not covered by per-run inspection | Medium | Open. Milestone 6: extend inspection to `scanner/nmap/runner.py`. |
 | R9 | Evidence retention is not enforced automatically; deletion is not a secure wipe | Medium | Open. Add a scheduled retention report. Recommend BitLocker on the evidence volume. |
-| R10 | PDF or executive reports; no publication approval | Medium (product) | Findings are now normalised and deduplicated (Milestone 2). Remaining: PDF and executive reports, publication approval. |
+| R10 | PDF or executive reports; no publication approval | Medium (product) | Findings are normalised (M2) and analyst sign-off gates report eligibility (M3). Remaining, Milestone 4: PDF and executive reports, publication approval. |
+| R14 | One analyst can both assess and approve; only the `admin` role exists | Medium | Open. Milestone 6: distinct analyst/reviewer roles and second-analyst approval for high and critical findings. |
 | R11 | Starlette/httpx test-client deprecation warning | Low | Upgrade dependency in a maintenance pass |
 | R12 | Real-target acceptance with genuine written authorisation not yet performed for the hardened build | Medium | User step (below) |
 | R13 | Single global assessment slot and 60-second cooldown limit throughput | Low | Accepted for local use |
@@ -182,14 +197,36 @@ No VM changes were made by this milestone. These steps are for the operator:
 
 ---
 
+## Milestone 3: human security analyst workbench (Module F)
+
+**Status: complete, verified and committed on `feat/snwebshield-hardening`.**
+
+| Area | Change | Files |
+|---|---|---|
+| Migration | `0010_analyst_workbench`: `vulnerability_risk_assessments`, `vulnerability_signoffs`, and SQLite `BEFORE UPDATE/DELETE` triggers that make events, assessments and sign-offs immutable at database level. Additive; downgrade is refused to preserve history. | `backend/migrations/versions/0010_analyst_workbench.py` |
+| Models | `VulnerabilityRiskAssessment`, `VulnerabilitySignoff`; ORM append-only guards; triggers also attached through `after_create` so fresh databases match migrated ones | `backend/app/models/vulnerability.py` |
+| Service | Extended `vulnerabilities.py`: matrix, assessments, queue, sign-off, eligibility, audit. `decide()` now refuses confirmation without a current assessment and writes a sign-off row in the same transaction. | `backend/app/services/vulnerabilities.py` |
+| API / RBAC | `/api/v1/workbench/*` behind `require_analyst` | `api/routes/workbench.py`, `core/rbac.py`, `main.py` (startup check for the new table) |
+| Frontend | Analyst workbench page and pure helpers; new API client calls | `WorkbenchPage.jsx`, `lib/workbench.js`, `lib/api.js`, `App.jsx` |
+| Behaviour change | Confirming a vulnerability from the Vulnerabilities page now fails with a clear 409 until a risk assessment is saved in the workbench. Existing confirmed records keep their state but have no sign-off row, so they are **not** report eligible until re-approved through the workbench. | |
+
+### Manual configuration
+
+1. Back up, then migrate the development database: `cd backend; .\.venv\Scripts\python.exe -m alembic upgrade head` (a pre-0010 copy is in `backups/`). Restart the API; startup refuses to run without the new tables.
+2. Any vulnerability confirmed before this milestone must be re-assessed and re-approved in the workbench to become report eligible.
+3. No Azure, VM, Docker or `.env` changes are needed. The Milestone 1 manual VM steps are still pending.
+
+---
+
 ## Remaining roadmap
 
 Each milestone follows the CLAUDE.md workflow: back up the database, add migrations, unit/API/security tests, frontend tests and a build, update this file and the README, and commit locally.
 
 | Milestone | Scope | Depends on |
 |---|---|---|
-| **M2 — Foundation and scanner security gaps** | R1 auth audit log; R2 login throttling; R3 server-side logout (`jti` denylist); client/website edit and archive with audit; extend per-run isolation inspection to the Nmap runner (R8); label-scoped orphan-container report (R6); evidence retention report (R9) | M1 |
-| **M3 — Vulnerability management (E)** — delivered early as Milestone 2 | Normalised `Finding` entity with a stable fingerprint `(website, check, scope)`; dedup across assessments; confidence; structured reproduction steps; false-positive suppression carried forward with expiry and audit | M2 |
-| **M4 — Analyst workbench (F)** | Likelihood, impact and business-context risk rating (CVSS-style optional); second-analyst approval for high and critical findings | M3 |
-| **M5 — VAPT reporting (G)** | Report entity (draft → in review → approved → published); executive summary; scope and methodology from the authorisation snapshot; locally rendered PDF with a SHA-256 manifest; human approval gate before publish | M3, M4 |
-| **M6 — Remediation and retesting (H)** | Retest request workflow tied to a fresh authorisation check; automatic before/after check comparison; client update log; engagement closure with a final report | M5 |
+| M1 — Scanner worker hardening (D) | Done | |
+| M2 — Vulnerability management (E) | Done | M1 |
+| M3 — Analyst workbench (F) | Done | M2 |
+| **M4 — VAPT reporting (G)** | Report entity (draft → in review → approved → published) built only from report-eligible findings; executive summary; scope and methodology from the authorisation snapshot; locally rendered PDF with a SHA-256 manifest; human approval gate before publish | M3 |
+| **M5 — Remediation and retesting (H)** | Retest request workflow tied to a fresh authorisation check; automatic before/after check comparison; client update log; engagement closure with a final report | M4 |
+| **M6 — Production hardening** | **R1** auth audit log; **R2** login throttling; **R3** server-side logout (`jti` denylist); **R14** distinct analyst roles and second-analyst approval; R8 Nmap runner isolation inspection; R6 orphan-container report; R9 evidence retention report; client/website edit and archive with audit | M3 |

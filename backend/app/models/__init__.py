@@ -12,4 +12,5 @@ from app.models.jobs import Job, JobAttempt, JobResult, ExecutionEvent, WorkerHe
 from app.models.monitoring import MonitoringConfig, MonitoringConsent, MonitoringIncident, NotificationDelivery
 from app.models.assessment import AssessmentRequest, AssessmentReport, ObservationReview, ReviewedAssessmentExport, FindingDueDate
 from app.models.vulnerability import (Vulnerability, VulnerabilityEvent, VulnerabilityIngestion,
-                                      VulnerabilityOccurrence, VulnerabilitySuppression)
+                                      VulnerabilityOccurrence, VulnerabilityRiskAssessment, VulnerabilitySignoff,
+                                      VulnerabilitySuppression)
