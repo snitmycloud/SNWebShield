@@ -24,6 +24,7 @@ const METHODS = {
   passive_reconnaissance: "Passive reconnaissance",
   configuration_review: "Configuration review",
   automated_non_intrusive_scanning: "Automated non-intrusive scanning",
+  tcp_port_discovery: "TCP port discovery (approved profile ports only)",
   manual_web_application_testing: "Manual web application testing",
   authenticated_testing: "Authenticated testing",
   api_security_testing: "API security testing",

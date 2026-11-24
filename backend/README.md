@@ -97,3 +97,15 @@ See [monitoring design, permissions, limits, APIs and Windows checks](../docs/MO
 Explicit assessment requests, a versioned policy-only profile, live authorisation/evidence enforcement and an independent `assessment-worker` role now use the existing shared job engine. The Assessments dashboard supports request history, detail and cancellation. Migration `0005_assessment_intents` preserves existing monitoring data. No network check, Nmap, Nuclei or ZAP adapter is enabled; completed means permission preflight only.
 
 See [the assessment audit, design, API and Windows acceptance guide](../docs/SCANNER_STAGE_ONE.md). Keep existing accounts, configuration and data; back up before migrating. New browser acceptance remains pending on Windows.
+
+## Local Python assessment worker
+
+[Restricted Nmap scanning](../docs/NMAP_SCANNER.md) uses a separate image/SSH runner and requires both web-scan and TCP-discovery permission plus the approved numeric IP. New settings: `ASSESSMENT_NMAP_ENABLED` and `ASSESSMENT_NMAP_IMAGE_ID`; example defaults remain disabled. No database migration is required.
+
+The authenticated [Findings API](../docs/FINDINGS_DASHBOARD.md) aggregates latest confirmed reviews and records deadline revision history. Additive migration `0008_findings_dashboard` preserves reports and review data. No extra worker or scanner is required.
+
+Analyst review and immutable reviewed exports use additive migration `0007_observation_reviews`. See [review API, remediation rules and migration instructions](../docs/ANALYST_REVIEW.md). Reviews do not perform network operations or change original scanner observations.
+
+The separate default-off `remote-docker-headers-v1` profile uses the existing Azure VM only for isolated header analysis. Configure `ASSESSMENT_REMOTE_DOCKER_ENABLED` and the immutable `ASSESSMENT_REMOTE_IMAGE_ID` after manual runner setup. No SSH key belongs in application settings. Windows SSH, live isolation, timeout, cancellation and cleanup checks passed. See [remote setup, security, costs and acceptance](../docs/REMOTE_DOCKER_SCANNER.md).
+
+A default-off fixed HTTP profile reuses assessment jobs and live authorisation/evidence checks. It performs one HEAD and runs a network-free header analysis program in a bounded local Python process. No Docker or cloud service is required. Migration: `0006_local_http`; setting: `ASSESSMENT_LOCAL_HTTP_ENABLED=false`. See `docs/LOCAL_HTTP_ASSESSMENTS.md` (repository root) for setup, execution limits, acceptance steps and trust-boundary limitations.

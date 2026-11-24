@@ -88,3 +88,15 @@ Run the three independent backend operational processes for real checks. [Monito
 Explicit assessment requests, a versioned policy-only profile, live authorisation/evidence enforcement and an independent `assessment-worker` role now use the existing shared job engine. The Assessments dashboard supports request history, detail and cancellation. Migration `0005_assessment_intents` preserves existing monitoring data. No network check, Nmap, Nuclei or ZAP adapter is enabled; completed means permission preflight only.
 
 See [the assessment audit, design, API and Windows acceptance guide](../docs/SCANNER_STAGE_ONE.md). Keep existing accounts, configuration and data; back up before migrating. New browser acceptance remains pending on Windows.
+
+## Local Python assessment worker
+
+The **Nmap · restricted TCP ports 80 and 443** assessment profile has separate TCP consent and displays port states, scanner usage and cleanup. It requires explicit hostname/public-IP scope and `tcp_port_discovery` permission. See [Nmap setup and limits](../docs/NMAP_SCANNER.md).
+
+**Findings** in the sidebar opens the cross-client remediation queue. Filter current analyst confirmations, assign due dates, inspect overdue work, edit existing reviews and navigate to source assessments or linked retests. See [the Findings workflow](../docs/FINDINGS_DASHBOARD.md).
+
+Open a completed assessment to use **Analyst review and remediation**. Record decisions, evidence references, fixes, owners and resolution status; review history is available per observation. Reviewed JSON export is available after all observations are reviewed. See [the analyst workflow](../docs/ANALYST_REVIEW.md).
+
+The Azure Docker profile adds remote analysis details, execution duration, analyser CPU/peak memory and cleanup status. Both HTTP profiles require separate network consent. The remote profile is disabled until the backend image pin and SSH runner are configured. See [remote scanner setup](../docs/REMOTE_DOCKER_SCANNER.md).
+
+A default-off fixed HTTP profile reuses assessment jobs and live authorisation/evidence checks. It performs one HEAD and runs a network-free header analysis program in a bounded local Python process. No Docker or cloud service is required. Migration: `0006_local_http`; setting: `ASSESSMENT_LOCAL_HTTP_ENABLED=false`. See `docs/LOCAL_HTTP_ASSESSMENTS.md` (repository root) for setup, execution limits, acceptance steps and trust-boundary limitations.

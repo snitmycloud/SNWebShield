@@ -21,7 +21,7 @@ def test_new_database_migrates_and_upgrade_is_idempotent(tmp_path):
     migrate(path)
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0005_assessment_intents"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0008_findings_dashboard"
         columns = {row[1] for row in db.execute("PRAGMA table_info(website_authorizations)")}
         assert "timestamps_verified" in columns
         assert db.execute("SELECT COUNT(*) FROM admins").fetchone()[0] == 0
@@ -81,3 +81,22 @@ def test_monitoring_database_upgrade_preserves_all_old_rows(tmp_path):
         assert db.execute('SELECT COUNT(*) FROM monitoring_configs').fetchone()[0]==0
         assert db.execute('SELECT COUNT(*) FROM jobs').fetchone()[0]==1
         assert db.execute('SELECT COUNT(*) FROM assessment_requests').fetchone()[0]==0
+
+
+def test_stage_one_intents_and_accounts_survive_local_upgrade(tmp_path):
+    path=tmp_path/'stage-one.db'
+    migrate(path,'0005_assessment_intents')
+    with sqlite3.connect(path) as db:
+        db.execute("INSERT INTO admins (id,email,full_name,password_hash,role,is_active) VALUES (1,'synthetic@example.com','Test Admin','preserved-password-hash','admin',1)")
+        db.execute("INSERT INTO clients (id,company_name,primary_contact_name,email) VALUES (1,'Synthetic','Contact','contact@example.com')")
+        db.execute("INSERT INTO websites (id,client_id,name,url,environment,authorisation_status) VALUES (1,1,'Synthetic','https://example.com','staging','pending')")
+        db.execute("INSERT INTO website_authorizations (id,website_id,authorization_reference,authorized_by,authorized_domains,permitted_methods,valid_from,valid_until,status,evidence_revision,timestamps_verified) VALUES (1,1,'SYNTHETIC','Contact','[\"example.com\"]','[\"automated_non_intrusive_scanning\"]','2026-11-22','2026-11-23','pending',0,1)")
+        db.execute("INSERT INTO jobs (id,job_type,resource_id,revision,status,idempotency_key,due_at,attempts,max_attempts,created_at) VALUES ('preserved','assessment',1,1,'queued','key','2026-11-22',0,1,'2026-11-22')")
+        db.execute("INSERT INTO assessment_requests VALUES ('intent','preserved',1,1,1,'2026-11-22','authorization-preflight-v1','digest','https://example.com','example.com','permission','{}','Existing explicit preflight')")
+        before=db.execute('SELECT * FROM assessment_requests').fetchall()
+    migrate(path)
+    with sqlite3.connect(path) as db:
+        assert [row[:-1] for row in db.execute('SELECT * FROM assessment_requests')]==before
+        assert db.execute('SELECT execution_snapshot FROM assessment_requests').fetchone()==(None,)
+        assert db.execute('SELECT password_hash FROM admins').fetchone()==('preserved-password-hash',)
+        assert db.execute('SELECT COUNT(*) FROM assessment_reports').fetchone()==(0,)

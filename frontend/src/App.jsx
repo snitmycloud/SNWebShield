@@ -33,6 +33,7 @@ import { api, API_BASE_URL } from "./lib/api.js";
 import AuthorizationPage from "./AuthorizationPage.jsx";
 import MonitoringPage from "./MonitoringPage.jsx";
 import AssessmentsPage from "./AssessmentsPage.jsx";
+import FindingsPage from "./FindingsPage.jsx";
  
 
 const NAV_ITEMS = [
@@ -42,6 +43,7 @@ const NAV_ITEMS = [
   { id: "authorizations", label: "Authorizations", icon: ClipboardCheck },
   { id: "monitoring", label: "Monitoring", icon: Activity },
   { id: "assessments", label: "Assessments", icon: FileText },
+  { id: "findings", label: "Findings", icon: ShieldAlert },
 ];
 
 function formatDate(value) {
@@ -63,6 +65,7 @@ function initials(value = "SN") {
 
 function Dashboard({ admin, onLogout }) {
   const [activePage, setActivePage] = useState("overview");
+  const [assessmentToOpen, setAssessmentToOpen] = useState(null);
   const [clients, setClients] = useState([]);
   const [websites, setWebsites] = useState([]);
   const [authorizationSummary, setAuthorizationSummary] = useState(null);
@@ -181,7 +184,7 @@ function Dashboard({ admin, onLogout }) {
             <button
               className={`nav-item ${activePage === id ? "active" : ""}`}
               key={id}
-              onClick={() => { setActivePage(id); setSearch(""); setPageError(""); }}
+              onClick={() => { setActivePage(id); setAssessmentToOpen(null); setSearch(""); setPageError(""); }}
             >
               <Icon size={18} />
               <span>{label}</span>
@@ -192,7 +195,6 @@ function Dashboard({ admin, onLogout }) {
         </nav>
 
         <div className="nav-label tools-label">MANAGEMENT</div>
-        <div className="nav-item nav-muted"><ShieldAlert size={18} /><span>Vulnerabilities</span><span className="coming-soon">Soon</span></div>
         <div className="nav-item nav-muted"><Activity size={18} /><span>Reports</span><span className="coming-soon">Soon</span></div>
 
         <div className="sidebar-bottom">
@@ -225,6 +227,7 @@ function Dashboard({ admin, onLogout }) {
       authorizations: "Authorizations",
       monitoring: "Monitoring",
       assessments: "Assessments",
+      findings: "Findings",
     }[activePage] || "Overview"}
   </strong>
 </div>
@@ -299,7 +302,8 @@ function Dashboard({ admin, onLogout }) {
 )}
 
           {activePage === "monitoring" && <MonitoringPage websites={websites} />}
-          {activePage === "assessments" && <AssessmentsPage websites={websites} />}
+          {activePage === "assessments" && <AssessmentsPage websites={websites} initialAssessmentId={assessmentToOpen} />}
+          {activePage === "findings" && <FindingsPage clients={clients} websites={websites} onOpenAssessment={id => { setAssessmentToOpen(id); setActivePage("assessments"); }} />}
 
           <footer className="content-footer">
             <span>SNWebShield <b>v0.1.0</b></span>

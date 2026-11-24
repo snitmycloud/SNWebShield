@@ -2,6 +2,10 @@
 
 **Version:** Draft v0.1
 
+The current analyst workflow includes [per-observation review and private report snapshots](ANALYST_REVIEW.md) and the [central Findings/remediation dashboard](FINDINGS_DASHBOARD.md). Findings derive from latest human confirmations; deadline history is stored separately, and these screens never execute scans. Current database head: `0008_findings_dashboard`.
+
+The current remote-scanner increment is described in [Existing Azure Docker scanner host](REMOTE_DOCKER_SCANNER.md). Its control plane, trusted HEAD broker, evidence and database stay on Windows. A fixed SSH runner executes only networkless header-analysis containers on the existing VM. Live Windows SSH, isolation, timeout, cancellation and cleanup acceptance passed. Execution is disabled by default in distributed settings and requires an explicit local opt-in and separately authorised assessment requests.
+
 ## Implementation status at commit 50b0f0e
 
 The architecture below is a target design. The current implementation uses React/Vite, FastAPI, SQLAlchemy and SQLite, with integer primary keys. It includes a single administrator role, JWT login, clients, websites, authorisation records and decision audit events. Business logic currently resides mainly in route handlers. PostgreSQL deployment, UUID adoption, tenant isolation, private evidence storage, findings, reporting and workers are not implemented. Do not infer those capabilities from the proposed modules or diagrams below. See [the foundation assessment](FOUNDATION_ASSESSMENT.md) for verified checks and the next milestone. Preserve existing IDs and relationships; changes require a migration design.
@@ -152,3 +156,7 @@ The independent scheduler, spawned-probe worker and notification dispatcher run 
 ## Assessment control plane (scanner stage one)
 
 [Scanner stage one](SCANNER_STAGE_ONE.md) adds immutable assessment intents referencing the existing jobs, websites, authorisations and administrators. The shared engine registers an assessment policy handler and independent pool, with no recurring assessment scheduling or tool execution. Live UTC status, exact domain/method scope, approval-linked evidence and snapshot hashes gate each preflight. Authorisation revocation and assessment cancellation share one transaction. Profile approval management, enforced network isolation and real scanner adapters remain later phases.
+
+## Local assessment adapter
+
+The shared assessment queue dispatches the code-owned local Python adapter. A trusted one-HEAD broker pins public DNS addresses and a separate bounded pure analyzer emits observations. Authorisation/evidence is revalidated at dispatch, during broker permission handshakes and transactional result acceptance. A single nullable intent snapshot and private JSON report table extend existing models; existing attempts/events retain the lifecycle audit. This is trusted-code separation, not OS-level egress isolation.

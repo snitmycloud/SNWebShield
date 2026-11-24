@@ -138,3 +138,42 @@ test("assessment requests preserve explicit intent, identity and cancellation re
   assert.equal(new URL(calls[2][0]).pathname, "/api/v1/assessments/synthetic-id/cancel");
   assert.deepEqual(JSON.parse(calls[2][1].body), { reason: "Cancel synthetic preflight." });
 });
+
+
+test("local assessment preserves separate network consent", async () => {
+  session();
+  const payload={website_id:7,authorization_id:9,profile_id:"local-http-headers-v1",explicitly_requested:true,network_permission_confirmed:true,note:"Explicit synthetic network permission",idempotency_key:"synthetic-local"};
+  await api.requestAssessment(payload);
+  assert.equal(calls[0][1].headers.Authorization,"Bearer synthetic-unit-test-token");
+  assert.deepEqual(JSON.parse(calls[0][1].body),payload);
+});
+
+test("analyst review preserves revision, evidence and authenticated export requests", async () => {
+  session();
+  const payload = { expected_revision: 2, disposition: "confirmed", human_validation_confirmed: true,
+    supporting_evidence: "Synthetic analyst evidence", owner: "Test owner", remediation_status: "open" };
+  await api.reviewObservation("request-id", "csp", payload);
+  assert.equal(new URL(calls[0][0]).pathname, "/api/v1/assessments/request-id/reviews/csp");
+  assert.equal(calls[0][1].headers.Authorization, "Bearer synthetic-unit-test-token");
+  assert.deepEqual(JSON.parse(calls[0][1].body), payload);
+  await api.observationReviewHistory("request-id", "csp", 50);
+  assert.equal(new URL(calls[1][0]).searchParams.get("offset"), "50");
+  await api.createReviewedReport("request-id");
+  assert.equal(calls[2][1].method, "POST");
+  assert.equal(new URL(calls[2][0]).pathname, "/api/v1/assessments/request-id/reviewed-reports");
+});
+
+test("findings filters and deadline revisions preserve authenticated requests", async () => {
+  session();
+  await api.getFindings({ owner: "Ops & QA", severity: "high", overdue_only: true, status: "" }, 50);
+  const url = new URL(calls[0][0]);
+  assert.equal(url.pathname, "/api/v1/findings");
+  assert.equal(url.searchParams.get("owner"), "Ops & QA");
+  assert.equal(url.searchParams.get("offset"), "50");
+  assert.equal(url.searchParams.get("overdue_only"), "true");
+  assert.equal(url.searchParams.has("status"), false);
+  const payload = { expected_revision: 2, expected_review_revision: 3, due_date: null, note: "Clear a synthetic deadline." };
+  await api.setFindingDeadline("synthetic-id", "csp", payload);
+  assert.equal(calls[1][1].headers.Authorization, "Bearer synthetic-unit-test-token");
+  assert.deepEqual(JSON.parse(calls[1][1].body), payload);
+});

@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     smtp_username: str = ""
     smtp_password: SecretStr = SecretStr("")
 
+    assessment_local_http_enabled: bool = False
+    assessment_remote_docker_enabled: bool = False
+    # Immutable image ID, not a tag or arbitrary Docker arguments. SSH uses the OS agent/config.
+    assessment_remote_image_id: str = Field(default="", pattern=r"^(sha256:[0-9a-f]{64})?$")
+    assessment_nmap_enabled: bool = False
+    assessment_nmap_image_id: str = Field(default="", pattern=r"^(sha256:[0-9a-f]{64})?$")
+
     # JWT authentication settings
     jwt_secret_key: SecretStr = SecretStr("")
     jwt_access_token_minutes: int = Field(default=20, ge=1, le=1440)

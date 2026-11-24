@@ -178,10 +178,25 @@ export const api = {
   assessmentProfiles: () => request("/assessments/profiles"),
   assessmentWorkerStatus: () => request("/assessments/worker-status"),
   getAssessments: (websiteId = "", offset = 0) => request(`/assessments?limit=50&offset=${offset}${websiteId ? `&website_id=${websiteId}` : ""}`),
+  downloadAssessmentReport: id => request(`/assessments/${id}/report/download`, { binary: true }),
+  assessmentReviews: id => request(`/assessments/${id}/reviews`),
+  reviewObservation: (id, check, data) => jsonPost(`/assessments/${id}/reviews/${encodeURIComponent(check)}`, data),
+  observationReviewHistory: (id, check, offset = 0) => request(`/assessments/${id}/reviews/${encodeURIComponent(check)}/history?limit=50&offset=${offset}`),
+  createReviewedReport: id => jsonPost(`/assessments/${id}/reviewed-reports`, {}),
+  downloadReviewedReport: (id, exportId) => request(`/assessments/${id}/reviewed-reports/${exportId}/download`, { binary: true }),
   getAssessment: (id) => request(`/assessments/${id}`),
   assessmentHistory: (id, collection, offset = 0) => request(`/assessments/${id}/${collection}?limit=50&offset=${offset}`),
   requestAssessment: (data) => jsonPost("/assessments", data),
   cancelAssessment: (id, data) => jsonPost(`/assessments/${id}/cancel`, data),
+
+  getFindings: (filters = {}, offset = 0) => {
+    const params = new URLSearchParams({ limit: "50", offset: String(offset) });
+    for (const [key, value] of Object.entries(filters)) if (value !== "" && value !== false && value != null) params.set(key, String(value));
+    return request(`/findings?${params}`);
+  },
+  findingDetail: (id, check) => request(`/findings/${id}/${encodeURIComponent(check)}`),
+  setFindingDeadline: (id, check, data) => jsonPost(`/findings/${id}/${encodeURIComponent(check)}/deadline`, data),
+  findingDeadlineHistory: (id, check, offset = 0) => request(`/findings/${id}/${encodeURIComponent(check)}/deadline-history?limit=50&offset=${offset}`),
 
   // Health
   health: () => request("/health", { auth: false }),

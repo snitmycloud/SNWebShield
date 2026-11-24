@@ -75,6 +75,7 @@ def release(db, kind, token, now=None):
 
 
 def finish(db, job_id, token, payload, now=None):
+    provided_now = now
     now = now or utc_now(); db.expire_all()
     job = db.get(Job, job_id)
     if not job or job.status != "running" or job.claim_token != token or as_utc(job.lease_until) <= now:
@@ -82,8 +83,11 @@ def finish(db, job_id, token, payload, now=None):
         db.commit(); return False
     handler = HANDLERS[job.job_type]
     if not handler.eligible(db, job, lock=True): payload = {"state": "cancelled", "error": "permission_or_configuration_changed"}
+    now = provided_now or utc_now()
+    if as_utc(job.lease_until) <= now:
+        release(db, job.job_type, token, now); db.commit(); return False
     retry = payload["state"] == "down" and job.attempts < job.max_attempts
-    status = "queued" if retry else "cancelled" if payload["state"] == "cancelled" else "completed"
+    status = "queued" if retry else "cancelled" if payload["state"] == "cancelled" else "failed" if payload["state"] == "failed" else "completed"
     changed = db.execute(update(Job).where(Job.id == job_id, Job.status == "running", Job.claim_token == token,
         Job.lease_until > now).values(status=status, claim_token=None, lease_until=None,
         due_at=now + timedelta(seconds=5) if retry else job.due_at,

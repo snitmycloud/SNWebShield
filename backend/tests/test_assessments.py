@@ -98,7 +98,7 @@ def test_unknown_profile_and_wrong_website(assessed):
     _,other=seed_record()
     assert api.post('/api/v1/assessments',json={**body,'website_id':other}).status_code==409
     profiles=api.get('/api/v1/assessments/profiles').json()
-    assert len(profiles)==1;assert profiles[0]['network_execution'] is False
+    assert len(profiles)==4;assert profiles[0]['network_execution'] is False
 
 
 def test_idempotency_and_active_limit(assessed):

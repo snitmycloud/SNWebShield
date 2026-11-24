@@ -1,5 +1,7 @@
 # Local setup quick reference
 
+Current migration head is `0008_findings_dashboard`. The milestone sections below document earlier increments. The [Findings dashboard guide](../docs/FINDINGS_DASHBOARD.md) describes the current queue, review links and deadline history. Existing data must be privately backed up before upgrading; do not reset accounts or recreate the database.
+
 Run the backend from the `backend` folder. Do not run `uvicorn` from the repository root.
 
 The following Bash setup creates a new environment. For an existing installation, preserve `.env`, the administrator and the database; use the existing virtual environment and start Uvicorn. New installations must also configure `JWT_SECRET_KEY` and provision an administrator as described in [the backend README](README.md).
@@ -63,3 +65,7 @@ Follow [the monitoring guide](../docs/MONITORING.md) for exact PowerShell comman
 Explicit assessment requests, a versioned policy-only profile, live authorisation/evidence enforcement and an independent `assessment-worker` role now use the existing shared job engine. The Assessments dashboard supports request history, detail and cancellation. Migration `0005_assessment_intents` preserves existing monitoring data. No network check, Nmap, Nuclei or ZAP adapter is enabled; completed means permission preflight only.
 
 See [the assessment audit, design, API and Windows acceptance guide](../docs/SCANNER_STAGE_ONE.md). Keep existing accounts, configuration and data; back up before migrating. New browser acceptance remains pending on Windows.
+
+## Local Python assessment worker
+
+A default-off fixed HTTP profile reuses assessment jobs and live authorisation/evidence checks. It performs one HEAD and runs a network-free header analysis program in a bounded local Python process. No Docker or cloud service is required. Migration: `0006_local_http`; setting: `ASSESSMENT_LOCAL_HTTP_ENABLED=false`. See `docs/LOCAL_HTTP_ASSESSMENTS.md` (repository root) for setup, execution limits, acceptance steps and trust-boundary limitations.

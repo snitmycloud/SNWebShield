@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased — restricted Docker Nmap profile
+
+- Add fixed non-root TCP connect discovery on ports 80/443 behind a dedicated default-DROP container network policy; no scripts, banners, OS detection, custom ports or local fallback.
+- Require separate TCP-discovery approval and both hostname and numeric public-IP scope, with fresh DNS matching, pre-launch permission handshake and shared assessment throttles.
+- Integrate structured port observations, usage, cleanup, analyst review, reviewed exports and Findings. Preserve existing header profiles and authorisations.
+- Add live namespace isolation/timeout/cancellation checks, a fixed VM self-test and successful/denied API/browser coverage. No new Azure resources or schema migration.
+
+## Unreleased — central Findings dashboard
+
+- Aggregate latest analyst-confirmed observations across clients/websites with severity, owner, status, search and overdue filters, full filtered counts and pagination.
+- Add calendar due dates with append-only actor/revision history, stale/concurrent-edit checks and Asia/Kolkata overdue rules excluding resolved items.
+- Reuse the assessment review workflow for remediation edits and link directly to source assessments/reports and retests. Keep repeated assessments separate and never trigger scans from Findings.
+- Add the additive `0008_findings_dashboard` migration and API/browser coverage.
+
+## Unreleased — analyst review and remediation
+
+- Add per-observation human dispositions, severity, evidence notes, recommended fixes, owners and remediation status with append-only revision history and concurrency checks.
+- Require a later successful assessment of the same target and analyst resolution notes to resolve confirmed issues.
+- Add private, integrity-checked reviewed JSON snapshots that preserve source observations and review revisions, plus authenticated download audit history.
+- Add an additive review/export migration, dashboard controls and API/browser regression coverage. No new scanner or Azure resources are involved.
+
+## Unreleased — existing Azure Docker scanner host
+
+- Add a default-off remote header-analysis profile using fixed SSH commands, an approved immutable image and the existing VM only.
+- Keep the authorised HEAD broker and all application data on Windows; enforce non-root, networkless, read-only and resource-limited analysis containers.
+- Add independent container deadlines, targeted cleanup, cancellation audit telemetry and dashboard duration/CPU/peak analyser memory.
+- Validate Windows SSH and live synthetic analysis, kernel isolation, resource configuration, timeout, cancellation and cleanup on the existing VM; preserve the three pre-existing containers.
+- Preserve required Windows OpenSSH profile paths while excluding application secrets and retaining process limits. Document setup, cleanup uncertainty, verification commands and deallocation costs.
+
 ## Unreleased — authentication and authorisation correctness
 
 - Normalise new permission windows to UTC and preserve original decision history separately from effective validity.
@@ -33,3 +62,9 @@
 - Add transactional revocation cancellation, request/attempt/audit history and a policy-only profile catalogue/dashboard.
 - Add additive migration `0005_assessment_intents` and backend/browser/helper regression coverage.
 - Real scanner integration, profile approval management, findings and network isolation remain unimplemented. Windows browser acceptance is pending for this stage.
+
+## Local Python HTTP assessments
+
+- Add an explicitly consented single-HEAD profile, live scope checks, bounded local Python execution, private reports and reviewable header observations.
+- Reuse existing jobs, audit/cancellation/history and preserve SQLite data with additive migration 0006_local_http.
+- Add security, transport, process, migration and browser tests. No Docker/cloud/tool dependency.

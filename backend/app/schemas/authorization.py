@@ -14,6 +14,7 @@ PermittedTestingMethod = Literal[
     "manual_web_application_testing",
     "authenticated_testing",
     "api_security_testing",
+    "tcp_port_discovery",
 ]
 
 AuthorizationStatus = Literal["pending", "approved", "rejected", "expired", "revoked"]
@@ -51,7 +52,7 @@ class AuthorizationCreate(BaseModel):
     # until authenticated client onboarding is implemented.
     authorized_by: str = Field(min_length=2, max_length=150)
     authorized_domains: list[str] = Field(min_length=1, max_length=50)
-    permitted_methods: list[PermittedTestingMethod] = Field(min_length=1, max_length=6)
+    permitted_methods: list[PermittedTestingMethod] = Field(min_length=1, max_length=7)
     valid_from: datetime
     valid_until: datetime
 

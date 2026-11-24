@@ -106,3 +106,15 @@ Follow [monitoring setup, APIs and validation](docs/MONITORING.md) for the five 
 Explicit assessment requests, a versioned policy-only profile, live authorisation/evidence enforcement and an independent `assessment-worker` role now use the existing shared job engine. The Assessments dashboard supports request history, detail and cancellation. Migration `0005_assessment_intents` preserves existing monitoring data. No network check, Nmap, Nuclei or ZAP adapter is enabled; completed means permission preflight only.
 
 See [the assessment audit, design, API and Windows acceptance guide](docs/SCANNER_STAGE_ONE.md). Keep existing accounts, configuration and data; back up before migrating. New browser acceptance remains pending on Windows.
+
+## Local Python assessment worker
+
+The [restricted Nmap profile](docs/NMAP_SCANNER.md) adds isolated TCP connect discovery for ports 80/443 only, with a dedicated container firewall, explicit hostname + public-IP scope and separate `tcp_port_discovery` permission. It reuses reports, analyst review and Findings; web-only approvals are insufficient.
+
+The [Findings dashboard](docs/FINDINGS_DASHBOARD.md) provides a central queue of current analyst-confirmed issues, client/website/owner/severity/status filters, due dates, overdue counts and source-assessment navigation. It reuses the same review history and does not trigger scans. Migration: `0008_findings_dashboard`.
+
+Completed header assessments support [analyst review, remediation tracking and reviewed report exports](docs/ANALYST_REVIEW.md). Migration `0007_observation_reviews` preserves existing reports and adds human decisions with revision history; no rescan is needed to review an existing assessment.
+
+For the existing Azure VM integration, see [Remote Docker scanner setup and acceptance](docs/REMOTE_DOCKER_SCANNER.md). The default-off remote profile keeps the application/data on Windows and sends selected headers to a fixed networkless analyser. Windows SSH and live isolation, timeout, cancellation and cleanup checks passed. Real target assessments still require explicit, current written authorisation.
+
+A default-off fixed HTTP profile reuses assessment jobs and live authorisation/evidence checks. It performs one HEAD and runs a network-free header analysis program in a bounded local Python process. No Docker or cloud service is required. Migration: `0006_local_http`; setting: `ASSESSMENT_LOCAL_HTTP_ENABLED=false`. See `docs/LOCAL_HTTP_ASSESSMENTS.md` (repository root) for setup, execution limits, acceptance steps and trust-boundary limitations.

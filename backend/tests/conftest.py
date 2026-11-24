@@ -1,4 +1,9 @@
 import os
+os.environ["ASSESSMENT_LOCAL_HTTP_ENABLED"] = "false"
+os.environ["ASSESSMENT_REMOTE_DOCKER_ENABLED"] = "false"
+os.environ["ASSESSMENT_REMOTE_IMAGE_ID"] = ""
+os.environ["ASSESSMENT_NMAP_ENABLED"] = "false"
+os.environ["ASSESSMENT_NMAP_IMAGE_ID"] = ""
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
