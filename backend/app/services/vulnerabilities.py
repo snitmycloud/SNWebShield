@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from sqlalchemy import and_, case, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 
+from app.core import rbac
 from app.core.time import as_utc, utc_now
 from app.models.assessment import AssessmentReport, AssessmentRequest
 from app.models.client import Client
@@ -24,7 +25,7 @@ from app.models.vulnerability import (BUSINESS_IMPACTS, LIKELIHOODS, SEVERITIES,
                                       VulnerabilityIngestion, VulnerabilityOccurrence, VulnerabilityRiskAssessment,
                                       VulnerabilitySignoff, VulnerabilitySuppression)
 from app.models.website import Website
-from app.services import assessments, job_engine
+from app.services import assessments, closure_lock, job_engine
 
 FAMILY = "http_security_headers"
 HEADER_PROFILES = frozenset({assessments.HTTP_PROFILE_ID, assessments.REMOTE_PROFILE_ID})
@@ -422,6 +423,7 @@ def comment(db, vulnerability_id, actor_id, text):
 
 def decide(db, vulnerability_id, actor_id, payload):
     vulnerability = get(db, vulnerability_id)
+    closure_lock.assert_unlocked(db, vulnerability_id)
     now = utc_now()
     current, target = vulnerability.validation_state, payload.decision
     if vulnerability.revision != payload.expected_revision:
@@ -443,6 +445,8 @@ def decide(db, vulnerability_id, actor_id, payload):
         assessment = current_assessment(db, vulnerability)
         if assessment is None:
             raise HTTPException(409, "Save a risk assessment for the current revision before confirming")
+        # Dual sign-off (when enabled): the analyst who authored the risk assessment cannot also approve it.
+        rbac.enforce_distinct(actor_id, [assessment.author_id], "approve a finding assessed by someone else")
         if payload.severity != assessment.risk_rating:
             raise HTTPException(409, "Severity must match the saved risk assessment rating")
         values.update(analyst_severity=payload.severity, reproduction_steps=payload.reproduction_steps)
@@ -624,6 +628,7 @@ def workbench_detail(db, vulnerability_id):
 
 def save_assessment(db, vulnerability_id, actor_id, payload):
     vulnerability = get(db, vulnerability_id)
+    closure_lock.assert_unlocked(db, vulnerability_id)
     if vulnerability.revision != payload.expected_revision:
         raise HTTPException(409, "Vulnerability changed; refresh before assessing")
     if vulnerability.validation_state != "unconfirmed":

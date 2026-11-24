@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from app.core.rbac import require_closure_role, require_remediation_role
+from app.core.rbac import require_closure_reopen_role, require_closure_role, require_remediation_role
 from app.core.security import get_current_admin
 from app.core.time import as_utc
 from app.db.session import get_db
@@ -213,3 +213,10 @@ def report_download(assessment_id: UUID, db: Session = Depends(get_db), admin: A
     return Response(data, media_type="application/json", headers={"Cache-Control":"no-store, private",
         "X-Content-Type-Options":"nosniff", "Content-Security-Policy":"default-src 'none'; sandbox",
         "Content-Disposition":f'attachment; filename="assessment-{row.id}.json"'})
+
+
+@router.post("/{assessment_id}/reopen-closure")
+def reopen_closure(assessment_id: UUID, payload: Closure, db: Session = Depends(get_db),
+                   admin: Admin = Depends(require_closure_reopen_role)):
+    """Formally lift the closed-assessment lock (audited, reason required)."""
+    return remediation_service.reopen_closure(db, str(assessment_id), admin.id, payload.justification)

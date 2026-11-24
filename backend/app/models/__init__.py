@@ -16,3 +16,4 @@ from app.models.vulnerability import (Vulnerability, VulnerabilityEvent, Vulnera
                                       VulnerabilitySuppression)
 from app.models.report import VaptReport, VaptReportApproval, VaptReportArtifact, VaptReportEvent
 from app.models.remediation import AssessmentClosure, RemediationEvent, RetestRequest, VulnerabilityRemediation
+from app.models.security import AuthEvent, ClosureReopening, RevokedToken

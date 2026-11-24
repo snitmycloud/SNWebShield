@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { api } from "../src/lib/api.js";
-import { buildClosure, buildReopen, buildRetest, buildUpdate, canClose, closureSummary, isBlocking, outcomeLabel,
+import { buildClosure, buildClosureReopening, buildReopen, buildRetest, buildUpdate, canClose, closureSummary, isBlocking, outcomeLabel,
   reportableAssessment, statusLabel, updateOptions } from "../src/lib/remediation.js";
 
 const open = { vulnerability_id: "v1", status: "open", version: 0, allowed_statuses: ["fix_submitted", "in_progress", "risk_accepted"],
@@ -119,4 +119,19 @@ test("blocking statuses and reportable assessments follow the server's rules", (
   assert.equal(reportableAssessment({ job: { status: "completed" } }), true);
   assert.equal(reportableAssessment({ job: { status: "running" } }), false);
   assert.equal(reportableAssessment(undefined), false);
+});
+
+test("reopening a closure needs an active closure, an attestation and a real reason", async () => {
+  const closed = { closed: true, can_close: false };
+  const form = { attested: true, justification: "The client supplied new information about the fix." };
+  assert.match(buildClosureReopening({ closed: false }, form).error, /no active closure/);
+  assert.match(buildClosureReopening(null, form).error, /no active closure/);
+  assert.match(buildClosureReopening(closed, { ...form, attested: false }).error, /deliberately/);
+  assert.match(buildClosureReopening(closed, { ...form, justification: "short" }).error, /20 characters/);
+  assert.deepEqual(buildClosureReopening(closed, form).payload, { human_validation_confirmed: true, justification: form.justification });
+  await api.reopenClosure("as 1", buildClosureReopening(closed, form).payload);
+  const [url, options] = calls.at(-1);
+  assert.equal(new URL(url).pathname, "/api/v1/assessments/as%201/reopen-closure");
+  assert.equal(options.method, "POST");
+  assert.equal(options.headers.Authorization, "Bearer synthetic-unit-test-token");
 });

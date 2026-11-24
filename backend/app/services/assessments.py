@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
+from app.core import rbac
 from app.core.time import as_utc, utc_now
 from app.models.admin import Admin
 from app.models.client import Client
@@ -100,7 +101,7 @@ def permission(db, website_id, authorization_id, actor_id, profile_id, *, now=No
     now = now or utc_now()
     selected = profile(profile_id)
     actor = db.get(Admin, actor_id)
-    if not actor or not actor.is_active or actor.role != "admin":
+    if not actor or not actor.is_active or actor.role not in rbac.ANALYST_ROLES:
         raise Denied("requester_not_active_administrator")
     website = db.get(Website, website_id)
     record = db.get(WebsiteAuthorization, authorization_id)

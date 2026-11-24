@@ -19,6 +19,9 @@ class AuthorizationEvidence(Base):
     retain_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     legal_hold: Mapped[bool] = mapped_column(Boolean, default=False)
     state: Mapped[str] = mapped_column(String(24), default="available")
+    # Set when the stored file was overwritten and unlinked. The row and its SHA-256 stay for the audit trail.
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    purge_method: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class EvidenceReview(Base):

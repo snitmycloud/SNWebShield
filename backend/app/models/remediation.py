@@ -95,9 +95,12 @@ class RetestRequest(Base):
 
 class AssessmentClosure(Base):
     __tablename__ = "assessment_closures"
-    __table_args__ = (UniqueConstraint("assessment_id", name="uq_assessment_closure"),)
+    # `generation` numbers successive closures of one assessment (a closure can be formally reopened and
+    # a later one made); the unique pair stops two concurrent closers.
+    __table_args__ = (UniqueConstraint("assessment_id", "generation", name="uq_assessment_closure_generation"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     assessment_id: Mapped[str] = mapped_column(ForeignKey("assessment_requests.id", ondelete="RESTRICT"), index=True)
+    generation: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     closed_by: Mapped[int] = mapped_column(ForeignKey("admins.id", ondelete="RESTRICT"))
     closed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     justification: Mapped[str] = mapped_column(Text)

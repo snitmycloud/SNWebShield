@@ -76,6 +76,15 @@ export function buildClosure(state, form) {
   return { payload: { human_validation_confirmed: true, justification } };
 }
 
+// Lifting a closure lock is a formal, audited act: it needs a reason and an explicit attestation.
+export function buildClosureReopening(state, form) {
+  if (!state?.closed) return { error: "This assessment has no active closure to reopen." };
+  if (!form.attested) return { error: "Confirm that this closure is being reopened deliberately." };
+  const justification = (form.justification ?? "").trim();
+  if (justification.length < 20) return { error: "Explain why the closure is reopened in at least 20 characters." };
+  return { payload: { human_validation_confirmed: true, justification } };
+}
+
 export const closureSummary = state => {
   if (!state) return "";
   if (state.closed) return "Closed";

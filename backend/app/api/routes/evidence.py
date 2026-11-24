@@ -44,7 +44,7 @@ class HoldRequest(Reason):
 
 
 def metadata(row):
-    return {key: (as_utc(value).isoformat() if key in {"uploaded_at", "retain_until", "reviewed_at", "occurred_at"} else value)
+    return {key: (as_utc(value).isoformat() if key in {"uploaded_at", "retain_until", "reviewed_at", "occurred_at", "purged_at"} and value is not None else value)
             for key, value in {column.name: getattr(row, column.name) for column in row.__table__.columns}.items()}
 
 
@@ -172,13 +172,13 @@ def purge(key: str, payload: Reason, db: Session = Depends(get_db), admin: Admin
     row = get_document(db, key); record = get_authorization(db, row.authorization_id)
     service.lock_revision(db, record, pending=False)
     if row.state == "purged": return metadata(row)
-    if row.legal_hold or record.status == "approved" or as_utc(row.retain_until) > utc_now():
+    # Retention is checked against UTC "now" on every call, never cached or taken from the caller.
+    if service.purge_blockers(db, row, record) not in ([], ["not_withdrawn"]):
         raise HTTPException(409, "Retention, legal hold or an approved authorization prevents deletion")
     if row.state not in {"withdrawn", "deletion_pending"}: raise HTTPException(409, "Withdraw the document first")
     row.state = "deletion_pending"
     service.event(db, record.id, admin.id, "purge_requested", key, payload.reason); db.commit()
-    path = service.stored_path(key)
-    if path.is_symlink(): raise HTTPException(409, "Storage integrity error")
-    path.unlink(missing_ok=True)
-    row.state = "purged"; service.event(db, record.id, admin.id, "purged", key, payload.reason)
+    method = service.secure_erase(service.stored_path(key))
+    row.state = "purged"; row.purged_at = utc_now(); row.purge_method = method
+    service.event(db, record.id, admin.id, "purged", key, f"{payload.reason}; method={method}; sha256 retained={row.sha256}")
     db.commit(); return metadata(row)

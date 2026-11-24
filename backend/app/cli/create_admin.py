@@ -1,14 +1,20 @@
+import argparse
 from getpass import getpass
 
 from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy import inspect, select
 
-from app.core.security import hash_password
+from app.core.security import hash_password, validate_password_policy
 from app.db.session import SessionLocal, engine
+from app.models.admin import ADMIN_ROLES
 from app.models import Admin, AuthorizationAuditEvent, Client, Website, WebsiteAuthorization  # noqa: F401
 
 
-def main() -> int:
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Create an internal SNWebShield account")
+    parser.add_argument("--role", choices=ADMIN_ROLES, default="admin",
+                        help="admin (default, bootstrap), lead_analyst or analyst")
+    role = parser.parse_args(argv).role
     inspector = inspect(engine)
     if not inspector.has_table("website_authorizations") or "timestamps_verified" not in {
         column["name"] for column in inspector.get_columns("website_authorizations")
@@ -30,13 +36,14 @@ def main() -> int:
         print("Enter a valid email address.")
         return 1
 
-    password = getpass("Password (minimum 12 characters): ")
+    password = getpass("Password (12-128 characters, three character classes): ")
     confirmation = getpass("Confirm password: ")
     if password != confirmation:
         print("Passwords do not match.")
         return 1
-    if len(password) < 12 or len(password) > 128:
-        print("Password must be between 12 and 128 characters.")
+    problems = validate_password_policy(password, email)
+    if problems:
+        print("Password rejected: " + "; ".join(problems) + ".")
         return 1
 
     with SessionLocal() as db:
@@ -49,13 +56,13 @@ def main() -> int:
             email=email,
             full_name=full_name,
             password_hash=hash_password(password),
-            role="admin",
+            role=role,
             is_active=True,
         )
         db.add(admin)
         db.commit()
         db.refresh(admin)
-        print(f"Administrator created successfully (ID: {admin.id}, email: {admin.email}).")
+        print(f"Account created successfully (ID: {admin.id}, role: {admin.role}, email: {admin.email}).")
     return 0
 
 

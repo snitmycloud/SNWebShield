@@ -628,7 +628,7 @@ function App() {
 
   // Clear the browser session and return to login.
   const handleLogout = () => {
-    api.logout();
+    api.signOut();
     setAdmin(null);
     setAuthNotice("");
   };

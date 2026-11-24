@@ -177,3 +177,32 @@ test("findings filters and deadline revisions preserve authenticated requests", 
   assert.equal(calls[1][1].headers.Authorization, "Bearer synthetic-unit-test-token");
   assert.deepEqual(JSON.parse(calls[1][1].body), payload);
 });
+
+test("signOut clears the browser session first, then revokes the token on the server", async () => {
+  session();
+  globalThis.fetch = async (url, options) => { calls.push([url, options]); assert.equal(storage.has(tokenKey), false); return { ok: true, status: 204, text: async () => "" }; };
+  await api.signOut();
+  assert.equal(api.hasSession(), false);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0][0], /\/auth\/logout$/);
+  assert.equal(calls[0][1].method, "POST");
+  assert.equal(calls[0][1].headers.Authorization, "Bearer synthetic-unit-test-token");
+  await api.signOut();  // nothing to revoke, no request
+  assert.equal(calls.length, 1);
+});
+
+test("signOut still signs the person out when the server cannot be reached", async () => {
+  session();
+  globalThis.fetch = async () => { throw new TypeError("Synthetic connection failure"); };
+  await api.signOut();
+  assert.equal(storage.has(tokenKey), false);
+  assert.equal(events.length, 0);
+});
+
+test("throttled logins show the server message and when to retry, without saving anything", async () => {
+  globalThis.fetch = async () => ({ ok: false, status: 429, headers: { get: name => (name === "Retry-After" ? "600" : null) },
+    text: async () => JSON.stringify({ detail: "Too many failed sign-in attempts; try again later" }) });
+  await assert.rejects(api.login({ email: "a@example.com", password: "x" }), /Too many failed sign-in attempts.*retry in about 10 min/);
+  assert.equal(storage.size, 0);
+  assert.equal(events.length, 0);
+});

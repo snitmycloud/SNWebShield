@@ -4,7 +4,7 @@
 
 Tagline: **Identify. Analyse. Secure.**
 
-SNWebShield is an internal platform under development for a website cybersecurity services team. The implemented foundation manages administrator login, clients, websites and authorisation review. Private authorisation evidence and reviewed monitoring consent are supported. Assessment execution, findings, reports, remediation and retesting remain planned.
+SNWebShield is an internal platform for a website cybersecurity services team. It manages clients, websites, written authorisation and evidence, consented monitoring, explicitly requested and authorisation-gated security assessments (remote Docker header analysis, restricted Nmap), vulnerability management, a human analyst workbench, human-approved VAPT PDF reports, remediation, scoped retests and assessment closure. Nothing is confirmed or published without a human decision, and nothing scans without an explicit request.
 
 > Safety principle: SNWebShield must only support assessments that have been explicitly authorised in writing by a person with authority over the target assets. A website URL submitted to the platform is not, by itself, permission to test it.
 
@@ -31,7 +31,7 @@ SNWebShield is an internal platform under development for a website cybersecurit
 - Reports: HTML templates rendered to PDF
 - Development: Git + GitHub
 
-Monitoring jobs and private local evidence storage are implemented; report rendering remains planned. The current application is for local development and is not production-ready.
+The application runs locally on Windows (React frontend, FastAPI backend, workers); only the isolated scanner container runs on the Azure VM. It has been hardened for single-team production use behind HTTPS but has not been independently penetration tested; see the open items in [docs/AUDIT_MATRIX.md](docs/AUDIT_MATRIX.md).
 
 ## Local setup and verified review
 
@@ -89,7 +89,7 @@ SNWebShield/
 
 ## Status
 
-**Application foundation and authorisation review implemented; stabilisation required.** Administrator login and protected client, website and authorisation APIs exist. The React UI supports client/website creation and authorisation review decisions with audit history. Authorisation creation currently has an API but no UI form. UTC normalisation, computed validity states, atomic decisions, session expiry and exact authorisation summaries now have regression coverage. Alembic migrations are included. The monitoring engine is implemented for local validation; scanner execution, analyst workflows, reporting and production hardening remain planned. Neither website registration nor authorisation approval starts a scan.
+**Milestones 1 to 6 complete (Modules A to H plus production hardening).** Authentication, authorisation evidence, monitoring, the scanner worker, vulnerability management, the analyst workbench, VAPT reporting, remediation and closure are implemented and tested, with an end-to-end lifecycle test. Open items are manual user steps (VM runner redeploy, real-target acceptance) and the risks listed as open in the audit matrix. Authorisation creation has an API but no UI form. Neither website registration nor authorisation approval starts a scan.
 
 ## Milestone 1: scanner worker hardening (Module D)
 
@@ -112,6 +112,127 @@ Migration `0011_vapt_reports` adds report snapshots, PDF artifacts with SHA-256 
 ## Milestone 5: remediation, retesting and closure (Module H)
 
 Migration `0012_remediation_retesting` adds remediation tracking for confirmed findings (`open`, `in_progress`, `fix_submitted`, `retest_requested`, `verified_fixed`, `reopened`, `risk_accepted`) with client notes, target dates and an append-only actor/UTC history, scoped retest requests, and an immutable assessment closure record, all protected by SQLite triggers. A retest is an ordinary assessment request made through the existing scanner path, so the live written authorisation, exact domain and methods are revalidated at request, claim and execution, with no local fallback. When the retest's observation is ingested, the finding becomes `verified_fixed` if the weakness is gone, or is reopened automatically with the fresh evidence if it still reproduces. Analysts can also reopen a finding manually and formally accept a risk with an attested justification. `POST /api/v1/assessments/{id}/close` succeeds only when every confirmed finding is verified fixed or risk accepted. The dashboard has a new Remediation page. Verified with 540 backend tests, 49 frontend tests and a passing production build. Back up the database, run `alembic upgrade head` from `backend`, and restart the assessment worker.
+
+## Milestone 6: production hardening and end-to-end integration
+
+Migration `0013_production_hardening` closes the authentication risks: every login success, failure, inactive-account attempt, throttled attempt and logout is written to an append-only `auth_events` table (no passwords, tokens or raw emails); repeated failures lock a login with HTTP 429 and `Retry-After`; `POST /api/v1/auth/logout` revokes the token's `jti` on the server; tokens are bound to the account's current role; and new passwords must meet a policy. Every API response carries `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy` and related headers (`Strict-Transport-Security` only over TLS), and `CORS_ORIGINS` is validated at start-up.
+
+Three roles now exist: `analyst`, `lead_analyst` (also approves reports, accepts risk, closes and reopens closures) and `admin` (everything; the bootstrap account). `SEPARATION_OF_DUTIES_ENABLED=true` adds dual sign-off: the analyst who assessed a finding cannot approve it, the report creator cannot approve the report, and whoever handled remediation cannot close the assessment. It is off by default so one admin can run the whole workflow. Once an assessment is closed, its findings and remediation are locked until a lead analyst or admin formally reopens the closure with an audited reason. Evidence purging now overwrites the file before unlinking it while keeping the document's SHA-256 as immutable audit proof, and `python -m app.cli.evidence_retention` reports expired documents without deleting anything.
+
+`backend/tests/test_e2e_lifecycle.py` drives the whole workflow from client registration to closure and checks the audit trail at every stage. Verified with @@BE@@ backend tests, @@FE@@ frontend tests and a passing production build. The per-risk status and test references are in [docs/AUDIT_MATRIX.md](docs/AUDIT_MATRIX.md).
+
+## Setup, run, test and deploy
+
+All commands are PowerShell, run from the repository root unless stated. Never paste secrets, `.env` contents or private keys into chat, commits or logs.
+
+### 1. Local Windows setup
+
+```powershell
+cd backend
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }   # never overwrite an existing .env
+.\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(48))"   # paste into JWT_SECRET_KEY in backend\.env yourself
+cd ..\frontend
+npm install
+```
+
+### 2. Back up and migrate the database
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m app.cli.backup_database      # verified copy of the SQLite file, outside the repository
+.\.venv\Scripts\python.exe -m alembic upgrade head          # head is 0013_production_hardening
+```
+
+Back up before every migration. Migrations are additive and downgrades are refused; to go back, restore the backup together with the matching code. The API refuses to start if a required table is missing.
+
+### 3. Create accounts
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m app.cli.create_admin                    # bootstrap admin
+.\.venv\Scripts\python.exe -m app.cli.create_admin --role lead_analyst
+.\.venv\Scripts\python.exe -m app.cli.create_admin --role analyst
+```
+
+Passwords are typed at a hidden prompt: 12 to 128 characters, at least three of lowercase, uppercase, digits and symbols, not common and not containing the email name.
+
+### 4. Run the processes (separate terminals)
+
+```powershell
+# API (from backend)
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+# Monitoring: scheduler, worker and notification dispatcher (from backend)
+.\.venv\Scripts\python.exe -m app.cli.operations scheduler
+.\.venv\Scripts\python.exe -m app.cli.operations worker
+.\.venv\Scripts\python.exe -m app.cli.operations notifications
+# Assessment worker: runs scanner jobs, vulnerability ingestion and retest reconciliation (from backend)
+.\.venv\Scripts\python.exe -m app.cli.operations assessment-worker
+# Frontend (from frontend)
+npm run dev        # http://127.0.0.1:5173
+```
+
+Restart the API and the assessment worker after changing `.env` or upgrading. Keep everything on the Windows machine; do not deploy the stack to Azure.
+
+### 5. Environment variables (names only; put real values in the private `backend/.env`)
+
+| Name | Purpose |
+|---|---|
+| `DATABASE_URL` | SQLite file by default (`sqlite:///./snwebshield_dev.db`) |
+| `JWT_SECRET_KEY` | Required, random, at least 32 bytes. Also `JWT_ACCESS_TOKEN_MINUTES` (20), `JWT_ISSUER`, `JWT_AUDIENCE` |
+| `CORS_ORIGINS` | Comma-separated frontend origins (`http://localhost:5173,...`); `*` is rejected |
+| `EVIDENCE_ROOT`, `EVIDENCE_MAX_BYTES`, `EVIDENCE_RETENTION_DAYS` | Private evidence storage outside the repository, upload limit, retention |
+| `LOGIN_MAX_FAILURES` (5), `LOGIN_WINDOW_MINUTES` (15) | Login throttling |
+| `SEPARATION_OF_DUTIES_ENABLED` (false) | Dual sign-off for findings, reports and closure |
+| `HSTS_MAX_AGE_SECONDS` | `Strict-Transport-Security` lifetime when served over HTTPS |
+| `NOTIFICATION_CHANNEL`, `NOTIFICATION_RECIPIENT`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SENDER`, `SMTP_USERNAME`, `SMTP_PASSWORD` | Monitoring notifications (dashboard by default) |
+| `ASSESSMENT_LOCAL_HTTP_ENABLED` (false) | Fixed local single-HEAD profile |
+| `ASSESSMENT_REMOTE_DOCKER_ENABLED`, `ASSESSMENT_REMOTE_IMAGE_ID`, `ASSESSMENT_REMOTE_REQUIRE_ISOLATION_ATTESTATION` | Remote Docker header analysis on the Azure VM; image ID is the immutable `sha256:` ID of the scanner image |
+| `ASSESSMENT_NMAP_ENABLED`, `ASSESSMENT_NMAP_IMAGE_ID` | Restricted Nmap profile |
+| `VITE_API_BASE_URL` (frontend) | API base URL including `/api/v1` |
+
+### 6. Run the tests (one at a time, never together)
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest tests/test_e2e_lifecycle.py tests/test_production_hardening.py
+.\.venv\Scripts\python.exe -m pytest          # full regression, about 15 minutes
+cd ..\frontend
+npm test                                      # unit tests (Node test runner)
+npm run build                                 # production build
+npm run test:e2e                              # optional Chromium journeys (Playwright)
+```
+
+Run `pytest`, `npm test` and `npm run build` strictly one after another; running them together can exhaust memory on this machine.
+
+### 7. Deploy or update the isolated scanner container on the Azure VM
+
+The scanner image is built on the existing VM `azureuser@57.159.27.58` only over SSH/SCP. Never expose Docker's TCP port 2375, never create paid Azure resources or registries, and never delete or prune existing containers, images or volumes. Only the scanner build files travel; no `.env`, database, evidence or keys. The container runs with `--network none`, a non-root user, a read-only root filesystem and strict CPU, memory, PID and time limits, enforced by `scanner/remote_runner.py`.
+
+```powershell
+# Windows: sync only the scanner build directory and the single analyser source the Dockerfile copies.
+ssh azureuser@57.159.27.58 "mkdir -p ~/snwebshield-scanner/backend/app/services"
+scp -r scanner azureuser@57.159.27.58:snwebshield-scanner/
+scp backend/app/services/header_analyzer.py azureuser@57.159.27.58:snwebshield-scanner/backend/app/services/
+```
+
+```bash
+# On the VM (ssh azureuser@57.159.27.58). Use a reviewed Python base image digest; there is no floating default.
+cd ~/snwebshield-scanner
+docker build --pull=false -f scanner/Dockerfile \
+  --build-arg PYTHON_BASE=python:3.12-slim@sha256:REPLACE_WITH_REVIEWED_DIGEST \
+  -t snwebshield-header-analysis:v1 .
+docker image inspect --format '{{.Id}}' snwebshield-header-analysis:v1      # note the new sha256 image ID
+# Install the runner and record the image ID (only if the image or runner changed):
+sudo install -o root -g root -m 755 scanner/remote_runner.py /usr/local/libexec/snwebshield-header-runner
+printf '%s\n' 'sha256:REPLACE_WITH_NEW_IMAGE_ID' | sudo tee /etc/snwebshield/header-image-id >/dev/null
+/usr/local/libexec/snwebshield-header-runner --check
+/usr/bin/python3 -I scanner/verify_host.py
+```
+
+Then on Windows, set `ASSESSMENT_REMOTE_IMAGE_ID` to the new ID in the private `backend\.env`, restart the API and assessment worker, and verify with `.\.venv\Scripts\python.exe -m app.cli.scanner_check` from `backend` (expect `passed: true`, `target_requests: 0`, `isolation_attested: true`, confirmed cleanup). If only `remote_runner.py` changed, skip the build and run just the `scp`, `install` and `--check` steps; the image ID does not change. When `isolation_attested` is true, set `ASSESSMENT_REMOTE_REQUIRE_ISOLATION_ATTESTATION=true`. Details and troubleshooting: [docs/REMOTE_DOCKER_SCANNER.md](docs/REMOTE_DOCKER_SCANNER.md).
 
 ## Local authorisation evidence milestone
 

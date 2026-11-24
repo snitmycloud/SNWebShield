@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — Milestone 6: production hardening and end-to-end integration
+
+- Add append-only `auth_events` (R1), login throttling with 429 and `Retry-After` (R2), server-side logout through a `jti` denylist (R3), role-bound JWTs, a password policy and transparent hash upgrades.
+- Add security headers to every API response (CSP, `X-Frame-Options: DENY`, nosniff, referrer and permissions policies, HSTS only over TLS) and validate `CORS_ORIGINS` at start-up.
+- Add `analyst` and `lead_analyst` roles beside `admin`, per-capability allow-lists and optional dual sign-off (`SEPARATION_OF_DUTIES_ENABLED`) for finding approval, report approval and closure (R14, R15). Fix the scanner permission check that hard-coded the `admin` role.
+- Lock findings and remediation once an assessment is closed; add audited `reopen-closure` and numbered closure generations.
+- Overwrite evidence files before unlinking them on purge, keep the SHA-256 as immutable audit proof, make evidence identity and history immutable, and add a report-only retention CLI (R9).
+- Frontend: server-side sign-out, throttling hint and a closure-reopening form.
+- Migration `0013_production_hardening`. Add an end-to-end lifecycle test and a production-hardening test module.
+
 ## Unreleased — Milestone 1: scanner worker hardening
 
 - Centralise SSH for header and Nmap runners in `ssh_transport.py`. Pin the OS `ssh` binary, disable forwarding, proxies, passwords, local commands and multiplexing, and allow only fixed runner paths and operations.

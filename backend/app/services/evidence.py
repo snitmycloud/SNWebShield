@@ -2,6 +2,8 @@
 from datetime import timedelta
 from hashlib import sha256
 from io import BytesIO
+import os
+import stat
 from pathlib import Path
 from uuid import UUID, uuid4
 import warnings
@@ -143,3 +145,72 @@ def image_preview(content):
         safe.paste(image.convert("RGB"))
         out = BytesIO(); safe.save(out, format="PNG")
         return out.getvalue()
+
+
+# --- Retention and secure deletion (risk R9) ---------------------------------------------------
+
+OVERWRITE_METHOD = "overwrite-1pass-fsync-unlink"
+_LIVE_STATES = ("available", "withdrawn", "deletion_pending")
+
+
+def secure_erase(path):
+    """Overwrite a stored document with random bytes, flush it to disk, then unlink it.
+
+    The database row, with its SHA-256, is kept: the hash is the immutable audit proof that a document
+    existed. Only regular files are touched; symbolic links are refused. Overwrite-in-place is
+    best-effort on SSDs and journaling or copy-on-write filesystems, so keep the evidence volume
+    encrypted (BitLocker) as the real protection.
+    """
+    if path.is_symlink():
+        raise HTTPException(409, "Storage integrity error")
+    try:
+        mode = path.lstat()
+    except FileNotFoundError:
+        return "already_absent"
+    if not stat.S_ISREG(mode.st_mode):
+        raise HTTPException(409, "Storage integrity error")
+    with path.open("r+b") as handle:
+        remaining = mode.st_size
+        while remaining > 0:
+            chunk = min(remaining, 1024 * 1024)
+            handle.write(os.urandom(chunk))
+            remaining -= chunk
+        handle.flush()
+        os.fsync(handle.fileno())
+    path.unlink()
+    return OVERWRITE_METHOD
+
+
+def purge_blockers(db, row, authorization, now=None):
+    """Why this document cannot be purged right now (empty list = eligible once withdrawn)."""
+    now = now or utc_now()
+    blockers = []
+    if row.legal_hold:
+        blockers.append("legal_hold")
+    if authorization is not None and authorization.status == "approved":
+        blockers.append("authorization_approved")
+    if as_utc(row.retain_until) > now:
+        blockers.append("retention_period_running")
+    if row.state == "available":
+        blockers.append("not_withdrawn")
+    return blockers
+
+
+def retention_report(db, now=None):
+    """Report-only sweep: documents past `retain_until`, with what still blocks their purge.
+
+    Nothing is deleted automatically. A human withdraws and purges each document with a recorded reason.
+    """
+    now = now or utc_now()
+    rows = db.scalars(select(AuthorizationEvidence).where(AuthorizationEvidence.state.in_(_LIVE_STATES))
+                      .order_by(AuthorizationEvidence.retain_until))
+    report = []
+    for row in rows:
+        if as_utc(row.retain_until) > now:
+            continue
+        authorization = db.get(WebsiteAuthorization, row.authorization_id)
+        blockers = purge_blockers(db, row, authorization, now)
+        report.append({"evidence_id": row.id, "authorization_id": row.authorization_id, "state": row.state,
+                       "retain_until": as_utc(row.retain_until).isoformat(), "legal_hold": row.legal_hold,
+                       "sha256": row.sha256, "blockers": [b for b in blockers if b != "retention_period_running"]})
+    return report

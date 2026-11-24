@@ -6,12 +6,16 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
+ADMIN_ROLES = ("admin", "lead_analyst", "analyst")
+_ROLE_SQL = "('" + "','".join(ADMIN_ROLES) + "')"
+
+
 class Admin(Base):
     """An internal administrator account. Accounts are provisioned locally, not publicly."""
 
     __tablename__ = "admins"
     __table_args__ = (
-        CheckConstraint("role IN ('admin')", name="ck_admins_role"),
+        CheckConstraint(f"role IN {_ROLE_SQL}", name="ck_admins_role"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

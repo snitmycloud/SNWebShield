@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./lib/api.js";
 import { humanize, safeText } from "./lib/workbench.js";
-import { REMEDIATION_STATUSES, buildClosure, buildReopen, buildRetest, buildUpdate, canClose, closureSummary,
+import { REMEDIATION_STATUSES, buildClosure, buildClosureReopening, buildReopen, buildRetest, buildUpdate, canClose, closureSummary,
   outcomeLabel, reportableAssessment, statusLabel, updateOptions } from "./lib/remediation.js";
 import "./assessments.css";
 import "./findings.css";
@@ -73,6 +73,7 @@ function ReopenForm({ item, busy, onSubmit }) {
 function ClosurePanel({ assessments, busy, onChanged }) {
   const [assessmentId, setAssessmentId] = useState(""), [state, setState] = useState(null);
   const [form, setForm] = useState({ justification: "", attested: false }), [error, setError] = useState(""), [notice, setNotice] = useState("");
+  const [reopenForm, setReopenForm] = useState({ justification: "", attested: false });
   const version = useRef(0);
   async function choose(id) {
     const mine = ++version.current;
@@ -89,6 +90,15 @@ function ClosurePanel({ assessments, busy, onChanged }) {
     try { await api.closeAssessment(assessmentId, result.payload); setNotice("Assessment closed. The closure record is immutable."); await choose(assessmentId); onChanged(); }
     catch (failure) { setError(failure.message); }
   }
+  async function reopenClosure(event) {
+    event.preventDefault();
+    const result = buildClosureReopening(state, reopenForm);
+    if (result.error) { setError(result.error); return; }
+    setError("");
+    try { await api.reopenClosure(assessmentId, result.payload); setReopenForm({ justification: "", attested: false });
+      setNotice("Closure reopened and recorded in the audit trail. Findings can be changed again."); await choose(assessmentId); onChanged(); }
+    catch (failure) { setError(failure.message); }
+  }
   return <div className="panel">
     <h2>Assessment closure</h2>
     <label>Assessment<select aria-label="Closure assessment" value={assessmentId} onChange={event => choose(event.target.value)}>
@@ -101,6 +111,14 @@ function ClosurePanel({ assessments, busy, onChanged }) {
       {state.blocking_reasons.length > 0 && <ul aria-label="Why this assessment cannot be closed">{state.blocking_reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}
       {state.blockers.length > 0 && <ul aria-label="Blocking findings">{state.blockers.map(b => <li key={b.vulnerability_id}>{safeText(b.title, 200)} · {statusLabel(b.status)}</li>)}</ul>}
       {state.closure && <p>Closed by {safeText(state.closure.closed_by_name)} on {when(state.closure.closed_at)} · record SHA-256 <code>{state.closure.content_sha256.slice(0, 16)}…</code></p>}
+      {state.closed && <form aria-label="Reopen closure" onSubmit={reopenClosure}><fieldset disabled={busy}>
+        <legend>Closed assessments are locked. Reopen the closure to change its findings.</legend>
+        <label>Reason for reopening<textarea aria-label="Closure reopening reason" required minLength={20} maxLength={4000} value={reopenForm.justification}
+          onChange={event => setReopenForm({ ...reopenForm, justification: event.target.value })} /></label>
+        <label className="assessment-check"><input type="checkbox" checked={reopenForm.attested}
+          onChange={event => setReopenForm({ ...reopenForm, attested: event.target.checked })} />I am deliberately reopening this closure.</label>
+        <button>Reopen closure</button>
+      </fieldset></form>}
       {!state.closed && <form aria-label="Close assessment" onSubmit={submit}><fieldset disabled={busy || !canClose(state)}>
         <legend>Close this assessment</legend>
         <label>Justification<textarea aria-label="Closure justification" required minLength={20} maxLength={4000} value={form.justification}

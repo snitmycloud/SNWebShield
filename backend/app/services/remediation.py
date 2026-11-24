@@ -19,15 +19,17 @@ from fastapi import HTTPException
 from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 
+from app.core import rbac
 from app.core.time import as_utc, utc_now
 from app.models.assessment import AssessmentReport, AssessmentRequest
 from app.models.client import Client
 from app.models.jobs import Job
 from app.models.remediation import (BLOCKING_STATUSES, AssessmentClosure, RemediationEvent, RetestRequest,
                                     VulnerabilityRemediation)
+from app.models.security import ClosureReopening
 from app.models.vulnerability import Vulnerability, VulnerabilityIngestion, VulnerabilityOccurrence
 from app.models.website import Website
-from app.services import assessments
+from app.services import assessments, closure_lock
 from app.services import vulnerabilities as vulns
 from app.services.reports import strip_controls
 
@@ -133,6 +135,7 @@ def _expect_version(row, expected):
 
 def update_status(db, vulnerability_id, actor_id, payload):
     confirmed(db, vulnerability_id)
+    closure_lock.assert_unlocked(db, vulnerability_id)
     row = current(db, vulnerability_id)
     _expect_version(row, payload.expected_version)
     previous = status_of(row)
@@ -166,6 +169,7 @@ def update_status(db, vulnerability_id, actor_id, payload):
 def reopen(db, vulnerability_id, actor_id, payload):
     """Manual analyst reopening of an issue that is not actually resolved."""
     confirmed(db, vulnerability_id)
+    closure_lock.assert_unlocked(db, vulnerability_id)
     row = current(db, vulnerability_id)
     _expect_version(row, payload.expected_version)
     previous = status_of(row)
@@ -188,6 +192,7 @@ def reopen(db, vulnerability_id, actor_id, payload):
 
 def request_retest(db, vulnerability_id, actor_id, payload):
     vulnerability = confirmed(db, vulnerability_id)
+    closure_lock.assert_unlocked(db, vulnerability_id)
     row = current(db, vulnerability_id)
     _expect_version(row, payload.expected_version)
     if status_of(row) != "fix_submitted":
@@ -406,7 +411,15 @@ def _closure_serial(db, row):
     names = _names(db, [row.closed_by])
     return {"id": row.id, "assessment_id": row.assessment_id, "closed_by": row.closed_by,
             "closed_by_name": names.get(row.closed_by), "closed_at": _iso(row.closed_at),
-            "justification": row.justification, "summary": row.summary, "content_sha256": row.content_sha256}
+            "justification": row.justification, "summary": row.summary, "content_sha256": row.content_sha256,
+            "generation": row.generation}
+
+
+def _reopening_serial(db, row):
+    names = _names(db, [row.reopened_by])
+    return {"id": row.id, "closure_id": row.closure_id, "assessment_id": row.assessment_id,
+            "reopened_by": row.reopened_by, "reopened_by_name": names.get(row.reopened_by),
+            "reopened_at": _iso(row.reopened_at), "reason": row.reason}
 
 
 def closure_state(db, assessment_id):
@@ -426,7 +439,9 @@ def closure_state(db, assessment_id):
     unreviewed = sum(1 for v, _ in rows if v.validation_state == "unconfirmed")
     blockers = [{k: f[k] for k in ("vulnerability_id", "check_id", "title", "status")}
                 for f in findings if f["status"] in BLOCKING_STATUSES]
-    closure = db.scalar(select(AssessmentClosure).where(AssessmentClosure.assessment_id == assessment_id))
+    closure = closure_lock.active_closure(db, assessment_id)
+    reopenings = list(db.scalars(select(ClosureReopening).where(ClosureReopening.assessment_id == assessment_id)
+                                 .order_by(ClosureReopening.reopened_at)))
     reasons = []
     if job is None or job.status != "completed": reasons.append("The assessment has not completed.")
     if closure is not None: reasons.append("The assessment is already closed.")
@@ -440,7 +455,8 @@ def closure_state(db, assessment_id):
     return {"assessment_id": assessment_id, "closed": closure is not None,
             "closure": _closure_serial(db, closure) if closure else None, "can_close": not reasons,
             "blocking_reasons": reasons, "blockers": blockers, "confirmed_count": len(findings),
-            "status_counts": counts, "unreviewed_count": unreviewed, "findings": findings}
+            "status_counts": counts, "unreviewed_count": unreviewed, "findings": findings,
+            "reopenings": [_reopening_serial(db, r) for r in reopenings]}
 
 
 def close_assessment(db, assessment_id, actor_id, justification):
@@ -448,11 +464,20 @@ def close_assessment(db, assessment_id, actor_id, justification):
     if not state["can_close"]:
         raise HTTPException(409, "Cannot close: " + " ".join(state["blocking_reasons"]))
     text = _clean(justification, 4000, 20, "Justification")
+    # Dual sign-off (when enabled): whoever updated remediation, accepted a risk or requested a retest
+    # for these findings cannot also close the assessment.
+    involved = [f["vulnerability_id"] for f in state["findings"]]
+    if involved:
+        prior = set(db.scalars(select(RemediationEvent.actor_id).where(
+            RemediationEvent.vulnerability_id.in_(involved), RemediationEvent.actor_id.is_not(None))))
+        rbac.enforce_distinct(actor_id, prior, "close an assessment whose remediation they handled")
     now = utc_now()
+    generation = (db.scalar(select(func.max(AssessmentClosure.generation)).where(
+        AssessmentClosure.assessment_id == assessment_id)) or 0) + 1
     summary = {"findings": state["findings"], "status_counts": state["status_counts"],
                "unreviewed_count": state["unreviewed_count"]}
-    row = AssessmentClosure(id=str(uuid4()), assessment_id=assessment_id, closed_by=actor_id, closed_at=now,
-                            justification=text, summary=summary,
+    row = AssessmentClosure(id=str(uuid4()), assessment_id=assessment_id, generation=generation, closed_by=actor_id,
+                            closed_at=now, justification=text, summary=summary,
                             content_sha256=assessments.digest({"assessment_id": assessment_id, "justification": text,
                                                               "summary": summary}))
     try:
@@ -461,4 +486,22 @@ def close_assessment(db, assessment_id, actor_id, justification):
     except (IntegrityError, OperationalError) as error:
         db.rollback()
         raise HTTPException(409, "The assessment was closed concurrently") from error
+    return closure_state(db, assessment_id)
+
+
+def reopen_closure(db, assessment_id, actor_id, reason):
+    """Formally lift the closure lock. Appends an immutable record; the closure itself is never edited."""
+    assessments.get_request(db, assessment_id)
+    closure = closure_lock.active_closure(db, assessment_id)
+    if closure is None:
+        raise HTTPException(409, "The assessment has no active closure to reopen")
+    text = _clean(reason, 4000, 20, "Reason")
+    row = ClosureReopening(id=str(uuid4()), closure_id=closure.id, assessment_id=assessment_id, reopened_by=actor_id,
+                           reopened_at=utc_now(), reason=text)
+    try:
+        db.add(row)
+        db.commit()
+    except (IntegrityError, OperationalError) as error:
+        db.rollback()
+        raise HTTPException(409, "The closure was reopened concurrently") from error
     return closure_state(db, assessment_id)

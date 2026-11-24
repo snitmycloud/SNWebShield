@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.admin import Admin
+from app.models.admin import ADMIN_ROLES, Admin
+from app.models.security import RevokedToken
 
 
 JWT_ALGORITHM = "HS256"
@@ -28,6 +29,37 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         return password_hasher.verify(hashed_password, plain_password)
     except (VerifyMismatchError, VerificationError, InvalidHashError):
+        return False
+
+
+COMMON_PASSWORDS = frozenset({
+    "password1234", "passwordpassword", "123456789012", "qwertyuiop12", "letmein12345", "administrator",
+    "welcome12345", "changeme1234", "iloveyou1234", "snwebshield", "snwebshield123",
+})
+
+
+def validate_password_policy(password: str, email: str = "") -> list[str]:
+    """Return the reasons a new password is unacceptable (empty list = acceptable)."""
+    problems = []
+    if not 12 <= len(password) <= 128:
+        problems.append("must be between 12 and 128 characters")
+    classes = sum(any(check(c) for c in password) for check in (str.islower, str.isupper, str.isdigit,
+                                                               lambda c: not c.isalnum()))
+    if classes < 3:
+        problems.append("must mix at least three of: lowercase, uppercase, digits, symbols")
+    lowered = password.lower()
+    if lowered in COMMON_PASSWORDS or len(set(lowered)) < 5:
+        problems.append("is too common or repetitive")
+    local = email.split("@")[0].strip().lower()
+    if len(local) >= 4 and local in lowered:
+        problems.append("must not contain the email name")
+    return problems
+
+
+def password_needs_rehash(hashed_password: str) -> bool:
+    try:
+        return password_hasher.check_needs_rehash(hashed_password)
+    except InvalidHashError:
         return False
 
 
@@ -71,10 +103,8 @@ def _unauthorized() -> HTTPException:
     )
 
 
-def get_current_admin(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
-) -> Admin:
+def authenticate(credentials: HTTPAuthorizationCredentials | None, db: Session) -> tuple[Admin, dict]:
+    """Validate the bearer token and return the active account with the verified claims."""
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise _unauthorized()
 
@@ -98,7 +128,9 @@ def get_current_admin(
     except jwt.InvalidTokenError as exc:
         raise _unauthorized() from exc
 
-    if claims.get("token_type") != "access" or claims.get("role") != "admin":
+    if claims.get("token_type") != "access" or claims.get("role") not in ADMIN_ROLES:
+        raise _unauthorized()
+    if db.get(RevokedToken, claims["jti"]) is not None:
         raise _unauthorized()
 
     try:
@@ -109,6 +141,21 @@ def get_current_admin(
     admin = db.get(Admin, admin_id)
     if admin is None or not admin.is_active:
         raise _unauthorized()
-    if admin.role != "admin":
-        raise HTTPException(status_code=403, detail="Administrator role required")
-    return admin
+    # A token minted before a role change must not keep the old privileges.
+    if admin.role not in ADMIN_ROLES or admin.role != claims["role"]:
+        raise _unauthorized()
+    return admin, claims
+
+
+def get_current_admin(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> Admin:
+    return authenticate(credentials, db)[0]
+
+
+def get_current_session(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> tuple[Admin, dict]:
+    return authenticate(credentials, db)

@@ -113,11 +113,17 @@ async function request(path, options = {}) {
 
     const detail = payload?.detail;
 
-    const message = Array.isArray(detail)
+    let message = Array.isArray(detail)
       ? detail.map((item) => item.msg || JSON.stringify(item)).join("; ")
       : typeof detail === "string"
         ? detail
         : `Request failed with HTTP ${response.status}`;
+
+    // Login throttling: tell the person when they may try again.
+    const wait = Number(response.headers?.get?.("Retry-After"));
+    if (response.status === 429 && Number.isFinite(wait) && wait > 0) {
+      message += ` (retry in about ${Math.ceil(wait / 60)} min)`;
+    }
 
     throw new Error(message);
   }
@@ -165,6 +171,19 @@ export const api = {
   startSessionTimer,
 
   logout: () => clearSession(),
+
+  // Sign out for real: clear the browser session at once, then ask the server to revoke the token
+  // (best effort; a failed request must never keep the person signed in).
+  signOut: async () => {
+    const token = getAccessToken();
+    clearSession();
+    if (!token) return;
+    try {
+      await fetch(`${API_BASE_URL}/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+    } catch {
+      // The token still expires on its own.
+    }
+  },
 
   // Monitoring uses the shared execution engine; API requests only queue work.
   monitoringOverview: () => request("/monitoring/overview"),
@@ -245,6 +264,7 @@ export const api = {
   requestRetest: (id, data) => jsonPost(`/remediation/${encodeURIComponent(id)}/retests`, data),
   assessmentClosure: id => request(`/assessments/${encodeURIComponent(id)}/closure`),
   closeAssessment: (id, data) => jsonPost(`/assessments/${encodeURIComponent(id)}/close`, data),
+  reopenClosure: (id, data) => jsonPost(`/assessments/${encodeURIComponent(id)}/reopen-closure`, data),
   downloadReportPdf: (id, official) =>
     request(`/reports/${encodeURIComponent(id)}/${official ? "pdf" : "preview"}`, { binary: true }),
 
