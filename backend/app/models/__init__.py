@@ -14,3 +14,4 @@ from app.models.assessment import AssessmentRequest, AssessmentReport, Observati
 from app.models.vulnerability import (Vulnerability, VulnerabilityEvent, VulnerabilityIngestion,
                                       VulnerabilityOccurrence, VulnerabilityRiskAssessment, VulnerabilitySignoff,
                                       VulnerabilitySuppression)
+from app.models.report import VaptReport, VaptReportApproval, VaptReportArtifact, VaptReportEvent

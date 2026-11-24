@@ -38,6 +38,7 @@ import AssessmentsPage from "./AssessmentsPage.jsx";
 import FindingsPage from "./FindingsPage.jsx";
 import VulnerabilitiesPage from "./VulnerabilitiesPage.jsx";
 import WorkbenchPage from "./WorkbenchPage.jsx";
+import ReportsPage from "./ReportsPage.jsx";
  
 
 const NAV_ITEMS = [
@@ -49,6 +50,7 @@ const NAV_ITEMS = [
   { id: "assessments", label: "Assessments", icon: FileText },
   { id: "vulnerabilities", label: "Vulnerabilities", icon: Bug },
   { id: "workbench", label: "Analyst workbench", icon: UserCheck },
+  { id: "reports", label: "VAPT reports", icon: FileText },
   { id: "findings", label: "Findings", icon: ShieldAlert },
 ];
 
@@ -235,6 +237,7 @@ function Dashboard({ admin, onLogout }) {
       assessments: "Assessments",
       vulnerabilities: "Vulnerabilities",
       workbench: "Analyst workbench",
+      reports: "VAPT reports",
       findings: "Findings",
     }[activePage] || "Overview"}
   </strong>
@@ -313,6 +316,7 @@ function Dashboard({ admin, onLogout }) {
           {activePage === "assessments" && <AssessmentsPage websites={websites} initialAssessmentId={assessmentToOpen} />}
           {activePage === "vulnerabilities" && <VulnerabilitiesPage websites={websites} onOpenAssessment={id => { setAssessmentToOpen(id); setActivePage("assessments"); }} />}
           {activePage === "workbench" && <WorkbenchPage websites={websites} />}
+          {activePage === "reports" && <ReportsPage websites={websites} />}
           {activePage === "findings" && <FindingsPage clients={clients} websites={websites} onOpenAssessment={id => { setAssessmentToOpen(id); setActivePage("assessments"); }} />}
 
           <footer className="content-footer">

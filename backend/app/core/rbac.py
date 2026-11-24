@@ -16,3 +16,21 @@ def require_analyst(admin: Admin = Depends(get_current_admin)) -> Admin:
     if admin.role not in ANALYST_ROLES:
         raise HTTPException(status_code=403, detail="Security analyst role required")
     return admin
+
+
+# --- Module G: VAPT reports --------------------------------------------------------------
+# Separate allow-lists so Milestone 6 can split "may prepare reports" from "may approve them".
+REPORT_ROLES = frozenset({"admin"})
+REPORT_APPROVER_ROLES = frozenset({"admin"})
+
+
+def require_report_role(admin: Admin = Depends(get_current_admin)) -> Admin:
+    if admin.role not in REPORT_ROLES:
+        raise HTTPException(status_code=403, detail="Report role required")
+    return admin
+
+
+def require_report_approver(admin: Admin = Depends(get_current_admin)) -> Admin:
+    if admin.role not in REPORT_APPROVER_ROLES:
+        raise HTTPException(status_code=403, detail="Report approver role required")
+    return admin

@@ -9,7 +9,8 @@
 | After Milestone 1 | **393 backend tests, 17 frontend unit tests, 18 Chromium journeys, production build: all passing** |
 | After Milestone 2 (Module E) | **430 backend tests, 22 frontend unit tests, production build: all passing** |
 | After Milestone 3 (Module F) | **470 backend tests, 31 frontend unit tests, production build: all passing** |
-| Database | Alembic head is `0010_analyst_workbench` after Milestone 3 (`0009_vulnerabilities` after Milestone 2). Pre-0010 backup: `backups/db-*-pre-0010/` (gitignored, integrity-checked). The development database file itself is migrated by the operator with `python -m alembic upgrade head` (see Milestone 3 manual steps). |
+| After Milestone 4 (Module G) | **501 backend tests, 40 frontend unit tests, production build: all passing** |
+| Database | Alembic head is `0011_vapt_reports` after Milestone 4 (`0010_analyst_workbench` after Milestone 3). Pre-0011 backup: `backups/db-*-pre-0011/` (gitignored, integrity-checked). The development database file itself is migrated by the operator with `python -m alembic upgrade head` (see Milestone 4 manual steps). |
 
 **Status legend.** ✅ Fully implemented and tested · 🟡 Partially implemented · 🧪 Implemented but not tested · ❌ Missing · 🔧 Broken or requiring improvement
 
@@ -109,16 +110,25 @@ Service functions are in `backend/app/services/vulnerabilities.py` (extended, no
 
 **Test evidence (2026-11-24):** 470 backend tests (`python -m pytest`), 31 frontend unit tests (`npm test`) and `npm run build` all passed.
 
-## G. VAPT reporting
+## G. VAPT reporting (Milestone 4: complete)
+
+Service functions are in `backend/app/services/reports.py`, routes in `backend/app/api/routes/reports.py` (`/api/v1/reports`), models in `backend/app/models/report.py`, migration `0011_vapt_reports`, role gates in `backend/app/core/rbac.py` (`require_report_role`, `require_report_approver`), UI in `frontend/src/ReportsPage.jsx` and `frontend/src/lib/reports.js`. PDFs are rendered with `reportlab` (pure Python, built-in Helvetica/Courier fonts, no GTK/Pango).
 
 | Sub-feature | Status | Evidence |
 |---|---|---|
-| Executive summary | ❌ | — |
-| Scope and methodology | 🟡 | Reviewed JSON export includes authorisation, evidence hashes, profile and limitations. No narrative methodology. |
-| Technical findings and evidence | 🟡 | `POST /assessments/{id}/reviewed-reports` produces an immutable, hash-checked JSON snapshot (`test_reviewed_export…`) |
-| Severity and remediation guidance | 🟡 | Present in the JSON export only |
-| PDF report generation | ❌ | — |
-| Human approval before publication | ❌ | Exports are private snapshots. There is no publish state or approval gate. |
+| Report entity, versions and lifecycle | ✅ | `VaptReport` (`draft`, `pending_approval`, `approved`, `rejected`, `superseded`), per-assessment `revision`, frozen snapshot with `content_sha256` (`content_digest()`); `generate()` supersedes older open drafts, `decide()` supersedes an older approved report. `pending_approval` is reserved for Milestone 6 second-analyst review; today a draft is decided directly. Tests: `test_new_revision_supersedes_older_drafts_and_a_new_approval_supersedes_the_old_one`, `test_listing_filters_and_pagination` |
+| Strict eligibility enforcement | ✅ | `gather()` includes a finding only if `vulnerabilities.report_eligible()` holds **and** its evidence hash re-verifies; everything else is counted by reason (`unassessed`, `unconfirmed`, `dismissed`, `stale_or_missing_signoff`, `evidence_integrity_failed`). A report with no eligible finding is refused (409). Tests: `test_only_report_eligible_findings_are_included_and_the_rest_counted`, `test_report_needs_an_eligible_finding_and_a_known_completed_assessment`, `test_tampered_evidence_is_excluded_from_the_report` |
+| Executive summary | ✅ | `summarise()` builds a deterministic summary from validated counts (no free text from targets). Covered by `test_approval_publishes_an_official_pdf_with_matching_sha256` |
+| Scope and methodology | ✅ | `_scope()` (client, website, exact target, authorised domains, methods, UTC window) and `_methodology()` (profile, request/redirect/body budgets, TLS version, isolation attestation and cleanup, source report SHA-256). The PDF states honestly when isolation is not attested or not applicable. Same test as above (section headings asserted in the PDF text) |
+| Technical findings, severity and remediation | ✅ | Assessed rating, likelihood, impact, escaped evidence, evidence SHA-256, reproduction steps, analyst sign-off per finding, remediation grouped by priority. `render_pdf()`; `test_approval_publishes_an_official_pdf_with_matching_sha256` |
+| PDF generation | ✅ | `render_pdf()`; `%PDF-` bytes, SHA-256 stored in `vapt_report_artifacts` and on the report; verified again on every download. Tests: `test_approval_publishes_an_official_pdf_with_matching_sha256`, `test_downloads_verify_the_stored_pdf_hash` |
+| Untrusted data escaping | ✅ | `strip_controls()` at snapshot time (control, format and bidi characters removed, bounded), `pdf_text()` at render time (markup escaped, transcoded to Latin-1), `evidence_lines()` (evidence flattened to bounded JSON-escaped lines in a monospace style). No links or scripts are ever emitted. Tests: `test_hostile_evidence_and_names_render_as_inert_text`, `test_pdf_text_escapes_markup_and_removes_control_characters`, `test_strip_controls_bounds_length_and_flattens_single_line_fields` |
+| Mandatory human approval gate | ✅ | `POST /reports/{id}/approve` and `/reject` need `human_validation_confirmed: true` and a justification (20-4000 characters). Approval re-verifies the snapshot hash and that every included finding is still eligible at the same revision and sign-off (`_still_eligible()`), then renders the official PDF. `GET /reports/{id}/pdf` returns 409 unless the report is approved; `GET /reports/{id}/preview` is a watermarked draft. Tests: `test_official_download_is_impossible_before_human_approval`, `test_rejection_is_final_and_never_releases_a_pdf`, `test_decision_requires_attested_justification`, `test_approval_is_refused_when_a_finding_changed_after_generation`, `test_approval_is_refused_when_the_snapshot_was_tampered_with` |
+| Immutable approval and audit records | ✅ | `VaptReportApproval` (one decision per report, bound to the content and PDF hashes), `VaptReportEvent` (generated, previews, official downloads, approvals, rejections, supersessions; `GET /reports/{id}/events`). ORM guards plus SQLite triggers: frozen snapshot columns, no deletes, final statuses, write-once official hash, append-only artifacts, approvals and events. Tests: `test_audit_trail_records_generation_decisions_and_downloads`, `test_orm_and_database_block_rewriting_snapshots_history_and_final_states`, `test_migration_installs_report_tables_and_triggers_preserving_data` |
+| Authentication and RBAC | ✅ | Router-level `require_report_role`; approve and reject also need `require_report_approver` (separate allow-lists, so Milestone 6 can split them). Tests: `test_every_report_route_rejects_unauthenticated_callers`, `test_forged_role_tokens_and_deactivated_admins_are_rejected`, `test_role_allow_lists_gate_reporting_and_approval_separately`, `test_unknown_reports_and_malformed_ids` |
+| Frontend | ✅ | `ReportsPage.jsx`: eligible vs excluded counts before generating, report list, detail (summary, scope, findings, evidence as escaped text), approve/reject with attestation, draft preview and approval-gated official download, audit trail. `tests/reports.test.js` (9 tests: API paths and tokens, PDF routes, server refusal, download gating, decision gating, generation gating, assessment filter, labels and file names, escaped rendering) |
+
+**Known limits.** One analyst can generate and approve the same report (R14, Milestone 6). Reports cover one assessment each, and there is no client-facing portal. PDFs use the built-in Latin-1 fonts, so characters outside Latin-1 in client or target text print as `?`. The PDF is stored in the database, not on the evidence volume.
 
 ## H. Remediation and retesting
 
@@ -146,8 +156,8 @@ Service functions are in `backend/app/services/vulnerabilities.py` (extended, no
 | R7 | The HEAD broker runs on the Windows host, not in a container | Low | By design: CLAUDE.md requires `--network none` for analysis, so the target request must be made elsewhere. Mitigated with Python `-I -S`, a Job Object (256 MiB, CPU cap), header-only parsing and a 32 KiB limit. |
 | R8 | The Nmap guard container runs as root with `NET_ADMIN` on a bridge network (needed for its egress firewall) and is not covered by per-run inspection | Medium | Open. Milestone 6: extend inspection to `scanner/nmap/runner.py`. |
 | R9 | Evidence retention is not enforced automatically; deletion is not a secure wipe | Medium | Open. Add a scheduled retention report. Recommend BitLocker on the evidence volume. |
-| R10 | PDF or executive reports; no publication approval | Medium (product) | Findings are normalised (M2) and analyst sign-off gates report eligibility (M3). Remaining, Milestone 4: PDF and executive reports, publication approval. |
-| R14 | One analyst can both assess and approve; only the `admin` role exists | Medium | Open. Milestone 6: distinct analyst/reviewer roles and second-analyst approval for high and critical findings. |
+| R10 | PDF or executive reports; no publication approval | Medium (product) | **Closed in Milestone 4.** Reports contain only eligible findings, an official PDF exists only after a human approval, and every download re-verifies its SHA-256. Residual risk is R14 (single analyst may generate and approve). |
+| R14 | One analyst can both assess and approve (findings and reports); only the `admin` role exists | Medium | Open. Milestone 6: distinct analyst/reviewer roles, second-analyst approval for high and critical findings and for report approval (`pending_approval` is reserved for this). |
 | R11 | Starlette/httpx test-client deprecation warning | Low | Upgrade dependency in a maintenance pass |
 | R12 | Real-target acceptance with genuine written authorisation not yet performed for the hardened build | Medium | User step (below) |
 | R13 | Single global assessment slot and 60-second cooldown limit throughput | Low | Accepted for local use |
@@ -218,6 +228,42 @@ No VM changes were made by this milestone. These steps are for the operator:
 
 ---
 
+## Milestone 4: VAPT reporting (Module G)
+
+**Status: complete, verified and committed on `feat/snwebshield-hardening`.**
+
+| Area | Change | Files |
+|---|---|---|
+| Migration | `0011_vapt_reports`: `vapt_reports`, `vapt_report_artifacts`, `vapt_report_approvals`, `vapt_report_events` plus SQLite triggers (frozen snapshot, no delete, final statuses, write-once official hash, append-only history). Additive; downgrade is refused to preserve approval history. | `backend/migrations/versions/0011_vapt_reports.py` |
+| Models | `VaptReport`, `VaptReportArtifact`, `VaptReportApproval`, `VaptReportEvent` with ORM guards; triggers also attached through `after_create` so fresh databases match migrated ones | `backend/app/models/report.py` |
+| Service | Eligibility gathering, deterministic snapshot and summary, escaped PDF rendering, approval workflow, verified downloads | `backend/app/services/reports.py` |
+| API / RBAC | `/api/v1/reports/*` behind `require_report_role`; approve/reject behind `require_report_approver`; startup refuses to run without the new tables | `api/routes/reports.py`, `core/rbac.py`, `main.py` |
+| Dependency | `reportlab>=4.2,<5` (pure Python, installs cleanly on Windows) | `backend/requirements.txt` |
+| Frontend | VAPT reports page and pure helpers; new API client calls; navigation entry | `ReportsPage.jsx`, `lib/reports.js`, `lib/api.js`, `App.jsx` |
+| Test fixes | Three existing assertions that pinned the Alembic head now expect `0011_vapt_reports` | `test_migrations.py`, `test_workbench.py` |
+
+### Test results (2026-11-24, Windows)
+
+| Suite | Result |
+|---|---|
+| `python -m pytest tests/test_reports.py` | **31 passed** |
+| Backend `pytest` (full regression, run on an otherwise idle machine) | **501 passed**, 1 deprecation warning (470 before, plus 31 new) |
+| Frontend unit (`npm test`) | **40 passed** (31 before, plus 9 in `tests/reports.test.js`) |
+| `npm run build` | Passed |
+| Playwright journeys | Not re-run in this milestone (no existing journey touches reports) |
+
+Security tests cover: exclusion of unassessed, unconfirmed, dismissed, stale-revision and evidence-tampered findings; no official PDF or download before human approval; approval refused when a finding changed or the snapshot was tampered with; rejection is final; attestation and justification required; hostile markup, control and bidi characters rendered as inert text with no PDF actions; unauthenticated, forged-role, deactivated-admin and role-allow-list rejection; ORM and raw-SQL immutability.
+
+### Manual configuration
+
+1. Back up, then migrate the development database: `cd backend; .\.venv\Scripts\python.exe -m alembic upgrade head` (a pre-0011 copy is in `backups/`). Restart the API; startup refuses to run without the new tables.
+2. Install the new dependency in the backend virtual environment: `.\.venv\Scripts\python.exe -m pip install -r requirements.txt` (adds `reportlab`; `Pillow` was already required).
+3. Findings confirmed before Milestone 3 are still not report eligible until re-approved in the workbench.
+4. No Azure, VM, Docker or `.env` changes are needed. The Milestone 1 manual VM steps are still pending.
+5. Run the frontend build and tests while no other heavy process is running; on this machine a concurrent `pytest` and `vite build` exhausted memory.
+
+---
+
 ## Remaining roadmap
 
 Each milestone follows the CLAUDE.md workflow: back up the database, add migrations, unit/API/security tests, frontend tests and a build, update this file and the README, and commit locally.
@@ -227,6 +273,6 @@ Each milestone follows the CLAUDE.md workflow: back up the database, add migrati
 | M1 — Scanner worker hardening (D) | Done | |
 | M2 — Vulnerability management (E) | Done | M1 |
 | M3 — Analyst workbench (F) | Done | M2 |
-| **M4 — VAPT reporting (G)** | Report entity (draft → in review → approved → published) built only from report-eligible findings; executive summary; scope and methodology from the authorisation snapshot; locally rendered PDF with a SHA-256 manifest; human approval gate before publish | M3 |
+| M4 — VAPT reporting (G) | Done | M3 |
 | **M5 — Remediation and retesting (H)** | Retest request workflow tied to a fresh authorisation check; automatic before/after check comparison; client update log; engagement closure with a final report | M4 |
 | **M6 — Production hardening** | **R1** auth audit log; **R2** login throttling; **R3** server-side logout (`jti` denylist); **R14** distinct analyst roles and second-analyst approval; R8 Nmap runner isolation inspection; R6 orphan-container report; R9 evidence retention report; client/website edit and archive with audit | M3 |

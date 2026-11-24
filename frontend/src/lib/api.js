@@ -221,6 +221,21 @@ export const api = {
   saveWorkbenchAssessment: (id, data) => jsonPost(`/workbench/${encodeURIComponent(id)}/assessment`, data),
   signoffWorkbench: (id, data) => jsonPost(`/workbench/${encodeURIComponent(id)}/signoff`, data),
 
+  // Module G: VAPT reports (report role required by the API). PDFs are fetched with the bearer token.
+  reportEligibility: assessmentId => request(`/reports/eligibility?assessment_id=${encodeURIComponent(assessmentId)}`),
+  generateReport: assessmentId => jsonPost("/reports", { assessment_id: assessmentId }),
+  reports: (filters = {}, offset = 0) => {
+    const params = new URLSearchParams({ limit: "50", offset: String(offset) });
+    for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
+    return request(`/reports?${params}`);
+  },
+  report: id => request(`/reports/${encodeURIComponent(id)}`),
+  reportEvents: id => request(`/reports/${encodeURIComponent(id)}/events?limit=100`),
+  approveReport: (id, data) => jsonPost(`/reports/${encodeURIComponent(id)}/approve`, data),
+  rejectReport: (id, data) => jsonPost(`/reports/${encodeURIComponent(id)}/reject`, data),
+  downloadReportPdf: (id, official) =>
+    request(`/reports/${encodeURIComponent(id)}/${official ? "pdf" : "preview"}`, { binary: true }),
+
   // Health
   health: () => request("/health", { auth: false }),
 
