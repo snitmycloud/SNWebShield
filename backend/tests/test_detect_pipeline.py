@@ -1,4 +1,4 @@
-"""One whole scan through every DETECT step against local servers, and what the results API returns."""
+﻿"""One whole scan through every DETECT step against local servers, and what the results API returns."""
 import asyncio
 import json
 
@@ -216,5 +216,5 @@ def test_the_standard_scan_reports_ports_open_like_scanmes_including_31337(clien
         site, scan_id, status = run_scan(client, headers, None, monkeypatch)
     body = client.get(f"{W}/{site['id']}/scans/{scan_id}", headers=headers).json()
     assert [p["port"] for p in body["ports"]] == [22, 80, 9929, 31337]
-    assert body["scan"]["result"]["ports"]["planned"] == 1004 and body["scan"]["result"]["ports"]["open"] == 4
+    assert body["scan"]["result"]["ports"]["planned"] == 1011 and body["scan"]["result"]["ports"]["open"] == 4
     assert body["scan"]["result"]["steps"]["ports"]["state"] == "ok"

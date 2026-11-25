@@ -1,14 +1,14 @@
-"""The minimal certificate reader: correct fields from a real certificate, and never an exception on hostile input."""
+﻿"""The minimal certificate reader: correct fields from a real certificate, and never an exception on hostile input."""
 import random
 import ssl
 from datetime import datetime, timezone
 
 from app.services.x509_lite import parse_certificate
-from netfixtures import CERT
+from netfixtures import cert_paths
 
 
 def der() -> bytes:
-    return ssl.PEM_cert_to_DER_cert(CERT.read_text())
+    return ssl.PEM_cert_to_DER_cert(cert_paths()[0].read_text())
 
 
 def test_reads_subject_issuer_dates_and_names():

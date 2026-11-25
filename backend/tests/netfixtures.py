@@ -1,15 +1,42 @@
-"""Local test servers (loopback only) and small helpers for the Phase 2 detection tests. No test ever reaches the internet."""
+﻿"""Local test servers (loopback only) and small helpers for the Phase 2 detection tests. No test ever reaches the internet."""
 import asyncio
+import atexit
 import contextlib
+import os
+import shutil
 import socket
 import ssl
+import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
 
-DATA = Path(__file__).parent / "data"
-CERT, KEY = DATA / "test_tls_cert.pem", DATA / "test_tls_key.pem"
+import pytest
+
 HOST = "127.0.0.1"
+_cert_dir = None
+
+
+def cert_paths():
+    """(certificate, key) of a throwaway self-signed test certificate, created on first use with `openssl`.
+
+    Nothing is committed to the repository (a private key must never be), and the files are deleted at exit.
+    The TLS tests are skipped, with this reason, when no `openssl` program is available."""
+    global _cert_dir
+    if _cert_dir is None:
+        exe = shutil.which("openssl") or r"C:\Program Files\Git\usr\bin\openssl.exe"
+        if not Path(exe).exists():
+            pytest.skip("openssl is not available to create a throwaway test certificate")
+        folder = Path(tempfile.mkdtemp(prefix="snwebshield-testcert-"))
+        atexit.register(shutil.rmtree, folder, True)
+        subprocess.run([exe, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", str(folder / "key.pem"),
+                        "-out", str(folder / "cert.pem"), "-days", "36500", "-sha256",
+                        "-subj", "/CN=test.snwebshield.example/O=SNWebShield Tests",
+                        "-addext", "subjectAltName=DNS:test.snwebshield.example,DNS:alt.snwebshield.example"],
+                       check=True, capture_output=True, env={**os.environ, "MSYS2_ARG_CONV_EXCL": "*"})
+        _cert_dir = folder
+    return _cert_dir / "cert.pem", _cert_dir / "key.pem"
 
 
 def free_port() -> int:
@@ -21,7 +48,7 @@ def free_port() -> int:
 
 def server_tls() -> ssl.SSLContext:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(CERT, KEY)
+    context.load_cert_chain(*cert_paths())
     return context
 
 
@@ -77,6 +104,8 @@ class BackgroundServer:
             self._loop.close()
 
     def __enter__(self):
+        if self.tls:
+            cert_paths()  # create (or skip) here, in the test thread, not inside the server thread
         self._thread.start()
         assert self._ready.wait(5), "test server did not start"
         return self

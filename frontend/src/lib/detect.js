@@ -3,7 +3,7 @@
 
 const DATABASES = {
   3306: "MySQL", 5432: "PostgreSQL", 1433: "Microsoft SQL Server", 27017: "MongoDB", 6379: "Redis", 9200: "Elasticsearch",
-  1521: "Oracle database", 5984: "CouchDB", 11211: "Memcached",
+  1521: "Oracle database", 5984: "CouchDB", 11211: "Memcached", 9300: "Elasticsearch (cluster)",
 };
 const KNOWN = {
   21: ["File transfer (FTP)", "File transfer (FTP) is open to the internet. It is usually not encrypted."],
@@ -15,6 +15,11 @@ const KNOWN = {
   139: ["Windows file sharing", "Windows file sharing is open to the internet."],
   445: ["Windows file sharing (SMB)", "Windows file sharing (SMB) is open to the internet."],
   2375: ["Docker remote control", "Docker's remote control port is open to the internet. Anyone who can reach it may be able to control your server."],
+  2376: ["Docker remote control (encrypted)", "Docker's encrypted remote control port is open to the internet. Only the people who need it should be able to reach it."],
+  2379: ["etcd settings store", "Your etcd store, where cluster settings and secrets are kept, is open to the internet."],
+  5601: ["Kibana dashboard", "Your Kibana dashboard, a viewer for log and search data, is open to the internet."],
+  10250: ["Kubernetes node control (kubelet)", "A Kubernetes node's control port (kubelet) is open to the internet."],
+  15672: ["RabbitMQ admin page", "The admin page of your RabbitMQ message queue is open to the internet."],
   3389: ["Remote Desktop", "Remote Desktop is open to the internet."],
   5900: ["Remote screen (VNC)", "Remote screen sharing (VNC) is open to the internet."],
 };

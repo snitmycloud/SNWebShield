@@ -20,9 +20,9 @@ def test_the_fixed_port_lists():
     assert set(TOP_TCP_PORTS[:10]) == {80, 23, 443, 21, 22, 25, 3389, 110, 445, 139}  # Nmap's ten most common
     assert {22, 80, 443, 3306, 5432, 1433, 9200, 8080, 31337}.issubset(TOP_TCP_PORTS)
     # Risky-service ports that Nmap's default list omits are added, and only those (9200 Elasticsearch is already in it).
-    assert EXTRA_RISKY_PORTS == (6379, 27017, 11211, 2375)
+    assert EXTRA_RISKY_PORTS == (6379, 27017, 11211, 2375, 2376, 5984, 5601, 2379, 10250, 15672, 9300)
     assert {9200, 3306, 5432, 1433, 23, 21, 3389, 445, 139}.issubset(TOP_TCP_PORTS)
-    assert len(STANDARD_PORTS) == 1004 and set(STANDARD_PORTS) == set(TOP_TCP_PORTS) | {6379, 27017, 11211, 2375}
+    assert len(STANDARD_PORTS) == 1011 and set(STANDARD_PORTS) == set(TOP_TCP_PORTS) | set(EXTRA_RISKY_PORTS)
     assert len(set(STANDARD_PORTS)) == len(STANDARD_PORTS)
     assert 31337 in STANDARD_PORTS and 9929 in STANDARD_PORTS  # scanme.nmap.org's ports
     assert ports_for("standard") == STANDARD_PORTS
@@ -191,10 +191,10 @@ def test_a_port_open_like_scanmes_31337_is_reported_by_a_full_standard_scan(monk
     monkeypatch.setattr(netio, "open_connection", fake)
     result = scan(list(STANDARD_PORTS))
     assert result.open == [22, 80, 9929, 31337]
-    assert result.done == result.total == len(STANDARD_PORTS) == 1004 and result.closed == 1000 and result.errors == 0
+    assert result.done == result.total == len(STANDARD_PORTS) == 1011 and result.closed == 1007 and result.errors == 0
 
 
-@pytest.mark.parametrize("port", [31337, 9929, 6379, 27017, 11211, 2375, 9200])
+@pytest.mark.parametrize("port", [31337, 9929, 9200, 6379, 27017, 11211, 2375, 2376, 5984, 5601, 2379, 10250, 15672, 9300])
 def test_every_extra_and_unusual_port_is_reported_when_open(monkeypatch, port):
     async def fake(ip, p, **kwargs):
         if p == port:
