@@ -49,6 +49,45 @@ Product direction changed to the self-service scanner in [SNWEBSHIELD_SPEC.md](S
 
 ---
 
+## Self-service Phase 2: DETECT (branch `feat/phase2-detect`, 2026-11-25)
+
+| Spec item (Phase 2) | Status | Tests / proof |
+|---|---|---|
+| Fixed top-1000 Nmap port list (generated once from `nmap-services`, never downloaded at runtime), plus 6379 and 27017 which the spec calls risky but Nmap's default list omits (1,002 ports) | ✅ | `test_detect_ports.py::test_the_fixed_port_lists`; generator `backend/tools/make_top_ports.py` |
+| asyncio TCP connect scan: open / closed / filtered, 100 concurrent, 1.5 s per port, 300 ports/s, all in settings; unusual network errors are "could not check", never "no open ports" | ✅ | `test_detect_ports.py` (states, concurrency cap, rate, timeout, errors, cancel closes connections) |
+| Version detection per open port (3 s each, harmless probes): banners, HEAD + GET, TLS handshake with version/cipher/certificate subject, issuer, expiry, MySQL greeting; "not disclosed"; cookie values never stored; 1 KB banners cleaned | ✅ | `test_detect_versions.py` (32, with real loopback SSH/MySQL/HTTP/TLS servers), `test_x509_lite.py` |
+| Technology fingerprints from an editable JSON file; the 21 starter technologies with versions | ✅ | `test_detect_tech.py` (every starter technology, bad rules skipped, hostile pages) |
+| DNS/email: SPF, DMARC, DKIM (common selectors), CAA, MX; lookup failure is "could not check", not "missing" | ✅ | `test_detect_dns_subdomains.py` |
+| Subdomain list from crt.sh (list only, short timeout, hostile names rejected) | ✅ | `test_detect_dns_subdomains.py` |
+| Exposed files: fixed list confirmed by content signature, soft-404 baseline, contents never stored | ✅ | `test_detect_exposed.py` |
+| A step that fails or times out is "could not check"; a scan is "completed" only if every step finished, otherwise "incomplete" with reasons; nothing is ever shown as safe or clean | ✅ | `test_detect_pipeline.py`, `frontend/tests/detect.test.js` |
+| **Long checks stop cleanly if the website is removed or verification is lost** (also: owner disabled, taken over, time limit, unreadable database fails closed) | ✅ | `test_scan_stops_cleanly.py` (12): removal and lost verification **during the port step and during the HTTP step**, each ending incomplete in < 4 s, all connections closed, nothing opened afterwards, partial results kept |
+| "Scan now" with plans.json limits (Free 1/website/day, Pro 5, Business 20), scans left shown, friendly limit message, stricter shared test-target limit | ✅ | `test_scan_now.py` (17) |
+| Full 1-65535 scan code path, Pro and above only, API only (no UI); Free refused; re-checked at run time; not allowed on test targets | ✅ | `test_scan_now.py::test_free_is_refused_a_full_scan_*`, `test_a_full_scan_is_refused_again_at_run_time_*` |
+| Live progress ("Scanning ports… 412 / 1002") and results panel in plain language | ✅ | real run screenshots 21–23 |
+
+**Migration `0018_detect_results`** (adds `scan_ports`, `scan_technologies`, `scan_observations`; additive). Applied to the development database after a verified backup (`%USERPROFILE%\SNWebShield-Backups\snwebshield-before-auth-correctness-20261125T183035529464Z.db`); counts unchanged, integrity OK.
+
+**Test results (2026-11-25/26, Windows, run alone).** Backend **422 passed** (about 16 minutes; no test reaches the internet: scan sockets are limited to loopback, real DNS and crt.sh are blocked). Frontend **86 unit tests passed**; production build OK.
+
+**Real run (approved test target `scanme.nmap.org`, synthetic admin `phase2-admin@example.com`, screenshots and report in `docs/proof/phase2/`).** Scan 1 (the automatic first scan) finished in 31 s, status *completed*, ip 45.33.32.156: open 22 OpenSSH 6.6.1p1, 80 Apache 2.4.7, 9929 nping-echo (not identified); technologies Apache 2.4.7 and Google Analytics; DNS: SPF, DMARC, DKIM, CAA, MX not found; exposed: directory listing at `/images/`; no subdomains listed; every step `ok`; audited with `test_target: true`. Scan 2 (*Scan now*) was stopped by **removing the website at "Scanning ports… 303 / 1002"**: it ended *incomplete* (`website_removed`, step `ports`) at the moment of removal, the worker's `scan_worker_stopped` event followed 0.04 s later, and the ports found before the stop (22, 80) were kept. Both of the test target's 2 daily scans (UTC) are now used.
+
+**Not done / not verified, and known limitations**
+- **First real scan of `snitsolutions.in` is still pending DNS access** (it stays unverified and unscanned).
+- **Windows closed-port quirk:** this host takes about 2 s to report a refused connection, longer than the 1.5 s timeout, so closed ports are counted as "not answering" (999 "not answering", 0 "closed" in the real scan) and a standard scan takes about 15-30 s. Open ports are unaffected. `SCAN_PORT_TIMEOUT_SECONDS=2.5` would classify them exactly but slows scans.
+- **A full 1-65535 scan was never run against a real target**, and on this host it would probably exceed the 15-minute time limit and end "incomplete" (about 64 ports/s). Only the plan gate and the port list are tested.
+- scanme.nmap.org normally also has port 31337 open; the real scan did not report it. Not investigated (the port is in the list); the single scan available for the stop proof was spent as designed.
+- The cutoff of Nmap's top 1000 is a frequency tie (the 1000th and 1001st ports share a frequency), so one port at the boundary may differ from Nmap's own choice.
+- Only open ports are stored; closed and not-answering ports are counted in the scan result.
+- After a removal the scan's per-step summary is not written (the removal writes the record immediately); the open ports found so far are kept in `scan_ports`. Stop time is bounded by the 1 s guard poll plus clean-up; the measured real stop was 0.04 s, and the tests show worst cases under 4 s.
+- A crt.sh request in flight when a scan stops finishes in the background (6 s limit); it contacts crt.sh only, never the target.
+- Rule patterns in `fingerprints.json` run on size-limited text with no regex timeout, so a pathological pattern added by an operator could be slow.
+- DKIM only checks 15 common selectors; subdomains for a non-`www` host come from that exact host's certificates.
+- IPv6-only websites and scans from a non-Windows host are untested.
+- After the last live scan I fixed the results panel so a step that has not run reads "Not checked yet" instead of "nothing found" (unit-tested); it was **not re-screenshotted against a live scan** because the test target's daily limit was spent.
+
+---
+
 **Status legend.** ✅ Fully implemented and tested · 🟡 Partially implemented · 🧪 Implemented but not tested · ❌ Missing · 🔧 Broken or requiring improvement
 
 Test paths are relative to `backend/tests/`. Milestone 6 tests are in `test_production_hardening.py` (`H::` below) and `test_e2e_lifecycle.py` (`E2E::`). Module E and F test names below are real function names in `test_vulnerabilities.py` and `test_workbench.py`. Browser journeys are in `frontend/tests/e2e/authorization.spec.js`. All API routes are under `/api/v1`.

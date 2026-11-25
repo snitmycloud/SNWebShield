@@ -61,6 +61,21 @@ export function stepState(result, key) {
   return result?.steps?.[key]?.state || "missing";
 }
 
+// What a results section should say. A step that has no result is NEVER shown as "nothing found":
+//   problem   - the step could not finish
+//   unchecked - the step has not run (yet), or the scan stopped before it
+//   data      - there is something to list
+//   empty     - the step finished and found nothing
+export function sectionNote(state, { running = false, hasData = false } = {}) {
+  if (["could_not_check", "stopped", "skipped"].includes(state)) {
+    return { kind: "problem", text: "Could not check this part. That is not the same as “nothing found”." };
+  }
+  if (state === "missing" && !hasData) {
+    return { kind: "unchecked", text: running ? "Not checked yet." : "Not checked: the scan stopped before this part." };
+  }
+  return { kind: hasData ? "data" : "empty", text: "" };
+}
+
 const DNS_TEXT = {
   spf: { title: "SPF", what: "which servers may send email for your domain" },
   dmarc: { title: "DMARC", what: "what receivers do with email that fails checks" },

@@ -228,7 +228,8 @@ function ScanPanel({ site, scans, onScanNow, busy, limitNote, onUpgrade }) {
       <ArrowUpRight size={16} /><span>{limitNote || scanNow.message}</span>
       {!site.test_target && <button className="secondary-button" onClick={onUpgrade}>Upgrade</button>}</div>}
     <div className="sw-scan-now"><Badge tone={view.tone}>{view.label}</Badge>
-      {view.active && <LoaderCircle className="spin" size={15} />}<span data-testid="scan-status">{view.text}</span></div>
+      {view.active && <LoaderCircle className="spin" size={15} />}
+      <span data-testid="scan-status">{view.active || !["completed", "incomplete", "refused"].includes(latest?.status) ? view.text : ""}</span></div>
     {latest && <DetectResults siteId={site.id} scan={latest} />}
     {scans.length > 1 && <ul className="sw-history">{scans.slice(1).map(scan => {
       const v = scanView(scan);

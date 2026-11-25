@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, test } from "node:test";
+﻿import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { api, apiError } from "../src/lib/api.js";
-import { describePort, dnsText, exposedText, isActiveScan, isFriendlyLimit, resultBanner, scanNowText, softwareText,
+import { describePort, dnsText, exposedText, isActiveScan, isFriendlyLimit, resultBanner, scanNowText, sectionNote, softwareText,
   stepProblems, stepState } from "../src/lib/detect.js";
 
 let calls;
@@ -96,4 +96,15 @@ test("scan endpoints are authenticated and send the scan type", async () => {
   assert.deepEqual(JSON.parse(calls[0][1].body), { scan_type: "standard" });
   assert.deepEqual(JSON.parse(calls[1][1].body), { scan_type: "full" });
   assert.ok(calls.every(([, o]) => o.headers.Authorization === "Bearer synthetic-unit-test-token"));
+});
+
+
+test("a section with no result is never shown as 'nothing found'", () => {
+  assert.deepEqual(sectionNote("missing", { running: true, hasData: false }), { kind: "unchecked", text: "Not checked yet." });
+  assert.match(sectionNote("missing", { running: false, hasData: false }).text, /scan stopped before this part/);
+  for (const state of ["could_not_check", "stopped", "skipped"]) assert.equal(sectionNote(state, { hasData: true }).kind, "problem");
+  assert.equal(sectionNote("ok", { hasData: false }).kind, "empty");
+  assert.equal(sectionNote("not_applicable", { hasData: false }).kind, "empty");
+  assert.equal(sectionNote("ok", { hasData: true }).kind, "data");
+  assert.equal(sectionNote("missing", { running: true, hasData: true }).kind, "data");  // partial results found so far are shown
 });
