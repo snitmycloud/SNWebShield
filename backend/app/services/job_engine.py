@@ -115,9 +115,15 @@ def lease_seconds(kind):
 
 def scheduler_tick(db):
     heartbeat(db, "scheduler"); db.commit()
-    for handler in HANDLERS.values():
+    for name, handler in list(HANDLERS.items()):
         schedule = getattr(handler, "schedule", None)
-        if schedule is not None: schedule(db)
+        if schedule is None: continue
+        try: schedule(db)
+        except Exception:
+            # One job type failing (for example a table that has not been migrated yet) must never stop the
+            # others, least of all monitoring. Print a generic line only: no URL, value or traceback detail.
+            db.rollback()
+            print(f"scheduler: {name} scheduling failed; inspect configuration and run migrations", flush=True)
 
 
 def register(name, handler):

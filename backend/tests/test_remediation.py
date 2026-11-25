@@ -555,7 +555,7 @@ def test_migration_installs_remediation_tables_and_triggers_preserving_data(tmp_
         db.execute("INSERT INTO admins (id,email,full_name,password_hash,role,is_active) VALUES (7,'a@example.com','Synthetic','preserved-hash','admin',1)")
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0014_fix_verification_signoff"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0015_port_watch"
         assert db.execute("SELECT password_hash FROM admins WHERE id = 7").fetchone()[0] == "preserved-hash"
         tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert {"vulnerability_remediations", "remediation_events", "retest_requests", "assessment_closures"} <= tables

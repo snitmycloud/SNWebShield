@@ -17,4 +17,5 @@ from app.models.vulnerability import (Vulnerability, VulnerabilityEvent, Vulnera
 from app.models.report import VaptReport, VaptReportApproval, VaptReportArtifact, VaptReportEvent
 from app.models.remediation import (AssessmentClosure, FixVerificationSignoff, RemediationEvent, RetestRequest,
                                     VulnerabilityRemediation)
+from app.models.port_watch import PortWatch, PortWatchChange
 from app.models.security import AuthEvent, ClosureReopening, RevokedToken

@@ -21,7 +21,7 @@ def test_new_database_migrates_and_upgrade_is_idempotent(tmp_path):
     migrate(path)
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0014_fix_verification_signoff"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0015_port_watch"
         columns = {row[1] for row in db.execute("PRAGMA table_info(website_authorizations)")}
         assert "timestamps_verified" in columns
         assert db.execute("SELECT COUNT(*) FROM admins").fetchone()[0] == 0
@@ -115,7 +115,7 @@ def test_vulnerability_migration_preserves_reports_reviews_and_deadlines(tmp_pat
     migrate(path)
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0014_fix_verification_signoff"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0015_port_watch"
         assert {table: db.execute(f'SELECT * FROM {table}').fetchall() for table in tables} == before
         for table in ('vulnerabilities', 'vulnerability_occurrences', 'vulnerability_events',
                       'vulnerability_suppressions', 'vulnerability_ingestions'):

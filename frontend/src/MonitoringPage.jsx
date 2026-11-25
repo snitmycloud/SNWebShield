@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./lib/api.js";
+import PortWatchPanel from "./PortWatchPanel.jsx";
 import "./monitoring.css";
 
 const date = value => value ? new Date(value).toLocaleString() : "Not available";
@@ -99,5 +100,6 @@ export default function MonitoringPage({ websites }) {
       <div className="panel table-scroll"><table><thead><tr><th>Record</th><th>Details</th></tr></thead><tbody>{history.map((row,i)=><tr key={row.id||row.job_id||i}><td>{row.id||row.job_id}<br/>{date(row.recorded_at||row.created_at||row.occurred_at||row.opened_at)}</td><td><HistoryDetails row={row} collection={collection}/></td></tr>)}</tbody></table>{!history.length&&<p className="monitor-empty">No records on this page.</p>}</div>
       <div className="monitor-controls"><button disabled={offset===0||busy} onClick={()=>setOffset(Math.max(0,offset-50))}>Previous history page</button><span>Records {offset+1} onward</span><button disabled={history.length<50||busy} onClick={()=>setOffset(offset+50)}>Next history page</button></div>
     </>}
+    <PortWatchPanel websites={websites} />
   </section>;
 }

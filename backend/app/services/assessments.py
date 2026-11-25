@@ -359,6 +359,12 @@ class AssessmentHandler:
     lease_seconds = 120
 
     @staticmethod
+    def schedule(db):
+        # Only websites whose port watch an administrator explicitly enabled are ever considered.
+        from app.services import port_watch
+        port_watch.schedule(db)
+
+    @staticmethod
     def eligible(db, job, lock=False):
         row = db.scalar(select(AssessmentRequest).where(AssessmentRequest.job_id == job.id))
         try:
@@ -439,6 +445,8 @@ def recover_on_start(limit=50):
             if report and report.assessment_id not in assessments: assessments.append(report.assessment_id)
     for assessment_id in assessments:
         vulns.ingest_after_assessment(assessment_id)  # audits its own failures; never raises
+    from app.services import port_watch
+    port_watch.reconcile_pending()  # a run stored but never compared (worker died first)
     with SessionLocal() as db:
         engine.event(db, "worker_startup_recovery", detail={"assessments_checked": len(assessments)})
         db.commit()
@@ -500,6 +508,9 @@ def worker_tick():
         # and retryable from the API, never a reason to lose the scanner result.
         from app.services.vulnerabilities import ingest_after_assessment
         ingest_after_assessment(row.id)
+        if row.profile_id == NMAP_PROFILE_ID:
+            from app.services import port_watch
+            port_watch.record_after_assessment(row.id)
 
 
 engine.register("assessment", AssessmentHandler)

@@ -464,3 +464,42 @@ Reviewed `job_engine.claim/finish`, the assessment worker loop, ingestion and th
 | Playwright | 19 passed |
 
 **Limits.** A crash is simulated as database state (claim without finish, then clock advanced and a fresh worker tick), which is faithful for the job engine but is not a real killed process. The new page note is covered by the API tests and the build only; there is no browser test for it. A poisoned report is re-rejected, with one audit event, on each worker start. SQLite single-writer locking under a very busy worker was not load-tested.
+
+
+---
+
+## Lifecycle completion: passive checks, sign-off, lifecycle view, port watch (branch `feature/lifecycle-completion`)
+
+Goal: the four pillars work as one cycle per website. **Monitors** (uptime, DNS, TLS, response time and now TCP 80/443 state), **Detects** (authorised assessments), **Validates** (human review), **Protects** (reports, fixes, retests).
+
+### 1. Port watch (open-port monitoring, Option A)
+Recurring TCP 80/443 checks of one approved public IPv4, run on the isolated VM. It is **off until a person enables it**; registration, approval and migration never start anything.
+- **Explicit act.** `POST /port-watch/{id}/enable` (admin or lead analyst) needs the written-permission attestation, an interval of 1 hour to 7 days, and a live check that a real Nmap assessment would be allowed now (approved, in date, exact domain, `tcp_port_discovery`, approved IPv4, accepted evidence). Audited.
+- **Same gates as any scan.** The scheduler queues an ordinary Nmap assessment through `create_request`, so permission is re-checked at request, again at claim, and again immediately before execution by the worker, which uses the existing VM isolation. A failed check blocks the watch with an exact reason and one audit event; it never scans anyway and resumes by itself once permission is valid again.
+- **Change detection.** Each completed run is compared with the last known state; a change is stored append-only, audited and queued as a notification. The first run after enabling only records a baseline. A failed run never alerts and never replaces the last good state. A change is an observation for an analyst, not a vulnerability.
+- **Crash safety.** The request key is stable per slot (no double scans), and `reconcile_pending` settles a run whose comparison was lost when the worker died.
+- **Needs running:** the scheduler role, the assessment worker, the notification dispatcher, migration 0015, and `ASSESSMENT_NMAP_ENABLED=true` with the pinned image.
+
+### 2. Passive checks (Detects)
+Three backend-only checks derived from the single HEAD and TLS handshake already made: HTTPS in use, certificate expiry within 30 days (medium within 7), and cookie Secure/HttpOnly/SameSite flags (counts only; cookie names and values are never stored). Only applicable results enter a report, so analysts are not asked to review something that cannot apply. `header_analyzer.analyze()` was deliberately **not** changed: the VM image runs the same function and the backend requires byte-identical output, so changing it would have broken the remote profile until the image was rebuilt and re-pinned. No VM change is needed.
+
+### 3. Second-person sign-off on verified fixes
+Migration 0014 adds the append-only `fix_verification_signoffs`. A second analyst confirms or rejects (rejection reopens the finding) the scanner's `verified_fixed` result; whoever requested the retest or handled the remediation cannot. Required for closure only when `SEPARATION_OF_DUTIES_ENABLED=true`; optional otherwise. This closes the item the earlier audit listed as not done (R15).
+
+### 4. Website lifecycle view
+`GET /websites/{id}/lifecycle` and the "Website lifecycle" page: one read-only summary per website of Monitors, Detects, Validates and Protects, with a single rule-based next step (priority order is unit-tested). It runs no scan and writes nothing.
+
+### Also fixed
+The scheduler ran each job type in sequence, so an error in one (for example a table that has not been migrated yet) could stop monitoring scheduling. A failing type is now isolated and reported with a generic line.
+
+| Suite | Result |
+|---|---|
+| Backend `pytest tests` (full, final code) | 789 passed, 0 failed (20m33s) |
+| New backend files | `test_passive_checks` 30, `test_fix_signoff` 13, `test_lifecycle` 34, `test_port_watch` 36, `test_scheduler_isolation` 3, `test_unmigrated` 4 |
+| Frontend `npm test` | 70 passed |
+| Frontend `npm run build` | Succeeded |
+| Playwright browser tests | 22 passed |
+
+**Not verified.** Everything ran against synthetic VM, DNS and scanner output: no real port scan, no real VM, no live scheduler process. A real run needs your steps below. The browser tests do not cover the sign-off form or the lifecycle "next step" for every state (the rules are unit-tested instead). Monitoring itself still cannot be configured without consent evidence, so the lifecycle integration tests pin a healthy monitor. A change in port state is reported once; there is no acknowledge button (analysts review it through the assessment's port observations).
+
+**To use it (your steps).** Back up the database (`python -m app.cli.backup_database` from `backend`), run `.\.venv\Scripts\python.exe -m alembic upgrade head` from `backend` (adds 0014 and 0015; nothing is enabled), restart the API, then run the scheduler, assessment worker and notification dispatcher (`scripts\start-workers.ps1`). Until the migration is applied, the new Port watch endpoints answer 503 with that instruction, while the lifecycle view, remediation pages, scheduler and monitoring keep working without the new data (`test_unmigrated.py`). The VM runners from the previous milestone still need your redeploy and a real Nmap check before turning port watch on.

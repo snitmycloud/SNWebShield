@@ -172,6 +172,18 @@ def test_full_lifecycle_from_registration_to_closure_with_audit_trail(api, monke
         retest_assessment = db.get(AssessmentRequest, retest.assessment_id)
         assert retest.requested_by == analyst_id and retest_assessment.authorization_id == auth_id
 
+    # --- 10b. The scanner's verified-fixed result needs a second person before the assessment can close --------------------
+    waiting = api.get(f"{AS}/{assessment_id}/closure").json()
+    assert waiting["can_close"] is False and any("independent sign-off" in reason for reason in waiting["blocking_reasons"])
+    fix_review = lambda: {"expected_version": get(api, vid)["version"], "decision": "confirmed", "human_validation_confirmed": True,
+                          "note": "Second analyst reviewed the stored retest evidence: the header is present on the exact target."}
+    with As(api, analyst) as c:
+        assert c.post(f"{REM}/{vid}/verify-fix", json=fix_review()).status_code == 403  # they requested the retest
+    with As(api, lead) as c:
+        signed = c.post(f"{REM}/{vid}/verify-fix", json=fix_review())
+        assert signed.status_code == 200, signed.text
+        assert signed.json()["fix_verification"]["state"] == "confirmed" and signed.json()["fix_verification"]["signed_by"] == lead_id
+
     # --- 11. Closure: senior role, and not by whoever handled remediation ----------------------------------------------------
     state = api.get(f"{AS}/{assessment_id}/closure").json()
     assert state["can_close"] is True and state["status_counts"] == {"verified_fixed": 1} and state["unreviewed_count"] >= 1

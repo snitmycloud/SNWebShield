@@ -196,6 +196,9 @@ export const api = {
   // Assessment stage one: explicit network-free permission preflight.
   assessmentProfiles: () => request("/assessments/profiles"),
   assessmentReadiness: websiteId => request(`/assessments/readiness?website_id=${encodeURIComponent(websiteId)}`),
+  portWatch: id => request(`/port-watch/${encodeURIComponent(id)}`),
+  enablePortWatch: (id, data) => jsonPost(`/port-watch/${encodeURIComponent(id)}/enable`, data),
+  disablePortWatch: (id, data) => jsonPost(`/port-watch/${encodeURIComponent(id)}/disable`, data),
   websiteLifecycle: id => request(`/websites/${encodeURIComponent(id)}/lifecycle`),
   orphanContainers: () => request("/assessments/orphan-containers"),
   assessmentWorkerStatus: () => request("/assessments/worker-status"),

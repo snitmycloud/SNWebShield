@@ -203,7 +203,11 @@ def fix_verification(db, vulnerability_id, row=None):
     if status_of(row) != "verified_fixed":
         return {"applicable": False, "required": False, "state": "not_applicable"}
     retest = _latest_verified_retest(db, vulnerability_id)
-    signoff = db.scalar(select(FixVerificationSignoff).where(FixVerificationSignoff.retest_id == retest.id)) if retest else None
+    try:
+        signoff = db.scalar(select(FixVerificationSignoff).where(FixVerificationSignoff.retest_id == retest.id)) if retest else None
+    except OperationalError:
+        db.rollback()  # migration 0014 not applied yet: show the fix as awaiting sign-off instead of failing the page
+        signoff = None
     names = _names(db, [signoff.signed_by]) if signoff else {}
     return {"applicable": True, "required": rbac.separation_of_duties_enabled(),
             "retest_id": retest.id if retest else None, "evidence_sha256": retest.evidence_sha256 if retest else None,

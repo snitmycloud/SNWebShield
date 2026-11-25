@@ -275,3 +275,9 @@ After updating `scanner/remote_runner.py` and `scanner/nmap/runner.py`, install 
 ## After a worker crash or restart
 
 Start the assessment worker again. It fails any run whose lease expired (once, never repeated), ingests results that were stored but not yet turned into observations, and records a `worker_startup_recovery` audit event. A request that cannot progress is labelled on the Assessments page, and it can be cancelled at any time without a worker.
+
+## The four pillars as one cycle
+
+Open **Website lifecycle** for a per-website summary of Monitors, Detects, Validates and Protects and the single next step. The cycle is: monitoring watches uptime, DNS, TLS and response time; **port watch** (Monitoring page, off until you enable it with a written-permission attestation) re-checks TCP 80 and 443 on a schedule and alerts when a port changes state; authorised assessments detect issues, now including HTTPS use, certificate expiry and cookie flags; analysts validate observations; fixes are retested, and with `SEPARATION_OF_DUTIES_ENABLED=true` a second person must confirm a verified fix before the assessment can be closed.
+
+After pulling this version: back up the database, run `alembic upgrade head` from `backend` (migrations 0014 and 0015; nothing is enabled by upgrading), and restart the API and workers. Port watch needs the scheduler, the assessment worker and the notification dispatcher running, plus the Nmap profile enabled and the VM runners redeployed.

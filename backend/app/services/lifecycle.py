@@ -6,12 +6,14 @@ would move the website forward, chosen by fixed rules (see `next_step`).
 """
 from fastapi import HTTPException
 from sqlalchemy import func, select
+from sqlalchemy.exc import OperationalError
 
 from app.core.time import as_utc, utc_now
 from app.models.assessment import AssessmentRequest
 from app.models.client import Client
 from app.models.jobs import Job, JobResult
 from app.models.monitoring import MonitoringConfig
+from app.models.port_watch import PortWatch, PortWatchChange
 from app.models.remediation import BLOCKING_STATUSES, VulnerabilityRemediation
 from app.models.report import VaptReport
 from app.models.vulnerability import Vulnerability
@@ -36,6 +38,24 @@ def _monitor(db, website, now):
     return {"state": state, "enabled": bool(config.enabled), "interval_seconds": config.interval_seconds,
             "last_checked_at": as_utc(latest[0].recorded_at).isoformat() if latest else None,
             "last_result": payload.get("state") if isinstance(payload, dict) else None}
+
+
+def _port_watch(db, website_id):
+    """Summary of the explicitly enabled TCP 80/443 watch, or None when it was never configured."""
+    try:
+        watch = db.get(PortWatch, website_id)
+    except OperationalError:
+        db.rollback()  # migration 0015 not applied yet: the view still works, without port watch
+        return None
+    if watch is None:
+        return None
+    change = db.scalar(select(PortWatchChange).where(PortWatchChange.website_id == website_id)
+                       .order_by(PortWatchChange.detected_at.desc()).limit(1))
+    return {"enabled": bool(watch.enabled), "state": watch.state, "blocked_reason": watch.blocked_reason,
+            "interval_seconds": watch.interval_seconds, "last_outcome": watch.last_outcome, "baseline": watch.baseline,
+            "last_checked_at": as_utc(watch.last_checked_at).isoformat() if watch.last_checked_at else None,
+            "latest_change": None if change is None else {
+                "assessment_id": change.assessment_id, "detected_at": as_utc(change.detected_at).isoformat(), "changes": change.changes}}
 
 
 def _detect(db, actor_id, website):
@@ -93,6 +113,10 @@ def next_step(monitor, detect, validate, protect):
         return {"code": "fix_permission", "message": detect["blocked_reason"] or "Add and approve written authorisation first."}
     if latest["status"] in ("queued", "running"):
         return {"code": "wait_for_assessment", "message": "An assessment is in progress. Check that the assessment worker is running."}
+    watch = monitor.get("port_watch") or {}
+    if watch.get("enabled") and watch.get("last_outcome") == "changed":
+        ports = ", ".join(f"{c['port']} ({c['from']} to {c['to']})" for c in (watch.get("latest_change") or {}).get("changes", []))
+        return {"code": "review_port_change", "message": f"Port state changed: TCP {ports}. Review the assessment's port observations and confirm the exposure is expected."}
     if validate["awaiting_review"]:
         return {"code": "review_findings", "message": f"{validate['awaiting_review']} observation(s) need analyst validation."}
     counts = protect["status_counts"]
@@ -120,6 +144,7 @@ def website_lifecycle(db, actor_id, website_id):
     now = utc_now()
     client = db.get(Client, website.client_id)
     monitor, detect = _monitor(db, website, now), _detect(db, actor_id, website)
+    monitor["port_watch"] = _port_watch(db, website.id)
     validate, protect = _validate(db, website), _protect(db, website)
     return {"as_of": now.isoformat(),
             "website": {"id": website.id, "name": website.name, "url": website.url, "client": client.company_name if client else None},

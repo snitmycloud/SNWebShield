@@ -504,3 +504,34 @@ test("website lifecycle shows the four pillars and routes the next step", async 
   await next.getByRole("button", { name: "Open Monitoring", exact: true }).click();
   await expect(page.getByRole("heading", { name: /monitoring/i }).first()).toBeVisible();
 });
+
+test("port watch is enabled and disabled only by explicit, attested actions", async ({ page, request }) => {
+  const { website } = await asset(request, { approved: true, portDiscovery: true });
+  await signIn(page);
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Monitoring", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Port watch", exact: true });
+  await panel.getByLabel("Port watch website", { exact: true }).selectOption(String(website.id));
+  await expect(panel.getByTestId("port-watch-state")).toHaveAttribute("data-state", "off");
+  const enable = panel.getByRole("button", { name: "Enable port watch", exact: true });
+  await expect(enable).toBeDisabled(); // nothing starts without the written-permission attestation
+  await panel.getByLabel(/^I inspected genuine written permission for recurring TCP 80 and 443/).check();
+  await enable.click();
+  await expect(panel.getByRole("status")).toContainText("Port watch enabled");
+  await expect(panel.getByTestId("port-watch-state")).toHaveAttribute("data-state", "active");
+  await expect(panel).toContainText("Every 6 hours");
+  await panel.getByLabel("Port watch disable reason", { exact: true }).fill("Scanning window ended for this client.");
+  await panel.getByRole("button", { name: "Disable port watch", exact: true }).click();
+  await expect(panel.getByRole("status")).toContainText("Port watch disabled");
+  await expect(panel.getByTestId("port-watch-state")).toHaveAttribute("data-state", "off");
+});
+
+test("port watch explains exactly why it cannot be enabled", async ({ page, request }) => {
+  const { website } = await asset(request, { approved: true, assessmentMethod: true }); // web scanning only, no TCP discovery
+  await signIn(page);
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Monitoring", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Port watch", exact: true });
+  await panel.getByLabel("Port watch website", { exact: true }).selectOption(String(website.id));
+  await expect(panel.getByTestId("port-watch-blocked")).toContainText("does not permit the methods this profile needs");
+  await panel.getByLabel(/^I inspected genuine written permission for recurring TCP 80 and 443/).check();
+  await expect(panel.getByRole("button", { name: "Enable port watch", exact: true })).toBeDisabled();
+});

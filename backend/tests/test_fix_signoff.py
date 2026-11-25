@@ -193,7 +193,7 @@ def test_migration_adds_the_table_and_triggers_without_touching_existing_data(tm
     migrate(path)
     migrate(path)  # idempotent
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0014_fix_verification_signoff"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0015_port_watch"
         assert db.execute("SELECT * FROM admins").fetchall() == before
         assert db.execute("SELECT COUNT(*) FROM fix_verification_signoffs").fetchone() == (0,)
         triggers = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'fix_verification_signoffs'")}

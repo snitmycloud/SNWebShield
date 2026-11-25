@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect
 
-from app.api.routes import auth, authorizations, clients, health, websites, evidence, monitoring, assessments, findings, vulnerabilities, workbench, reports, remediation
+from app.api.routes import auth, authorizations, clients, health, websites, evidence, monitoring, assessments, findings, vulnerabilities, workbench, reports, remediation, port_watch
 from app.core.config import settings
 from app.core.headers import SecurityHeadersMiddleware
 from app.db.session import engine
@@ -87,3 +87,4 @@ app.include_router(vulnerabilities.router, prefix="/api/v1")
 app.include_router(workbench.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
 app.include_router(remediation.router, prefix="/api/v1")
+app.include_router(port_watch.router, prefix="/api/v1")

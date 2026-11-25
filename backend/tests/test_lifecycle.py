@@ -48,6 +48,13 @@ def step(monitor=None, detect=None, validate=None, protect=None):
     (dict(detect={"latest": None, "can_run": False, "blocked_reason": "The authorisation is expired."}), "fix_permission"),
     (dict(detect={"latest": {"status": "queued"}}), "wait_for_assessment"),
     (dict(detect={"latest": {"status": "running"}}, validate={"awaiting_review": 3}), "wait_for_assessment"),
+    (dict(monitor={"port_watch": {"enabled": True, "last_outcome": "changed",
+                                  "latest_change": {"changes": [{"port": "443", "from": "closed", "to": "open"}]}}}), "review_port_change"),
+    (dict(monitor={"port_watch": {"enabled": False, "last_outcome": "changed"}}), "all_clear"),  # a paused watch raises nothing
+    (dict(monitor={"port_watch": {"enabled": True, "last_outcome": "unchanged"}}), "all_clear"),
+    (dict(monitor={"port_watch": {"enabled": True, "last_outcome": "changed", "latest_change": {"changes": []}}},
+          detect={"latest": {"status": "running"}}), "wait_for_assessment"),  # an assessment in progress comes first
+    (dict(monitor={"port_watch": {"enabled": True, "last_outcome": "changed"}}, validate={"awaiting_review": 3}), "review_port_change"),
     (dict(validate={"awaiting_review": 2}), "review_findings"),
     (dict(validate={"awaiting_review": 2}, protect={"awaiting_signoff": 1}), "review_findings"),
     (dict(protect={"awaiting_signoff": 1, "status_counts": {"verified_fixed": 1}, "confirmed": 1}), "sign_off_fix"),
