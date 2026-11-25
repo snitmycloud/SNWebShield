@@ -89,7 +89,7 @@ test("a scan limit is a friendly message, other errors are not", () => {
 test("result banners never call an incomplete or refused scan clean", () => {
   assert.equal(resultBanner({ status: "incomplete", message: "x" }).tone, "warn");
   assert.equal(resultBanner({ status: "refused", message: "x" }).tone, "bad");
-  assert.equal(resultBanner({ status: "completed", message: "y" }).title, "Detection finished");
+  assert.equal(resultBanner({ status: "completed", message: "y" }).title, "Scan finished");
   assert.equal(resultBanner({ status: "running" }), null);
   for (const status of ["completed", "incomplete", "refused"]) assert.doesNotMatch(resultBanner({ status, message: "m" }).title, /safe|clean|secure/i);
   assert.equal(isActiveScan({ status: "running" }), true);

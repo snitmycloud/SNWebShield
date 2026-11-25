@@ -31,11 +31,16 @@ def tls_context() -> ssl.SSLContext:
     return context
 
 
-async def open_connection(ip: str, port: int, *, tls: bool = False, server_name: str | None = None, timeout: float = 1.5):
-    """Open a TCP (optionally TLS) connection to `ip`. SNI uses `server_name`. Raises on refusal or timeout."""
+async def open_connection(ip: str, port: int, *, tls: bool = False, server_name: str | None = None, timeout: float = 1.5,
+                          ssl_context: ssl.SSLContext | None = None):
+    """Open a TCP (optionally TLS) connection to `ip`. SNI uses `server_name`. Raises on refusal or timeout.
+
+    `ssl_context` lets the TLS checks choose protocol versions or certificate verification; it still only ever
+    connects to the IP given here.
+    """
     kwargs = {}
     if tls:
-        kwargs = {"ssl": tls_context(), "server_hostname": server_name or None, "ssl_handshake_timeout": timeout}
+        kwargs = {"ssl": ssl_context or tls_context(), "server_hostname": server_name or None, "ssl_handshake_timeout": timeout}
     return await asyncio.wait_for(asyncio.open_connection(ip, port, **kwargs), timeout)
 
 

@@ -21,7 +21,7 @@ def test_new_database_migrates_and_upgrade_is_idempotent(tmp_path):
     migrate(path)
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0018_detect_results"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0019_findings"
         columns = {row[1] for row in db.execute("PRAGMA table_info(website_authorizations)")}
         assert "timestamps_verified" in columns
         assert db.execute("SELECT COUNT(*) FROM admins").fetchone()[0] == 0
@@ -152,7 +152,7 @@ def test_vulnerability_migration_preserves_reports_reviews_and_deadlines(tmp_pat
     migrate(path)
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0018_detect_results"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0019_findings"
         after = {table: db.execute(f'SELECT * FROM {table}').fetchall() for table in tables}
         # 0016 appends account columns to admins; every pre-existing value is unchanged.
         after["admins"] = [row[:len(before["admins"][0])] for row in after["admins"]]
@@ -175,7 +175,7 @@ def test_website_removal_migration_keeps_rows_and_only_limits_the_unique_rule_to
     migrate(path)
     migrate(path)  # idempotent
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0018_detect_results"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0019_findings"
         assert db.execute("SELECT id,owner_id,domain,verification_status FROM websites").fetchall() == before
         assert db.execute("SELECT removed_at FROM websites WHERE id=1").fetchone() == (None,)
         assert db.execute("SELECT COUNT(*) FROM scans").fetchone() == (1,)
@@ -203,7 +203,7 @@ def test_detect_results_migration_is_additive_and_keeps_scan_history(tmp_path):
     migrate(path)
     migrate(path)  # idempotent
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0018_detect_results"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0019_findings"
         assert {t: db.execute(f'SELECT * FROM "{t}"').fetchall() for t in tables} == before  # nothing existing changed
         for table in ("scan_ports", "scan_technologies", "scan_observations"):
             assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone() == (0,)
@@ -214,4 +214,38 @@ def test_detect_results_migration_is_additive_and_keeps_scan_history(tmp_path):
             pass
         else:
             raise AssertionError("one row per scan and port")
+        assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+def test_findings_migration_is_additive_keeps_history_and_enforces_one_finding_per_scan_and_fingerprint(tmp_path):
+    path = tmp_path / "pre-findings.db"
+    migrate(path, "0018_detect_results")
+    with sqlite3.connect(path) as db:
+        db.execute("INSERT INTO admins (id,email,full_name,password_hash,role,is_active,plan) VALUES (1,'o@example.com','Owner','h','user',1,'free')")
+        db.execute("INSERT INTO websites (id,owner_id,name,url,domain,environment,authorisation_status) VALUES (1,1,'a','https://a.example.com/','a.example.com','production','retired')")
+        db.execute("INSERT INTO scans (id,website_id,owner_id,scan_type,trigger,status,requested_at) VALUES ('s1',1,1,'standard','first','completed','2026-11-25')")
+        db.execute("INSERT INTO scan_ports (scan_id,port,state,service) VALUES ('s1',22,'open','ssh')")
+        tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN ('alembic_version','sqlite_sequence')")]
+        before = {t: db.execute(f'SELECT * FROM "{t}"').fetchall() for t in tables}
+    migrate(path)
+    migrate(path)  # idempotent
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0019_findings"
+        assert {t: db.execute(f'SELECT * FROM "{t}"').fetchall() for t in tables} == before
+        for table in ("scan_findings", "vuln_cache"):
+            assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone() == (0,)
+        row = "INSERT INTO scan_findings (scan_id,fingerprint,kind,check_id,title,location,severity,confidence,\"group\") VALUES ('s1','f1','config','x','t','l','low','confirmed','findings')"
+        db.execute(row)
+        try:
+            db.execute(row)
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            raise AssertionError("one finding per scan and fingerprint")
+        db.execute("INSERT INTO vuln_cache (source,key) VALUES ('nvd','k')")
+        try:
+            db.execute("INSERT INTO vuln_cache (source,key) VALUES ('nvd','k')")
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            raise AssertionError("one cache row per source and key")
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"

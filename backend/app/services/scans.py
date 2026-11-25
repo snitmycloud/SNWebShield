@@ -376,11 +376,13 @@ def _conclude(db, scan_id, token, website_id, state, guard, meta) -> str:
                         "It does not mean your website is safe.", **extra)
         return "incomplete"
     counts = state.counts()
+    found = counts["findings"]
     _finish(db, scan_id, token, "completed", "detect_completed",
-            message=(f"Detection finished: {counts['open_ports']} open port(s), {counts['technologies']} "
+            message=(f"Scan finished: {counts['open_ports']} open port(s), {counts['technologies']} "
                      f"technolog{'y' if counts['technologies'] == 1 else 'ies'}, {counts['exposed_files']} exposed file(s) "
-                     "or page(s) found. This lists what we found; it is not a security verdict. "
-                     "Vulnerability checks come in a later update."), **extra)
+                     f"or page(s) found. Findings: {found['critical']} critical, {found['high']} high, {found['medium']} medium, "
+                     f"{found['low']} low; {found['needs_checking']} item(s) need your check. "
+                     "This lists what we found; it is not a security verdict."), **extra)
     return "completed"
 
 

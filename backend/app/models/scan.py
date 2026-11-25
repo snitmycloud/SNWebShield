@@ -87,6 +87,54 @@ class ScanObservation(Base):
     data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
+class ScanFinding(Base):
+    """One finding of a scan, in the common format (see services/finding.py). Unique per scan and fingerprint."""
+    __tablename__ = "scan_findings"
+    __table_args__ = (UniqueConstraint("scan_id", "fingerprint", name="uq_scan_finding"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    scan_id: Mapped[str] = mapped_column(ForeignKey("scans.id", ondelete="RESTRICT"), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(20))
+    check_id: Mapped[str] = mapped_column(String(120))
+    title: Mapped[str] = mapped_column(Text)
+    location: Mapped[str] = mapped_column(String(300))
+    port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    severity: Mapped[str] = mapped_column(String(10), index=True)
+    confidence: Mapped[str] = mapped_column(String(10))
+    group: Mapped[str] = mapped_column(String(20))
+    you_have: Mapped[str | None] = mapped_column(Text, nullable=True)
+    you_should_have: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cve_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    cvss_score: Mapped[float | None] = mapped_column(nullable=True)
+    cvss_vector: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    affected_range: Mapped[str | None] = mapped_column(Text, nullable=True)
+    first_fixed: Mapped[str | None] = mapped_column(Text, nullable=True)
+    why: Mapped[str | None] = mapped_column(Text, nullable=True)
+    how_to_fix: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    caveat: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sources: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class VulnCache(Base):
+    """Shared 24-hour cache of what NVD / OSV said about one product version. Public data, no scan or user data."""
+    __tablename__ = "vuln_cache"
+    __table_args__ = (UniqueConstraint("source", "key", name="uq_vuln_cache"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(10))
+    key: Mapped[str] = mapped_column(String(200))
+    payload: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+
 class RetiredTable(Base):
     """Tables of the removed written-permission system. Kept with their data, no longer used by code."""
     __tablename__ = "retired_tables"

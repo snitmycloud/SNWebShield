@@ -96,6 +96,41 @@ Product direction changed to the self-service scanner in [SNWEBSHIELD_SPEC.md](S
 
 ---
 
+## Self-service Phase 3A: IDENTIFY (branch `feat/phase3a-identify`, 2026-11-26)
+
+| Spec item (Phase 3A, as approved) | Status | Tests / proof |
+|---|---|---|
+| One finding format and one engine interface (Nuclei plugs in later with no change to runner, DB, API or UI); engines never raise, time out or hang the scan: a crash, timeout or bad result is "could not check" | ✅ | `test_findings_core.py` (12) |
+| De-duplication across engines (same location + CVE or check id), sources unioned, stronger confidence and CVSS severity kept | ✅ | `test_findings_core.py` |
+| Built-in checks: certificate expired / 7 d / 30 d / wrong name / self-signed / untrusted, TLS 1.0 and 1.1, weak ciphers, no HTTPS, no redirect, mixed content, six security headers, cookie flags (names only), CORS, version disclosure, risky ports, exposed files | ✅ (weak-cipher test cannot run on this Windows OpenSSL: reported as "not available", never a pass) | `test_engine_config.py` (37, incl. real local TLS servers) |
+| Severity table (approved) in one file | ✅ | `app/data/severity_rules.py`; `test_engine_config.py` |
+| NVD (servers, CMS) and OSV (npm libraries), name+version only, fixed hosts, public-address policy + pinned HTTPS, no redirects, 10 s timeout, 2 retries with Retry-After, 8 MB cap, rate limit, circuit breaker, 120 s scan budget; `NVD_API_KEY` optional, header only, never logged | ✅ | `test_vuln_sources.py` (22, fake database on loopback) |
+| 24 h shared cache; stale data only adds findings (flagged with its date), never supports "none"; single flight; prune after 30 days; no scan or user data in it | ✅ | `test_vuln_cache.py` (9) |
+| False-positive control: confirmed only if our comparator verifies the range, not a distro package (Ubuntu / Debian / Red Hat), not behind a proxy or CDN, not disputed, not AND-configuration; otherwise "possible" + how to check, never scored; rejected CVEs skipped; unscored = Medium + possible; max 50 per item; JS libraries and WordPress are never treated as distro packages | ✅ | `test_vuln_matching.py` (44) |
+| Hidden version: Info finding "cannot check", never "safe" | ✅ | `test_vuln_matching.py`, `test_identify_pipeline.py` |
+| End of life: High "No longer receives security updates" / Medium "Only paid extended support remains"; distro release judged, not the upstream branch; ambiguity rule (every candidate release must have ended); OpenSSH has no version cut-off; one finding per OS release or branch; stale-data (> 90 days) warning; data from endoflife.date, no network at scan time | ✅ | `test_eol.py` (26) |
+| Whole scan: findings saved incrementally, groups and scoring in the API, cookie values never stored, owner-only access, only a name+version ever sent to NVD/OSV | ✅ | `test_identify_pipeline.py` (7) |
+| **Stop cleanly while waiting on a slow NVD/OSV**: removal ends the scan incomplete within seconds, the wait is cancelled, findings found before the stop are kept | ✅ | `test_identify_pipeline.py::test_the_scan_stops_cleanly_while_waiting_for_a_slow_database` |
+| Database failure fails safe: step "could not check", scan "incomplete", message "does not mean your website is safe" | ✅ | `test_identify_pipeline.py` |
+| Migration `0019_findings` (`scan_findings`, `vuln_cache`), additive, existing rows unchanged | ✅ | `test_migrations.py` (new test) |
+| Frontend: findings panel (severity order and colours, Needs checking, Good to know, Could not check, "No findings from these checks") | ✅ | `frontend/tests/findings.test.js` (8); screenshots pending the real scan |
+| `docs/THIRD_PARTY.md` (NVD, OSV, endoflife.date MIT, crt.sh, Nmap services NPSL) | ✅ | `docs/THIRD_PARTY.md` |
+
+**Verified against the real services (name + version only, no scan).** Every CPE name and OSV package in `cpe_map.json` was queried once: NVD answered 200 for OpenSSH 6.6.1p1 (54 CVEs), Apache 2.4.7 (138), nginx 1.18.0 (f5: 6; the old `nginx:nginx` name: 0), PHP 7.4.3, MySQL (both vendor names), MariaDB, ProFTPD, vsftpd (`vsftpd_project`: 3; `beasts`: 0), Exim, Postfix, Dovecot, lighttpd, WordPress, Tomcat, IIS and Sendmail; an unknown version returns 200 with 0 results (not an error). OSV answered for jQuery, lodash, moment, AngularJS, Bootstrap, Vue, React and @angular/core.
+
+**Test results (2026-11-26, Windows, run one after another).** Backend **661 passed** (18 min). Frontend **94 unit tests passed**; production build OK.
+
+**Not done / not verified, and known limitations (Phase 3A)**
+- **The real scanme scan with findings is pending** (needs the daily limit after 00:00 UTC); so are its screenshots and the day-2 checks.
+- The development database is still at migration 0018 until a backup and `alembic upgrade head` are done.
+- Nuclei and its safety layers are Phase 3B and start only after 3A is approved.
+- The weak-cipher check cannot run on this Windows machine (its OpenSSL has no weak cipher to offer); it is listed as "not available" in the step details, and works where OpenSSL has them (expected on the Linux server). Its "accepted" path is tested with a stubbed handshake, not a real weak server.
+- Joomla and Drupal versions are not matched yet; distribution release hints cover common Ubuntu, Debian and CentOS releases only (unknown versions give no end-of-life finding).
+- The CPE-name approach can miss a CVE that NVD has not yet attached to a product name, and an NVD or OSV outage ends the scan "incomplete". Windows production is not planned.
+- The proxy/CDN and "AND configuration" tests cover our rules; they are not validated against a large sample of real sites.
+
+---
+
 **Status legend.** âœ… Fully implemented and tested Â· ðŸŸ¡ Partially implemented Â· ðŸ§ª Implemented but not tested Â· âŒ Missing Â· ðŸ”§ Broken or requiring improvement
 
 Test paths are relative to `backend/tests/`. Milestone 6 tests are in `test_production_hardening.py` (`H::` below) and `test_e2e_lifecycle.py` (`E2E::`). Module E and F test names below are real function names in `test_vulnerabilities.py` and `test_workbench.py`. Browser journeys are in `frontend/tests/e2e/authorization.spec.js`. All API routes are under `/api/v1`.
