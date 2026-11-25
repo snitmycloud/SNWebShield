@@ -196,6 +196,7 @@ export const api = {
   // Assessment stage one: explicit network-free permission preflight.
   assessmentProfiles: () => request("/assessments/profiles"),
   assessmentReadiness: websiteId => request(`/assessments/readiness?website_id=${encodeURIComponent(websiteId)}`),
+  websiteLifecycle: id => request(`/websites/${encodeURIComponent(id)}/lifecycle`),
   orphanContainers: () => request("/assessments/orphan-containers"),
   assessmentWorkerStatus: () => request("/assessments/worker-status"),
   getAssessments: (websiteId = "", offset = 0) => request(`/assessments?limit=50&offset=${offset}${websiteId ? `&website_id=${websiteId}` : ""}`),

@@ -341,7 +341,7 @@ test("analyst reviews track remediation, revisions and private reviewed exports"
     await expect(page.getByRole("region",{name:"Analyst review and remediation"})).toBeVisible();
   }).toPass({timeout:15000});
   const panel=page.getByRole("region",{name:"Analyst review and remediation"});
-  await expect(panel).toContainText("0 of 8 observations reviewed");
+  await expect(panel).toContainText("0 of 9 observations reviewed");
   await expect(panel.getByRole("button",{name:"Export reviewed report",exact:true})).toBeDisabled();
   await panel.getByText("CSP: Awaiting analyst review",{exact:true}).click();
   const csp=panel.getByRole("form",{name:"CSP analyst review",exact:true});
@@ -355,7 +355,7 @@ test("analyst reviews track remediation, revisions and private reviewed exports"
   await expect(csp.getByRole("button",{name:"Save CSP review",exact:true})).toBeDisabled();
   await csp.getByLabel(/^I personally reviewed/).check();
   await csp.getByRole("button",{name:"Save CSP review",exact:true}).click();
-  await expect(panel).toContainText("1 of 8 observations reviewed");
+  await expect(panel).toContainText("1 of 9 observations reviewed");
   await panel.getByText("CSP: confirmed · in progress · revision 1",{exact:true}).click();
   await csp.getByRole("combobox",{name:"CSP resolution status",exact:true}).selectOption("ready_for_retest");
   await csp.getByLabel(/^I personally reviewed/).check();
@@ -363,7 +363,7 @@ test("analyst reviews track remediation, revisions and private reviewed exports"
   await panel.getByText("CSP: confirmed · ready for retest · revision 2",{exact:true}).click();
   await panel.getByRole("button",{name:"Show CSP review history",exact:true}).click();
   await expect(panel.getByRole("region",{name:"CSP review history",exact:true})).toContainText("Revision 1");
-  for (const title of ["HSTS","X-Frame-Options","CSP frame-ancestors","X-Content-Type-Options","Referrer-Policy","Permissions-Policy","Server disclosure"]) {
+  for (const title of ["HSTS","X-Frame-Options","CSP frame-ancestors","X-Content-Type-Options","Referrer-Policy","Permissions-Policy","Server disclosure","HTTPS in use"]) {
     await panel.getByText(`${title}: Awaiting analyst review`,{exact:true}).click();
     const form=panel.getByRole("form",{name:`${title} analyst review`,exact:true});
     await form.getByRole("combobox",{name:`${title} disposition`,exact:true}).selectOption("dismissed");
@@ -373,14 +373,14 @@ test("analyst reviews track remediation, revisions and private reviewed exports"
     await form.getByRole("button",{name:`Save ${title} review`,exact:true}).click();
     await expect(panel.getByText(`${title}: dismissed · not applicable · revision 1`,{exact:true})).toBeVisible();
   }
-  await expect(panel).toContainText("8 of 8 observations reviewed");
+  await expect(panel).toContainText("9 of 9 observations reviewed");
   const downloading=page.waitForEvent("download");
   await panel.getByRole("button",{name:"Export reviewed report",exact:true}).click();
   const downloaded=await downloading;
   expect(downloaded.suggestedFilename()).toMatch(/^reviewed-assessment-.*\.json$/);
   const snapshot=JSON.parse(await readFile(await downloaded.path(),"utf8"));
   expect(snapshot.summary.analyst_confirmed).toBe(1);
-  expect(snapshot.summary.reviewed).toBe(8);
+  expect(snapshot.summary.reviewed).toBe(9);
   expect(snapshot.analyst_reviews.find(item=>item.check_id==="csp").revision).toBe(2);
   expect(snapshot.source_report.content.analysis.confirmed_findings).toBe(0);
   await expect(panel.getByRole("region",{name:"Reviewed report exports"})).toBeVisible();
@@ -490,4 +490,17 @@ test("VM housekeeping report is explicit, read-only and flags leftover container
   await expect(report).toContainText("No leftover containers");
   await expect(report).toContainText("Nothing was removed");
   await expect(page.getByRole("status")).toContainText("Nothing was changed");
+});
+
+test("website lifecycle shows the four pillars and routes the next step", async ({ page, request }) => {
+  const { website } = await asset(request, { approved: true, assessmentMethod: true });
+  await signIn(page);
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Website lifecycle", exact: true }).click();
+  await page.getByLabel("Lifecycle website", { exact: true }).selectOption(String(website.id));
+  for (const key of ["monitors", "detects", "validates", "protects"]) await expect(page.getByTestId(`pillar-${key}`)).toBeVisible();
+  await expect(page.getByTestId("pillar-detects")).toContainText("Permission is valid for an assessment.");
+  const next = page.getByTestId("next-step");
+  await expect(next).toHaveAttribute("data-code", "set_up_monitoring"); // monitoring comes first
+  await next.getByRole("button", { name: "Open Monitoring", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /monitoring/i }).first()).toBeVisible();
 });

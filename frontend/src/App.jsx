@@ -40,6 +40,7 @@ import VulnerabilitiesPage from "./VulnerabilitiesPage.jsx";
 import WorkbenchPage from "./WorkbenchPage.jsx";
 import ReportsPage from "./ReportsPage.jsx";
 import RemediationPage from "./RemediationPage.jsx";
+import LifecyclePage from "./LifecyclePage.jsx";
  
 
 const NAV_ITEMS = [
@@ -47,6 +48,7 @@ const NAV_ITEMS = [
   { id: "clients", label: "Clients", icon: Users },
   { id: "websites", label: "Websites", icon: Globe2 },
   { id: "authorizations", label: "Authorizations", icon: ClipboardCheck },
+  { id: "lifecycle", label: "Website lifecycle", icon: Shield },
   { id: "monitoring", label: "Monitoring", icon: Activity },
   { id: "assessments", label: "Assessments", icon: FileText },
   { id: "vulnerabilities", label: "Vulnerabilities", icon: Bug },
@@ -235,6 +237,7 @@ function Dashboard({ admin, onLogout }) {
       clients: "Clients",
       websites: "Websites",
       authorizations: "Authorizations",
+      lifecycle: "Website lifecycle",
       monitoring: "Monitoring",
       assessments: "Assessments",
       vulnerabilities: "Vulnerabilities",
@@ -315,6 +318,7 @@ function Dashboard({ admin, onLogout }) {
   />
 )}
 
+          {activePage === "lifecycle" && <LifecyclePage websites={websites} onNavigate={page => { setActivePage(page); setAssessmentToOpen(null); setSearch(""); setPageError(""); }} />}
           {activePage === "monitoring" && <MonitoringPage websites={websites} />}
           {activePage === "assessments" && <AssessmentsPage websites={websites} initialAssessmentId={assessmentToOpen} />}
           {activePage === "vulnerabilities" && <VulnerabilitiesPage websites={websites} onOpenAssessment={id => { setAssessmentToOpen(id); setActivePage("assessments"); }} />}

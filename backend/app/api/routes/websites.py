@@ -8,6 +8,8 @@ from app.models.website import Website
 from app.schemas.website import WebsiteCreate, WebsiteRead
 from app.core.security import get_current_admin
 from app.core.time import utc_now
+from app.models.admin import Admin
+from app.services import lifecycle
 from app.services.authorizations import website_statuses
 
 router = APIRouter(
@@ -59,3 +61,9 @@ def get_website(website_id: int, db: Session = Depends(get_db)) -> WebsiteRead:
     if not website:
         raise HTTPException(status_code=404, detail="Website not found")
     return _read_websites(db, [website])[0]
+
+
+@router.get("/{website_id}/lifecycle")
+def website_lifecycle(website_id: int, db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
+    """Read-only monitor / detect / validate / protect summary and the next step. No network, no writes."""
+    return lifecycle.website_lifecycle(db, admin.id, website_id)
