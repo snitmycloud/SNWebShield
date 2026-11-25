@@ -36,6 +36,33 @@ collect_ignore = [
 
 
 @pytest.fixture(autouse=True)
+def no_internet(monkeypatch):
+    """No test may reach the internet: scan connections are limited to loopback test servers, and real DNS and
+    crt.sh are replaced by errors (tests that need them install their own fakes)."""
+    from app.core.config import settings
+    from app.services import detect_dns, detect_subdomains, netio
+
+    real_open = netio.open_connection
+
+    async def loopback_only(ip, port, **kwargs):
+        if ip not in ("127.0.0.1", "::1"):
+            raise OSError(f"tests must not use the network (tried {ip}:{port})")
+        return await real_open(ip, port, **kwargs)
+
+    async def no_dns(name, rdtype):
+        raise OSError("tests must not query real DNS")
+
+    def no_crtsh(domain):
+        raise OSError("tests must not reach crt.sh")
+
+    monkeypatch.setattr(netio, "open_connection", loopback_only)
+    monkeypatch.setattr(detect_dns, "lookup", no_dns)
+    monkeypatch.setattr(detect_subdomains, "fetch", no_crtsh)
+    monkeypatch.setattr(settings, "scan_ports_per_second", 1_000_000)  # tests are not rate-limited unless they say so
+    yield
+
+
+@pytest.fixture(autouse=True)
 def isolated_database():
     from app.db.base import Base
     from app.db.session import engine

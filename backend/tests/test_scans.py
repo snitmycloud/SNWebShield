@@ -1,4 +1,4 @@
-"""Scan safety (fail closed): verified owner only, one IP, refused addresses, limits, time limit, audit."""
+﻿"""Scan safety (fail closed): verified owner only, one IP, refused addresses, limits, time limit, audit."""
 from datetime import timedelta
 import ipaddress
 import time
@@ -120,7 +120,7 @@ def test_successful_start_pins_one_public_ip_and_never_claims_safe():
     scan_id = queue(website_id)
     status, scan = run(scan_id, resolve=lambda d: [PUBLIC, "2606:4700::1111"], verify=allow)
     assert status == "incomplete" and scan.status == "incomplete" and scan.resolved_ip == PUBLIC
-    assert scan.result["code"] == "checks_not_available"
+    assert scan.result["code"] == "some_checks_incomplete"  # nothing is reachable in tests, so it can never look clean
     assert "does not mean your website is safe" in scan.message
     assert scan.started_at and scan.ended_at and scan.claim_token is None
 

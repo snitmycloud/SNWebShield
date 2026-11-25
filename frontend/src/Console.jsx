@@ -6,6 +6,8 @@ import {
 } from "lucide-react";
 import { api } from "./lib/api.js";
 import { METHODS, checkView, isStaff, passwordHint, planLimit, removalConfirmed, scanView, verificationView } from "./lib/account.js";
+import DetectResults from "./DetectResults.jsx";
+import { isFriendlyLimit, scanNowText } from "./lib/detect.js";
 import MonitoringPage from "./MonitoringPage.jsx";
 import AssessmentsPage from "./AssessmentsPage.jsx";
 import FindingsPage from "./FindingsPage.jsx";
@@ -209,15 +211,26 @@ function VerifyPanel({ site, onVerified }) {
   </section>;
 }
 
-function ScanPanel({ scans }) {
+function ScanPanel({ site, scans, onScanNow, busy, limitNote, onUpgrade }) {
   const latest = scans[0];
   const view = scanView(latest);
+  const scanNow = site.scan_now;
+  const showButton = site.verification_status === "verified" && scanNow;
+  const limitReached = scanNow?.reason === "limit_reached";
   return <section className="panel sw-scan" aria-label="Scans">
-    <h2>Scans</h2>
+    <div className="sw-scan-head"><h2>Scans</h2>
+      {showButton && <div className="sw-scan-action">
+        <span className="sw-remaining" data-testid="scans-left">{scanNowText(scanNow)}</span>
+        <button className="primary-button" onClick={onScanNow} disabled={busy || !scanNow.allowed}>
+          {busy ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}Scan now</button></div>}
+    </div>
+    {(limitNote || (limitReached && scanNow.message)) && <div className="sw-limit" role="status" data-testid="scan-limit-message">
+      <ArrowUpRight size={16} /><span>{limitNote || scanNow.message}</span>
+      {!site.test_target && <button className="secondary-button" onClick={onUpgrade}>Upgrade</button>}</div>}
     <div className="sw-scan-now"><Badge tone={view.tone}>{view.label}</Badge>
-      {view.active && <LoaderCircle className="spin" size={15} />}<span data-testid="scan-status">{view.text}</span></div>
-    {latest?.resolved_ip && <details><summary>Technical details</summary>
-      <p>Scanned address: <code>{latest.resolved_ip}</code> · started {when(latest.started_at)} · finished {when(latest.ended_at)}</p></details>}
+      {view.active && <LoaderCircle className="spin" size={15} />}
+      <span data-testid="scan-status">{view.active || !["completed", "incomplete", "refused"].includes(latest?.status) ? view.text : ""}</span></div>
+    {latest && <DetectResults siteId={site.id} scan={latest} />}
     {scans.length > 1 && <ul className="sw-history">{scans.slice(1).map(scan => {
       const v = scanView(scan);
       return <li key={scan.id}><Badge tone={v.tone}>{v.label}</Badge><span>{when(scan.ended_at || scan.requested_at)}</span></li>;
@@ -225,9 +238,9 @@ function ScanPanel({ scans }) {
   </section>;
 }
 
-function WebsiteDetail({ id, onBack, onChanged, onRemoved }) {
+function WebsiteDetail({ id, onBack, onChanged, onRemoved, onUpgrade }) {
   const [site, setSite] = useState(null), [scans, setScans] = useState([]), [error, setError] = useState("");
-  const [removing, setRemoving] = useState(false);
+  const [removing, setRemoving] = useState(false), [scanBusy, setScanBusy] = useState(false), [limitNote, setLimitNote] = useState("");
   const alive = useRef(true);
   const load = useCallback(async () => {
     const [detail, history] = await Promise.all([api.website(id), api.websiteScans(id)]);
@@ -243,9 +256,17 @@ function WebsiteDetail({ id, onBack, onChanged, onRemoved }) {
   const active = scans[0] && ["queued", "running"].includes(scans[0].status);
   useEffect(() => {
     if (!active) return undefined;
-    const timer = setInterval(() => load().catch(() => {}), 3000);
+    const timer = setInterval(() => load().catch(() => {}), 2000);
     return () => clearInterval(timer);
   }, [active, load]);
+  const scanNow = async () => {
+    setScanBusy(true); setLimitNote(""); setError("");
+    try { await api.scanNow(id); await load(); }
+    catch (err) {
+      if (isFriendlyLimit(err)) { setLimitNote(err.message); await load().catch(() => {}); }  // a limit is a normal answer, not a failure
+      else setError(err.message);
+    } finally { setScanBusy(false); }
+  };
   if (error) return <div className="form-error" role="alert"><ShieldAlert size={15} />{error}</div>;
   if (!site) return <div className="loading-rows"><div /><div /><div /></div>;
   const v = verificationView(site);
@@ -260,13 +281,13 @@ function WebsiteDetail({ id, onBack, onChanged, onRemoved }) {
       <strong><AlertTriangle size={16} />Scans are paused</strong><p>{site.verification_result.message}</p>
       {site.verification_result.hint && <p>{site.verification_result.hint}</p>}</div>}
     {site.verification_status !== "verified" && <VerifyPanel site={site} onVerified={() => { load(); onChanged(); }} />}
-    <ScanPanel scans={scans} />
+    <ScanPanel site={site} scans={scans} onScanNow={scanNow} busy={scanBusy} limitNote={limitNote} onUpgrade={onUpgrade} />
   </>;
 }
 
-function WebsitesView({ websites, plan, loading, openId, onOpen, onAdded, onLimit, onChanged, onRemoved }) {
+function WebsitesView({ websites, plan, loading, openId, onOpen, onAdded, onLimit, onChanged, onRemoved, onUpgrade }) {
   const [removing, setRemoving] = useState(null);
-  if (openId) return <WebsiteDetail id={openId} onBack={() => onOpen(null)} onChanged={onChanged} onRemoved={onRemoved} />;
+  if (openId) return <WebsiteDetail id={openId} onBack={() => onOpen(null)} onChanged={onChanged} onRemoved={onRemoved} onUpgrade={onUpgrade} />;
   return <>
     {removing && <RemoveDialog site={removing} onClose={() => setRemoving(null)} onRemoved={result => { setRemoving(null); onRemoved(result); }} />}
     <Heading eyebrow="WEBSITES" title="Websites" text="Add a website, prove you own it, and we scan it automatically." />
@@ -417,7 +438,7 @@ export default function Console({ account, onLogout }) {
         {page === "dashboard" && <DashboardView account={account} websites={websites} plan={plan} loading={loading}
           onOpen={id => { setPage("websites"); setOpenId(id); }} onAdd={() => go("websites")} />}
         {page === "websites" && <WebsitesView websites={websites} plan={plan} loading={loading} openId={openId} onOpen={setOpenId}
-          onAdded={site => { setWebsites(rows => [site, ...rows]); load(); }} onLimit={setLimit} onChanged={load} onRemoved={removed} />}
+          onAdded={site => { setWebsites(rows => [site, ...rows]); load(); }} onLimit={setLimit} onChanged={load} onRemoved={removed} onUpgrade={() => go("settings")} />}
         {page === "settings" && <SettingsView account={account} plan={plan} />}
         {page === "admin" && account.role === "admin" && <AdminView account={account} />}
         {staff && page.startsWith("legacy-") && <div className="sw-legacy-note"><Shield size={15} />Earlier analyst workflow: read-only. Nothing can be started from these pages.</div>}

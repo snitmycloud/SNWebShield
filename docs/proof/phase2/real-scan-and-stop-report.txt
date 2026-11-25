@@ -1,0 +1,38 @@
+﻿scanme.nmap.org website rows (id, owner, removed_at, method): [(11, 6, '2026-11-25 18:32:12.315092', None)]
+
+SCAN 6699a04e� status=completed trigger=first type=standard ip=45.33.32.156
+  started 2026-11-25 18:31:05.365509  ended 2026-11-25 18:31:36.025771
+  code=detect_completed stopped_step=None
+  steps: {'ports': 'ok', 'versions': 'ok', 'technologies': 'ok', 'exposed': 'ok', 'dns': 'ok', 'subdomains': 'ok'}
+  ports: {'scanned': 1002, 'planned': 1002, 'open': 3, 'closed': 0, 'filtered': 999, 'errors': 0} counts: {'open_ports': 3, 'technologies': 2, 'exposed_files': 1, 'subdomains': 0}
+  message: Detection finished: 3 open port(s), 2 technologies, 1 exposed file(s) or page(s) found. This lists what we found; it is not a security verdict. Vulnerability checks come in a later update.
+  open    22  ssh          OpenSSH        6.6.1p1
+  open    80  http         Apache         2.4.7
+  open  9929  nping-echo   -              not disclosed
+  tech Apache (Web server) 2.4.7
+  tech Google Analytics (Analytics) 
+  observations dns: 5
+  observations exposed_file: 1
+
+SCAN 5dbe1c6d� status=incomplete trigger=manual type=standard ip=45.33.32.156
+  started 2026-11-25 18:32:05.212623  ended 2026-11-25 18:32:12.315092
+  code=website_removed stopped_step=ports
+  steps: {}
+  ports: None counts: None
+  message: The website was removed from the account, so this scan was stopped. Results found so far are kept and are incomplete.
+  open    22  ssh          -              not disclosed
+  open    80  http         -              not disclosed
+
+AUDIT EVENTS for this website:
+  2026-11-25 18:31:05.052643  website_added          {'test_target': True}
+  2026-11-25 18:31:05.052643  ownership_verified     {}
+  2026-11-25 18:31:05.064029  scan_requested         {'test_target': True, 'trigger': 'first'}
+  2026-11-25 18:31:05.371032  scan_started           {}
+  2026-11-25 18:31:36.029148  scan_finished          {'result': 'completed', 'reason': 'detect_completed', 'test_target': True, 'trigger': 'first', 'ip': '45.33.32.156'}
+  2026-11-25 18:32:03.599966  scan_requested         {'test_target': True, 'trigger': 'manual'}
+  2026-11-25 18:32:03.599966  manual_scan_requested  {}
+  2026-11-25 18:32:05.216863  scan_started           {}
+  2026-11-25 18:32:12.316439  scan_finished          {'result': 'incomplete', 'reason': 'website_removed', 'test_target': True, 'trigger': 'manual', 'ip': '45.33.32.156'}
+  2026-11-25 18:32:12.316439  website_removed        {}
+  2026-11-25 18:32:12.353725  scan_worker_stopped    {'code': 'website_removed', 'stopped_step': 'ports', 'seconds_since_removal': 0.04}
+  website removed_at: 2026-11-25 18:32:12.315092 | last scan ended_at: 2026-11-25 18:32:12.315092

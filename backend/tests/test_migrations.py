@@ -1,4 +1,4 @@
-﻿import os
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -21,7 +21,7 @@ def test_new_database_migrates_and_upgrade_is_idempotent(tmp_path):
     migrate(path)
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0017_website_removal"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0018_detect_results"
         columns = {row[1] for row in db.execute("PRAGMA table_info(website_authorizations)")}
         assert "timestamps_verified" in columns
         assert db.execute("SELECT COUNT(*) FROM admins").fetchone()[0] == 0
@@ -152,7 +152,7 @@ def test_vulnerability_migration_preserves_reports_reviews_and_deadlines(tmp_pat
     migrate(path)
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0017_website_removal"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0018_detect_results"
         after = {table: db.execute(f'SELECT * FROM {table}').fetchall() for table in tables}
         # 0016 appends account columns to admins; every pre-existing value is unchanged.
         after["admins"] = [row[:len(before["admins"][0])] for row in after["admins"]]
@@ -175,7 +175,7 @@ def test_website_removal_migration_keeps_rows_and_only_limits_the_unique_rule_to
     migrate(path)
     migrate(path)  # idempotent
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0017_website_removal"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0018_detect_results"
         assert db.execute("SELECT id,owner_id,domain,verification_status FROM websites").fetchall() == before
         assert db.execute("SELECT removed_at FROM websites WHERE id=1").fetchone() == (None,)
         assert db.execute("SELECT COUNT(*) FROM scans").fetchone() == (1,)
@@ -189,4 +189,29 @@ def test_website_removal_migration_keeps_rows_and_only_limits_the_unique_rule_to
         # ...but once the first one is removed, the domain can be added again.
         db.execute("UPDATE websites SET removed_at='2026-11-25' WHERE id=1")
         db.execute("INSERT INTO websites (owner_id,name,url,domain,environment,authorisation_status) VALUES (1,'again','https://a.example.com/','a.example.com','production','retired')")
+        assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+def test_detect_results_migration_is_additive_and_keeps_scan_history(tmp_path):
+    path = tmp_path / "pre-detect.db"
+    migrate(path, "0017_website_removal")
+    with sqlite3.connect(path) as db:
+        db.execute("INSERT INTO admins (id,email,full_name,password_hash,role,is_active,plan) VALUES (1,'o@example.com','Owner','h','user',1,'free')")
+        db.execute("INSERT INTO websites (id,owner_id,name,url,domain,environment,authorisation_status) VALUES (1,1,'a','https://a.example.com/','a.example.com','production','retired')")
+        db.execute("INSERT INTO scans (id,website_id,owner_id,scan_type,trigger,status,requested_at,result) VALUES ('s1',1,1,'standard','first','incomplete','2026-11-25','{\"code\":\"checks_not_available\"}')")
+        tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN ('alembic_version','sqlite_sequence')")]
+        before = {t: db.execute(f'SELECT * FROM "{t}"').fetchall() for t in tables}
+    migrate(path)
+    migrate(path)  # idempotent
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0018_detect_results"
+        assert {t: db.execute(f'SELECT * FROM "{t}"').fetchall() for t in tables} == before  # nothing existing changed
+        for table in ("scan_ports", "scan_technologies", "scan_observations"):
+            assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone() == (0,)
+        db.execute("INSERT INTO scan_ports (scan_id,port,state,service) VALUES ('s1',22,'open','ssh')")
+        try:
+            db.execute("INSERT INTO scan_ports (scan_id,port,state,service) VALUES ('s1',22,'open','ssh')")
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            raise AssertionError("one row per scan and port")
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"

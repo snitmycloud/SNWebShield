@@ -73,7 +73,21 @@ class Settings(BaseSettings):
     ownership_http_timeout_seconds: float = Field(default=8.0, ge=1, le=30)
     scan_max_concurrent: int = Field(default=3, ge=1, le=20)
     scan_max_per_website: Literal[1] = 1  # enforced by a unique index on active scans
-    scan_time_limit_seconds: int = Field(default=900, ge=30, le=7200)
+    scan_time_limit_seconds: int = Field(default=900, ge=30, le=7200)            # standard scan: 15 minutes
+    scan_full_time_limit_seconds: int = Field(default=3600, ge=60, le=14400)     # full 1-65535 scan: 60 minutes
+    # --- Detection limits (Phase 2) ---
+    scan_connect_concurrency: int = Field(default=100, ge=1, le=500)
+    scan_port_timeout_seconds: float = Field(default=1.5, ge=0.2, le=10)
+    scan_ports_per_second: int = Field(default=300, ge=1, le=2000)
+    scan_probe_timeout_seconds: float = Field(default=3.0, ge=0.5, le=15)   # per open port: banner, HTTP and TLS together
+    scan_probe_concurrency: int = Field(default=8, ge=1, le=50)
+    scan_banner_max_bytes: int = Field(default=1024, ge=64, le=8192)
+    scan_http_body_max_bytes: int = Field(default=256 * 1024, ge=4096, le=2 * 1024 * 1024)
+    scan_http_request_timeout_seconds: float = Field(default=3.0, ge=0.5, le=15)
+    scan_dns_timeout_seconds: float = Field(default=3.0, ge=0.5, le=15)
+    crtsh_timeout_seconds: float = Field(default=6.0, ge=1, le=15)           # short: never holds up the scan
+    # How often a running scan re-reads the website, owner and verification, so it can stop cleanly (seconds).
+    scan_guard_poll_seconds: float = Field(default=1.0, ge=0.2, le=10)
     # Extra addresses of this server (comma-separated) that a scan must never target, on top of its own
     # interface addresses, which are detected automatically.
     server_public_ips: str = ""
