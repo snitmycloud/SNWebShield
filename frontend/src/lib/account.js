@@ -22,6 +22,9 @@ export const METHODS = [
 
 export function verificationView(website) {
   const status = website?.verification_status;
+  if (status === "verified" && website.verification_method === "test_target") {
+    return { label: "Test target", tone: "info", text: "An approved SNWebShield test target. Only admin accounts can scan it, at most 2 scans per day." };
+  }
   if (status === "verified") {
     const how = website.verification_method === "parent"
       ? "covered by your verified main domain"

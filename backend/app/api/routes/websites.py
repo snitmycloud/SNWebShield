@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.security import get_current_account, get_current_admin
 from app.core.time import as_utc, utc_now
 from app.db.session import get_db
@@ -32,7 +33,7 @@ def read_website(db: Session, website: Website, *, with_instructions=False) -> d
         "verification_status": website.verification_status, "verification_method": website.verification_method,
         "verified_at": _iso(website.verified_at), "verification_checked_at": _iso(website.verification_checked_at),
         "verification_result": website.verification_result, "created_at": _iso(website.created_at),
-        "removed_at": _iso(website.removed_at),
+        "removed_at": _iso(website.removed_at), "test_target": scans.is_test_target(website),
         "scans_paused": website.verification_status == "lost",
         "latest_scan": scans.serial(latest) if latest else None,
     }
@@ -66,6 +67,10 @@ def create_website(payload: WebsiteCreate, account: Admin = Depends(get_current_
         domain = normalize_domain(payload.domain)
     except DomainError as error:
         raise HTTPException(422, str(error)) from error
+    test_target = domain in settings.approved_test_targets
+    if test_target and account.role != "admin":
+        # Approved test targets are for SNWebShield's own testing; they are never available to customers or analysts.
+        raise HTTPException(403, "That address is reserved for SNWebShield's own testing and cannot be added.")
     plan = plans.get(account.plan)
     used = db.scalar(select(func.count()).select_from(Website).where(
         Website.owner_id == account.id, Website.removed_at.is_(None))) or 0
@@ -76,15 +81,31 @@ def create_website(payload: WebsiteCreate, account: Admin = Depends(get_current_
         raise HTTPException(409, f"You have already added {domain}.")
     website = Website(owner_id=account.id, client_id=None, domain=domain, name=domain, url=f"https://{domain}/",
                       environment="production", authorisation_status="retired",
-                      verification_token=secrets.token_hex(16), verification_status="unverified")
+                      verification_token=None if test_target else secrets.token_hex(16),
+                      verification_status="unverified")
     db.add(website)
     try:
         db.flush()
     except IntegrityError as error:
         db.rollback()
         raise HTTPException(409, f"You have already added {domain}.") from error
-    engine.event(db, "website_added", resource_id=website.id, actor_id=account.id, detail={"domain": domain})
-    parent = ownership.covering_website(db, website)
+    engine.event(db, "website_added", resource_id=website.id, actor_id=account.id,
+                 detail={"domain": domain, "test_target": test_target})
+    if test_target:
+        now = utc_now()
+        website.verification_status, website.verification_method = "verified", "test_target"
+        website.verified_at = website.verification_checked_at = now
+        website.verification_result = {"ok": True, "method": "test_target", "state": "verified", "expected": "", "found": [],
+                                       "message": "Approved SNWebShield test target (admin accounts only).",
+                                       "checked_at": now.isoformat()}
+        engine.event(db, "ownership_verified", resource_id=website.id, actor_id=account.id,
+                     detail={"method": "test_target", "domain": domain})
+        try:
+            scans.request_scan(db, website, "first")
+        except HTTPException as limit:
+            if limit.status_code != 429:  # the daily test-target limit may already be used; the website is still added
+                raise
+    parent = None if test_target else ownership.covering_website(db, website)
     if parent is not None:
         # example.com is already verified, so shop.example.com is covered and its first scan starts now.
         ownership.mark_covered(website, parent)
@@ -122,6 +143,8 @@ def verify_website(website_id: int, payload: VerifyRequest, account: Admin = Dep
                    db: Session = Depends(get_db)):
     """Check ownership now with the chosen method. On success the first scan starts automatically."""
     website = _owned(db, account, website_id)
+    if website.verification_method == "test_target":  # approved by the fixed list, nothing to prove
+        return {"website": read_website(db, website), "check": website.verification_result, "scan": None}
     parent = ownership.covering_website(db, website)
     if parent is not None:
         ownership.mark_covered(website, parent)

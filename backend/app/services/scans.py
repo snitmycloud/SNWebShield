@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import settings
 from app.core.time import as_utc, utc_now
 from app.models.admin import Admin
+from app.models.jobs import ExecutionEvent
 from app.models.scan import ACTIVE_SCAN_STATES, Scan
 from app.models.website import Website
 from app.services import ip_policy, ownership
@@ -66,6 +67,28 @@ def latest_scan(db, website_id: int) -> Scan | None:
     return db.scalar(select(Scan).where(Scan.website_id == website_id).order_by(Scan.requested_at.desc()).limit(1))
 
 
+def is_test_target(website: Website) -> bool:
+    return website.verification_method == "test_target" and website.domain in settings.approved_test_targets
+
+
+def _enforce_test_target_quota(db, website: Website, now) -> None:
+    """At most TEST_TARGET_SCANS_PER_DAY scans of one approved test target per UTC day, across all accounts.
+
+    Counts the permanent `scan_requested` audit events, so removing a website (which deletes its queued scans) or
+    adding it again cannot reset the count.
+    """
+    if website.domain not in settings.approved_test_targets:
+        return
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    same_domain = select(Website.id).where(Website.domain == website.domain)
+    used = db.scalar(select(func.count()).select_from(ExecutionEvent).where(
+        ExecutionEvent.action == "scan_requested", ExecutionEvent.resource_id.in_(same_domain),
+        ExecutionEvent.occurred_at >= start)) or 0
+    if used >= settings.test_target_scans_per_day:
+        raise HTTPException(429, f"Test target limit reached: {website.domain} can be scanned at most "
+                                 f"{settings.test_target_scans_per_day} times per day (UTC). Try again tomorrow.")
+
+
 def request_scan(db, website: Website, trigger: str) -> Scan:
     """Queue a scan. Requires verified ownership; returns the already active scan instead of a second one."""
     if website.removed_at is not None or website.verification_status != "verified" or not website.owner_id:
@@ -74,6 +97,7 @@ def request_scan(db, website: Website, trigger: str) -> Scan:
     if existing:
         return existing
     now = utc_now()
+    _enforce_test_target_quota(db, website, now)
     scan = Scan(id=str(uuid4()), website_id=website.id, owner_id=website.owner_id, scan_type="standard",
                 trigger=trigger, status="queued", requested_at=now,
                 progress={"step": "queued", "message": "Waiting to start…"})
@@ -87,7 +111,8 @@ def request_scan(db, website: Website, trigger: str) -> Scan:
             return existing
         raise
     engine.event(db, "scan_requested", resource_id=website.id, actor_id=website.owner_id,
-                 detail={"scan_id": scan.id, "trigger": trigger, "scan_type": scan.scan_type})
+                 detail={"scan_id": scan.id, "trigger": trigger, "scan_type": scan.scan_type,
+                         "domain": website.domain, "test_target": is_test_target(website)})
     return scan
 
 
@@ -116,9 +141,11 @@ def discard_for_removal(db, website: Website) -> dict:
 # --- Worker --------------------------------------------------------------------------------------
 
 def _audit_finish(db, scan: Scan):
+    website = db.get(Website, scan.website_id)
     engine.event(db, "scan_finished", resource_id=scan.website_id, actor_id=scan.owner_id, detail={
         "scan_id": scan.id, "user_id": scan.owner_id, "website_id": scan.website_id, "ip": scan.resolved_ip,
         "scan_type": scan.scan_type, "trigger": scan.trigger,
+        "test_target": bool(website and is_test_target(website)),
         "start": as_utc(scan.started_at).isoformat() if scan.started_at else None,
         "end": as_utc(scan.ended_at).isoformat() if scan.ended_at else None,
         "result": scan.status, "reason": (scan.result or {}).get("code")})

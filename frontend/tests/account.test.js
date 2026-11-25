@@ -47,6 +47,14 @@ test("verification states read in plain language", () => {
   assert.match(lost.text, /paused/);
 });
 
+test("an approved test target is labelled as one and explains who may scan it", () => {
+  const view = verificationView({ verification_status: "verified", verification_method: "test_target" });
+  assert.equal(view.label, "Test target");
+  assert.match(view.text, /admin/i);
+  assert.match(view.text, /2 scans per day/);
+  assert.equal(verificationView({ verification_status: "verified", verification_method: "dns" }).label, "Verified");
+});
+
 test("a scan is never shown as safe or clean", () => {
   assert.equal(scanView(null).label, "No scan yet");
   const running = scanView({ status: "running", progress: { message: "Finding your website's addressâ€¦" } });
