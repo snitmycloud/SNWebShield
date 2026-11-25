@@ -15,6 +15,12 @@ class RemoveRequest(BaseModel):
     confirm_domain: str = Field(min_length=1, max_length=2048)
 
 
+class ScanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # "full" (all 65,535 ports) is gated to Pro and above in plans.json; there is no UI for it yet.
+    scan_type: Literal["standard", "full"] = "standard"
+
+
 class VerifyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     method: Literal["dns", "file", "meta"]

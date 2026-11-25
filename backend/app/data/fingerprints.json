@@ -1,0 +1,73 @@
+{
+  "_help": "Technology fingerprints. Add more entries without any code change. Each rule: where = header | cookie | meta | html | script | css | file. header: name (lower-case header) + pattern. cookie: pattern on cookie names. meta: name (meta name) + pattern on its content. html: pattern on the page. script / css: pattern on the script src / stylesheet href. file: path + optional pattern on that file (at most 6 file fetches per scan). version: optional regex whose first group is the version. All patterns are case-insensitive regular expressions; keep them simple.",
+  "technologies": [
+    {"name": "nginx", "category": "Web server", "rules": [
+      {"where": "header", "name": "server", "pattern": "nginx", "version": "nginx/(\\d[\\d.]*)"}]},
+    {"name": "Apache", "category": "Web server", "rules": [
+      {"where": "header", "name": "server", "pattern": "Apache", "version": "Apache/(\\d[\\d.]*)"}]},
+    {"name": "IIS", "category": "Web server", "rules": [
+      {"where": "header", "name": "server", "pattern": "Microsoft-IIS", "version": "Microsoft-IIS/(\\d[\\d.]*)"}]},
+    {"name": "LiteSpeed", "category": "Web server", "rules": [
+      {"where": "header", "name": "server", "pattern": "LiteSpeed"},
+      {"where": "header", "name": "x-litespeed-cache", "pattern": "."}]},
+    {"name": "Cloudflare", "category": "CDN", "rules": [
+      {"where": "header", "name": "server", "pattern": "cloudflare"},
+      {"where": "header", "name": "cf-ray", "pattern": "."},
+      {"where": "cookie", "pattern": "^__cf(duid|_bm)$"}]},
+    {"name": "PHP", "category": "Programming language", "rules": [
+      {"where": "header", "name": "x-powered-by", "pattern": "PHP", "version": "PHP/(\\d[\\d.]*)"},
+      {"where": "cookie", "pattern": "^PHPSESSID$"}]},
+    {"name": "ASP.NET", "category": "Web framework", "rules": [
+      {"where": "header", "name": "x-powered-by", "pattern": "ASP\\.NET"},
+      {"where": "header", "name": "x-aspnet-version", "pattern": ".", "version": "(\\d[\\d.]*)"},
+      {"where": "cookie", "pattern": "^ASP\\.NET_SessionId$"}]},
+    {"name": "Node.js / Express", "category": "Web framework", "rules": [
+      {"where": "header", "name": "x-powered-by", "pattern": "Express"}]},
+    {"name": "WordPress", "category": "CMS", "rules": [
+      {"where": "meta", "name": "generator", "pattern": "WordPress", "version": "WordPress (\\d[\\d.]*)"},
+      {"where": "script", "pattern": "wp-emoji-release\\.min\\.js", "version": "[?&]ver=(\\d[\\d.]*)"},
+      {"where": "html", "pattern": "/wp-content/|/wp-includes/"},
+      {"where": "file", "path": "/wp-login.php", "pattern": "wp-submit|user_login"}]},
+    {"name": "Joomla", "category": "CMS", "rules": [
+      {"where": "meta", "name": "generator", "pattern": "Joomla", "version": "Joomla! (\\d[\\d.]*)"},
+      {"where": "html", "pattern": "/media/system/js/"},
+      {"where": "file", "path": "/administrator/manifests/files/joomla.xml", "pattern": "<version>", "version": "<version>(\\d[\\d.]*)</version>"}]},
+    {"name": "Drupal", "category": "CMS", "rules": [
+      {"where": "meta", "name": "generator", "pattern": "Drupal", "version": "Drupal (\\d[\\d.]*)"},
+      {"where": "header", "name": "x-generator", "pattern": "Drupal", "version": "Drupal (\\d[\\d.]*)"},
+      {"where": "header", "name": "x-drupal-cache", "pattern": "."},
+      {"where": "html", "pattern": "/sites/default/files/|Drupal\\.settings"}]},
+    {"name": "Shopify", "category": "E-commerce", "rules": [
+      {"where": "header", "name": "x-shopid", "pattern": "."},
+      {"where": "header", "name": "x-shopify-stage", "pattern": "."},
+      {"where": "html", "pattern": "cdn\\.shopify\\.com"},
+      {"where": "cookie", "pattern": "^_shopify_"}]},
+    {"name": "Wix", "category": "Website builder", "rules": [
+      {"where": "header", "name": "x-wix-request-id", "pattern": "."},
+      {"where": "meta", "name": "generator", "pattern": "Wix\\.com"},
+      {"where": "html", "pattern": "static\\.wixstatic\\.com"}]},
+    {"name": "jQuery", "category": "JavaScript library", "rules": [
+      {"where": "script", "pattern": "jquery", "version": "jquery[-.@/](\\d+\\.\\d+(?:\\.\\d+)?)"},
+      {"where": "script", "pattern": "jquery", "version": "jquery/(\\d+\\.\\d+(?:\\.\\d+)?)/"}]},
+    {"name": "Bootstrap", "category": "UI framework", "rules": [
+      {"where": "css", "pattern": "bootstrap", "version": "bootstrap[/@-](\\d+\\.\\d+(?:\\.\\d+)?)"},
+      {"where": "script", "pattern": "bootstrap", "version": "bootstrap[/@-](\\d+\\.\\d+(?:\\.\\d+)?)"}]},
+    {"name": "React", "category": "JavaScript framework", "rules": [
+      {"where": "script", "pattern": "react(?:-dom)?(?:\\.production)?(?:\\.min)?\\.js|react(?:-dom)?@", "version": "react(?:-dom)?[@/](\\d+\\.\\d+(?:\\.\\d+)?)"},
+      {"where": "html", "pattern": "data-reactroot|data-reactid"}]},
+    {"name": "Angular", "category": "JavaScript framework", "rules": [
+      {"where": "html", "pattern": "ng-version=\"", "version": "ng-version=\"(\\d[\\d.]*)\""},
+      {"where": "script", "pattern": "angular(?:\\.min)?\\.js|angular\\.js/", "version": "angular(?:\\.js)?/(\\d+\\.\\d+(?:\\.\\d+)?)/"}]},
+    {"name": "Vue", "category": "JavaScript framework", "rules": [
+      {"where": "script", "pattern": "vue(?:\\.runtime)?(?:\\.global)?(?:\\.prod)?(?:\\.min)?\\.js|vue@", "version": "vue(?:@|/)(\\d+\\.\\d+(?:\\.\\d+)?)"},
+      {"where": "html", "pattern": "data-v-[0-9a-f]{6,}"}]},
+    {"name": "Lodash", "category": "JavaScript library", "rules": [
+      {"where": "script", "pattern": "lodash", "version": "lodash(?:\\.js)?[@/-](\\d+\\.\\d+(?:\\.\\d+)?)"}]},
+    {"name": "Moment.js", "category": "JavaScript library", "rules": [
+      {"where": "script", "pattern": "moment(?:\\.min)?\\.js|moment@|/moment/", "version": "moment(?:\\.js)?[@/-](\\d+\\.\\d+(?:\\.\\d+)?)"},
+      {"where": "script", "pattern": "moment", "version": "moment/(\\d+\\.\\d+(?:\\.\\d+)?)/"}]},
+    {"name": "Google Analytics", "category": "Analytics", "rules": [
+      {"where": "script", "pattern": "google-analytics\\.com/(?:analytics|ga)\\.js|googletagmanager\\.com/gtag/js"},
+      {"where": "html", "pattern": "gtag\\(|UA-\\d{4,}-\\d+"}]}
+  ]
+}

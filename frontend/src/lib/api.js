@@ -197,6 +197,8 @@ export const api = {
   addWebsite: (domain) => jsonPost("/websites", { domain }),
   verifyWebsite: (id, method) => jsonPost(`/websites/${encodeURIComponent(id)}/verify`, { method }),
   websiteScans: (id) => request(`/websites/${encodeURIComponent(id)}/scans?limit=10`),
+  scanNow: (id, scanType = "standard") => jsonPost(`/websites/${encodeURIComponent(id)}/scan`, { scan_type: scanType }),
+  scanDetail: (id, scanId) => request(`/websites/${encodeURIComponent(id)}/scans/${encodeURIComponent(scanId)}`),
   removeWebsite: (id, confirmDomain) => jsonPost(`/websites/${encodeURIComponent(id)}/remove`, { confirm_domain: confirmDomain }),
 
   // Admin

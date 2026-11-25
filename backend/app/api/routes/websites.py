@@ -11,9 +11,9 @@ from app.core.security import get_current_account, get_current_admin
 from app.core.time import as_utc, utc_now
 from app.db.session import get_db
 from app.models.admin import Admin
-from app.models.scan import Scan
+from app.models.scan import Scan, ScanObservation, ScanPort, ScanTechnology
 from app.models.website import Website
-from app.schemas.website import RemoveRequest, VerifyRequest, WebsiteCreate
+from app.schemas.website import RemoveRequest, ScanRequest, VerifyRequest, WebsiteCreate
 from app.services import job_engine as engine
 from app.services import lifecycle, ownership, plans, scans
 from app.services.domains import DomainError, normalize_domain
@@ -25,7 +25,7 @@ def _iso(value):
     return as_utc(value).isoformat() if value else None
 
 
-def read_website(db: Session, website: Website, *, with_instructions=False) -> dict:
+def read_website(db: Session, website: Website, *, with_instructions=False, account: Admin | None = None) -> dict:
     latest = scans.latest_scan(db, website.id)
     data = {
         "id": website.id, "domain": website.domain, "name": website.name, "url": website.url,
@@ -37,6 +37,9 @@ def read_website(db: Session, website: Website, *, with_instructions=False) -> d
         "scans_paused": website.verification_status == "lost",
         "latest_scan": scans.serial(latest) if latest else None,
     }
+    if (account is not None and account.id == website.owner_id and website.removed_at is None
+            and website.verification_status == "verified"):
+        data["scan_now"] = scans.scan_now_status(db, website, account)  # what the Scan now button shows
     if with_instructions and website.verification_token and website.domain:
         data["verification_code"] = website.verification_token
         data["instructions"] = ownership.instructions(website)
@@ -114,7 +117,7 @@ def create_website(payload: WebsiteCreate, account: Admin = Depends(get_current_
         scans.request_scan(db, website, "first")
     db.commit()
     db.refresh(website)
-    return read_website(db, website, with_instructions=True)
+    return read_website(db, website, with_instructions=True, account=account)
 
 
 @router.get("")
@@ -129,13 +132,13 @@ def list_websites(
     if not (all_accounts and account.is_staff):
         statement = statement.where(Website.owner_id == account.id, Website.removed_at.is_(None))
     rows = db.scalars(statement.offset(offset).limit(limit)).all()
-    return [read_website(db, row) for row in rows]
+    return [read_website(db, row, account=account) for row in rows]
 
 
 @router.get("/{website_id}")
 def get_website(website_id: int, account: Admin = Depends(get_current_account), db: Session = Depends(get_db)):
     website = _visible(db, account, website_id)
-    return read_website(db, website, with_instructions=website.owner_id == account.id)
+    return read_website(db, website, with_instructions=website.owner_id == account.id, account=account)
 
 
 @router.post("/{website_id}/verify")
@@ -144,7 +147,7 @@ def verify_website(website_id: int, payload: VerifyRequest, account: Admin = Dep
     """Check ownership now with the chosen method. On success the first scan starts automatically."""
     website = _owned(db, account, website_id)
     if website.verification_method == "test_target":  # approved by the fixed list, nothing to prove
-        return {"website": read_website(db, website), "check": website.verification_result, "scan": None}
+        return {"website": read_website(db, website, account=account), "check": website.verification_result, "scan": None}
     parent = ownership.covering_website(db, website)
     if parent is not None:
         ownership.mark_covered(website, parent)
@@ -164,7 +167,7 @@ def verify_website(website_id: int, payload: VerifyRequest, account: Admin = Dep
             scan = scans.request_scan(db, website, "first")
     db.commit()
     db.refresh(website)
-    return {"website": read_website(db, website, with_instructions=True), "check": result,
+    return {"website": read_website(db, website, with_instructions=True, account=account), "check": result,
             "scan": scans.serial(scan) if scan else None}
 
 
@@ -195,6 +198,43 @@ def remove_website(website_id: int, payload: RemoveRequest, account: Admin = Dep
     db.commit()
     return {"status": "removed", "domain": website.domain, **stopped,
             "message": f"{website.domain} was removed. Your past scan records are kept."}
+
+
+@router.post("/{website_id}/scan")
+def scan_now(website_id: int, payload: ScanRequest, account: Admin = Depends(get_current_account),
+             db: Session = Depends(get_db)):
+    """The Scan now button. Owner only. Limits (per website or per account, per day) come from plans.json; a test
+    target also has its own stricter limit. Asking while a scan is running returns that scan and uses nothing up."""
+    website = _owned(db, account, website_id)
+    scan, status, already_running = scans.request_manual_scan(db, website, account, payload.scan_type)
+    db.commit()
+    return {"scan": scans.serial(scan), "scan_now": status, "already_running": already_running}
+
+
+@router.get("/{website_id}/scans/{scan_id}")
+def scan_detail(website_id: int, scan_id: str, account: Admin = Depends(get_current_account),
+                db: Session = Depends(get_db)):
+    """One scan with everything it found. Partial results of an incomplete scan are included and marked by its status."""
+    website = _visible(db, account, website_id)
+    scan = db.get(Scan, scan_id)
+    if scan is None or scan.website_id != website.id:
+        raise HTTPException(404, "Scan not found")
+    ports = db.scalars(select(ScanPort).where(ScanPort.scan_id == scan.id).order_by(ScanPort.port)).all()
+    technologies = db.scalars(select(ScanTechnology).where(ScanTechnology.scan_id == scan.id)
+                              .order_by(ScanTechnology.name)).all()
+    observations = db.scalars(select(ScanObservation).where(ScanObservation.scan_id == scan.id)
+                              .order_by(ScanObservation.kind, ScanObservation.key)).all()
+    return {
+        "scan": scans.serial(scan), "domain": website.domain, "test_target": scans.is_test_target(website),
+        "ports": [{"port": p.port, "state": p.state, "service": p.service, "product": p.product, "version": p.version,
+                   "banner": p.banner, **{k: (p.details or {}).get(k) for k in ("tls", "http", "service_guess", "notes")}}
+                  for p in ports],
+        "technologies": [{"name": t.name, "category": t.category, "version": t.version, "source": t.source,
+                          "evidence": t.evidence, "port": t.port} for t in technologies],
+        "dns": [{"key": o.key, "status": o.status, "data": o.data} for o in observations if o.kind == "dns"],
+        "exposed": [{"path": o.key, "status": o.status, **(o.data or {})} for o in observations if o.kind == "exposed_file"],
+        "subdomains": [o.key for o in observations if o.kind == "subdomain"],
+    }
 
 
 @router.get("/{website_id}/scans")

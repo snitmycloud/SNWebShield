@@ -1,6 +1,6 @@
-# SNWebShield
+﻿# SNWebShield
 
-**Self-service website security scanner — MONITORS. DETECTS. VALIDATES. PROTECTS.**
+**Self-service website security scanner â€” MONITORS. DETECTS. VALIDATES. PROTECTS.**
 
 SNWebShield is a self-service website security scanner for website owners. A user signs up, adds their websites, proves they own each one (DNS TXT record, uploaded file or homepage meta tag), and SNWebShield scans it automatically. The product spec and build phases are in [docs/SNWEBSHIELD_SPEC.md](docs/SNWEBSHIELD_SPEC.md).
 
@@ -13,8 +13,9 @@ SNWebShield is a self-service website security scanner for website owners. A use
 - **Websites and verification:** the domain is cleaned up (scheme, path, port, case) and IP addresses, `localhost` and internal names are refused. Each website gets its own random code. "Verify now" checks at once and shows what was found against what was expected; if the file/meta method fails because the site has no valid HTTPS, it points to the DNS TXT method. Verifying `example.com` covers its subdomains; verifying `www.example.com` covers only that host.
 - **Remove website:** the owner can remove a website from its page or the list. They must type the domain to confirm. Removal deletes the website's verification code, deletes its queued scans, ends a running scan, and frees a plan slot. The website row, finished scan records, execution events and the audit log are kept, and `website_removed` (user, domain, time, what was cancelled) is written to the audit log (migration `0017_website_removal`). The same domain can be added again later with a new code.
 - **Approved test targets (for Phase 2 testing):** a fixed list in code (`APPROVED_TEST_TARGETS` in `backend/app/core/config.py`) containing only `scanme.nmap.org`, which the Nmap project publicly allows scanning for tests. Only `admin` accounts can add it (everyone else gets "reserved"); it needs no DNS proof, is labelled **Test target** in the app, is limited to **2 scans per day** (UTC, shared by all admins, not resettable by removing and re-adding), and every scan is audited with `test_target: true`. It cannot be read or changed from the app, the API or `.env`, and it never covers subdomains.
+- **Scan now (Phase 2):** the owner of a verified website can start a scan from its page. Limits come from `plans.json` (Free 1 per website per day, Pro 5, Business 20 per account, UTC days); the scans left are shown next to the button and reaching the limit shows a friendly message with an Upgrade button, never an error page. A test target keeps its stricter 2-per-day limit shared by all admins. Pressing it while a scan is running returns that scan and uses nothing up. The automatic first scan is not counted.
 - **Automatic first scan:** as soon as verification succeeds, the first scan is queued and run by the new `scan-worker`. In Phase 1 a scan re-checks ownership, resolves and pins one public IP, records the audit entry and ends as **incomplete**; the port, version and technology checks arrive in Phase 2.
-- **Removed:** written authorisations, evidence uploads, approval states, attestation checkboxes, the assessment profile picker and dual sign-off. Their tables and data are kept and listed in `retired_tables` (migration `0016_self_service`). The earlier analyst pipeline (assessments, Docker/Nmap profiles, workbench, VAPT reports, remediation, port watch, monitoring set-up) is **read-only**: staff can still read past data, only "stop" actions work, and it will be deleted after Phases 2–4 replace it.
+- **Removed:** written authorisations, evidence uploads, approval states, attestation checkboxes, the assessment profile picker and dual sign-off. Their tables and data are kept and listed in `retired_tables` (migration `0016_self_service`). The earlier analyst pipeline (assessments, Docker/Nmap profiles, workbench, VAPT reports, remediation, port watch, monitoring set-up) is **read-only**: staff can still read past data, only "stop" actions work, and it will be deleted after Phases 2â€“4 replace it.
 
 ## Initial product goals
 
@@ -53,26 +54,26 @@ The [foundation assessment](docs/FOUNDATION_ASSESSMENT.md) records the review of
 
 ```text
 SNWebShield/
-├── README.md
-├── .gitignore
-├── .env.example
-├── docs/
-│   ├── PROJECT_REQUIREMENTS.md
-│   ├── PROJECT_ARCHITECTURE.md
-│   ├── ASSESSMENT_WORKFLOW.md
-│   └── SECURITY_GUARDRAILS.md
-├── backend/
-│   └── app/
-├── frontend/
-│   └── src/
-├── assessment/
-│   ├── checklists/
-│   └── methodologies/
-├── reporting/
-│   └── templates/
-├── database/
-│   └── schema/
-└── tests/
+â”œâ”€â”€ README.md
+â”œâ”€â”€ .gitignore
+â”œâ”€â”€ .env.example
+â”œâ”€â”€ docs/
+â”‚   â”œâ”€â”€ PROJECT_REQUIREMENTS.md
+â”‚   â”œâ”€â”€ PROJECT_ARCHITECTURE.md
+â”‚   â”œâ”€â”€ ASSESSMENT_WORKFLOW.md
+â”‚   â””â”€â”€ SECURITY_GUARDRAILS.md
+â”œâ”€â”€ backend/
+â”‚   â””â”€â”€ app/
+â”œâ”€â”€ frontend/
+â”‚   â””â”€â”€ src/
+â”œâ”€â”€ assessment/
+â”‚   â”œâ”€â”€ checklists/
+â”‚   â””â”€â”€ methodologies/
+â”œâ”€â”€ reporting/
+â”‚   â””â”€â”€ templates/
+â”œâ”€â”€ database/
+â”‚   â””â”€â”€ schema/
+â””â”€â”€ tests/
 ```
 
 ## Development phases
@@ -99,7 +100,26 @@ SNWebShield/
 
 **Phase 1 of the self-service spec is implemented on branch `feat/phase1-self-service`** (see the Phase 1 section above and [docs/AUDIT_MATRIX.md](docs/AUDIT_MATRIX.md)). The milestone notes below describe the earlier analyst workflow, which is now read-only.
 
-Earlier status — **Milestones 1 to 6 complete (Modules A to H plus production hardening).** Authentication, authorisation evidence, monitoring, the scanner worker, vulnerability management, the analyst workbench, VAPT reporting, remediation and closure are implemented and tested, with an end-to-end lifecycle test. Open items are manual user steps (VM runner redeploy, real-target acceptance) and the risks listed as open in the audit matrix. Authorisation creation has an API but no UI form. Neither website registration nor authorisation approval starts a scan.
+Earlier status â€” **Milestones 1 to 6 complete (Modules A to H plus production hardening).** Authentication, authorisation evidence, monitoring, the scanner worker, vulnerability management, the analyst workbench, VAPT reporting, remediation and closure are implemented and tested, with an end-to-end lifecycle test. Open items are manual user steps (VM runner redeploy, real-target acceptance) and the risks listed as open in the audit matrix. Authorisation creation has an API but no UI form. Neither website registration nor authorisation approval starts a scan.
+
+## Phase 2: DETECT (what a scan finds)
+
+A scan now runs six steps against the **one IP pinned at the start of the scan**, in Python only (no Nmap, Docker or VM), inside the existing `scan-worker`:
+
+1. **Ports:** an asyncio TCP connect scan of the fixed top-1,000 Nmap ports (`backend/app/data/top_ports.py`, generated once from Nmap's `nmap-services`; the app never downloads it) plus Redis (6379) and MongoDB (27017), which the spec calls risky but Nmap's default list omits (1,002 ports). Pro and above can request a full 1â€“65535 scan through the API (`POST /websites/{id}/scan` with `{"scan_type": "full"}`); there is no UI for it yet and Free is refused.
+2. **Versions:** per open port (3 s limit each): the banner (SSH, FTP, SMTP, POP3, IMAP, MySQL, others), `HEAD /` and `GET /` for web servers, and a TLS handshake that records the TLS version, cipher and the certificate's subject, issuer and expiry. Harmless probes only; no logins, no attack payloads; cookie values are never kept.
+3. **Technologies:** fingerprints from headers, cookies, meta tags, script and CSS paths and a few known files, defined in the editable `backend/app/data/fingerprints.json` (the 21 starter technologies from the spec).
+4. **Exposed files:** a fixed list of paths, each confirmed by its content (not a 200 status), with a soft-404 baseline. File contents are never stored.
+5. **Email and DNS:** SPF, DMARC, DKIM (common selectors), CAA and MX via this machine's resolver (never a third-party DNS-over-HTTPS service).
+6. **Subdomains:** listed from certificate-transparency logs (crt.sh gets only the domain name; 6 s timeout, "could not check" if slow). Only listed, never scanned.
+
+Limits are in settings (`SCAN_CONNECT_CONCURRENCY` 100, `SCAN_PORT_TIMEOUT_SECONDS` 1.5, `SCAN_PORTS_PER_SECOND` 300, `SCAN_PROBE_TIMEOUT_SECONDS` 3, `SCAN_BANNER_MAX_BYTES` 1024, `CRTSH_TIMEOUT_SECONDS` 6, `SCAN_GUARD_POLL_SECONDS` 1, plus the existing `SCAN_TIME_LIMIT_SECONDS`). A step that fails or times out is **"could not check"**, never "clean": a scan is "completed" only if every step finished, and otherwise "incomplete" with the reasons.
+
+**Long checks stop cleanly.** A guard re-reads the database about every second and before each step and batch. If the website is removed, ownership verification is lost (or a test target's owner stops being an active admin), the owner is disabled, the scan is taken over, or the time limit passes, the running step is cancelled (closing its connections), nothing further is contacted, partial results are kept, and the scan ends **incomplete** with the reason. Removal ends the scan record immediately and the worker stops within about a second.
+
+**Known limitation (Windows host):** Windows takes about 2 s to report a refused connection, longer than the 1.5 s port timeout, so closed ports are counted as "not answering" instead of "closed" and a standard scan takes about 15 s. Open ports are unaffected. Setting `SCAN_PORT_TIMEOUT_SECONDS=2.5` classifies refusals exactly, at the cost of speed (a full 65,535-port scan would then exceed the 15-minute limit).
+
+Results are stored in `scan_ports`, `scan_technologies` and `scan_observations` (migration `0018_detect_results`) and shown on the website page; `GET /websites/{id}/scans/{scan_id}` returns them.
 
 ## Milestone 1: scanner worker hardening (Module D)
 
@@ -153,10 +173,10 @@ npm install
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m app.cli.backup_database      # verified copy of the SQLite file, outside the repository
-.\.venv\Scripts\python.exe -m alembic upgrade head          # head is 0017_website_removal
+.\.venv\Scripts\python.exe -m alembic upgrade head          # head is 0018_detect_results
 ```
 
-To restore a backup: stop the API and all workers, then copy the backup file over `backend\snwebshield_dev.db` and check out the code that matches it (for `0016` and `0017`, the commit before Phase 1).
+To restore a backup: stop the API and all workers, then copy the backup file over `backend\snwebshield_dev.db` and check out the code that matches it (for `0016` to `0018`, the commit before Phase 1).
 
 Back up before every migration. Migrations are additive and downgrades are refused; to go back, restore the backup together with the matching code. The API refuses to start if a required table is missing.
 
@@ -210,6 +230,7 @@ Restart the API and the assessment worker after changing `.env` or upgrading. Ke
 | `EMAIL_VERIFICATION_HOURS` (24), `PASSWORD_RESET_MINUTES` (60) | Lifetime of emailed links |
 | `SIGNUP_MAX_PER_IP` (5), `ACCOUNT_EMAIL_MAX_PER_IP` (10), `SIGNUP_WINDOW_MINUTES` (60) | Sign-up and account-email rate limits |
 | `OWNERSHIP_CACHE_HOURS` (24), `OWNERSHIP_HTTP_TIMEOUT_SECONDS` (8) | How long a verification is trusted before a scan re-checks it; file/meta fetch timeout |
+| `SCAN_CONNECT_CONCURRENCY` (100), `SCAN_PORT_TIMEOUT_SECONDS` (1.5), `SCAN_PORTS_PER_SECOND` (300), `SCAN_PROBE_TIMEOUT_SECONDS` (3), `SCAN_PROBE_CONCURRENCY` (8), `SCAN_BANNER_MAX_BYTES` (1024), `SCAN_HTTP_BODY_MAX_BYTES` (262144), `SCAN_HTTP_REQUEST_TIMEOUT_SECONDS` (3), `SCAN_DNS_TIMEOUT_SECONDS` (3), `CRTSH_TIMEOUT_SECONDS` (6), `SCAN_GUARD_POLL_SECONDS` (1) | Detection limits (Phase 2) |
 | `SCAN_MAX_CONCURRENT` (3), `SCAN_TIME_LIMIT_SECONDS` (900), `SERVER_PUBLIC_IPS` | Scans running at once on the server; total time per scan (past it the result is "incomplete"); this server's public IPs, never scanned |
 | `NOTIFICATION_CHANNEL`, `NOTIFICATION_RECIPIENT` | Legacy monitoring notifications (dashboard by default) |
 | `ASSESSMENT_LOCAL_HTTP_ENABLED` (false) | Fixed local single-HEAD profile |
@@ -231,7 +252,7 @@ npm run test:e2e                              # optional Chromium journeys (Play
 
 Run `pytest`, `npm test` and `npm run build` strictly one after another; running them together can exhaust memory on this machine.
 
-The legacy analyst-pipeline suites are listed in `collect_ignore` in `backend/tests/conftest.py`: they exercise the removed written-permission system and stay in the repository until Phases 2–4 replace that code. Phase 1 tests: `test_accounts.py`, `test_websites.py`, `test_website_removal.py`, `test_ownership.py`, `test_scans.py`, `test_legacy_read_only.py`, `test_auth.py`, `test_migrations.py`, and `frontend/tests/account.test.js`.
+The legacy analyst-pipeline suites are listed in `collect_ignore` in `backend/tests/conftest.py`: they exercise the removed written-permission system and stay in the repository until Phases 2â€“4 replace that code. Phase 1 tests: `test_accounts.py`, `test_websites.py`, `test_website_removal.py`, `test_test_targets.py`, `test_detect_*.py`, `test_scan_stops_cleanly.py`, `test_scan_now.py`, `test_ownership.py`, `test_scans.py`, `test_legacy_read_only.py`, `test_auth.py`, `test_migrations.py`, and `frontend/tests/account.test.js`.
 
 ### 7. Deploy or update the isolated scanner container on the Azure VM
 

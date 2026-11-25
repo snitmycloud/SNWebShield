@@ -1,4 +1,4 @@
-"""Removing a website: typed confirmation, verification and pending scans cleared, history and audit kept,
+﻿"""Removing a website: typed confirmation, verification and pending scans cleared, history and audit kept,
 the plan slot freed, owner-only, and nothing can scan a removed website."""
 from datetime import timedelta
 
@@ -138,7 +138,7 @@ def test_a_running_scan_becomes_a_past_record_and_a_late_worker_result_cannot_ov
     assert result["running_scans_stopped"] == 1
     with SessionLocal() as db:
         kept = db.get(Scan, "r" * 36)
-        assert kept.status == "refused" and kept.result["code"] == "website_removed" and kept.claim_token is None
+        assert kept.status == "incomplete" and kept.result["code"] == "website_removed" and kept.claim_token is None
         assert kept.ended_at is not None and "removed" in kept.message
     # The worker that was running it finishes later: it has lost its claim and must change nothing.
     assert scans.execute("r" * 36, "token-1", resolve=lambda d: [PUBLIC], verify=lambda db, w: (True, "cached")) == "lost_claim"

@@ -5,7 +5,7 @@ scan type, start, end and result. Execution events add the step-by-step trail.
 """
 from datetime import datetime
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Index, String, Text, text
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -43,6 +43,48 @@ class Scan(Base):
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     progress: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class ScanPort(Base):
+    """One OPEN port found by a scan. Closed and filtered ports are counted in the scan's result, not stored."""
+    __tablename__ = "scan_ports"
+    __table_args__ = (UniqueConstraint("scan_id", "port", name="uq_scan_port"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    scan_id: Mapped[str] = mapped_column(ForeignKey("scans.id", ondelete="RESTRICT"), index=True)
+    port: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(10), default="open")
+    service: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    product: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    version: Mapped[str | None] = mapped_column(String(120), nullable=True)   # None = "not disclosed"
+    banner: Mapped[str | None] = mapped_column(Text, nullable=True)          # plain text, cut to 1 KB
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)        # tls, http headers, cookie names and flags
+
+
+class ScanTechnology(Base):
+    __tablename__ = "scan_technologies"
+    __table_args__ = (UniqueConstraint("scan_id", "name", name="uq_scan_technology"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    scan_id: Mapped[str] = mapped_column(ForeignKey("scans.id", ondelete="RESTRICT"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    category: Mapped[str] = mapped_column(String(60))
+    version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source: Mapped[str] = mapped_column(String(20))
+    evidence: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class ScanObservation(Base):
+    """DNS/email records, exposed files and listed subdomains. `kind` is dns | exposed_file | subdomain."""
+    __tablename__ = "scan_observations"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    scan_id: Mapped[str] = mapped_column(ForeignKey("scans.id", ondelete="RESTRICT"), index=True)
+    kind: Mapped[str] = mapped_column(String(20), index=True)
+    key: Mapped[str] = mapped_column(String(253))
+    status: Mapped[str] = mapped_column(String(20))
+    data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class RetiredTable(Base):

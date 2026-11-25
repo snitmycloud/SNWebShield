@@ -1,16 +1,19 @@
-"""Self-service scans (Phase 1: the safe start of every scan; the actual checks arrive in Phase 2).
+"""Self-service scans: the safe start of every scan, then the DETECT steps (Phase 2).
 
 Safety, fail closed:
-* only websites with verified ownership, scanned for the account that owns them;
+* only websites with verified ownership (or an approved admin test target), scanned for the account that owns them;
 * ownership is re-checked before every scan (cached 24 h); a definite failure marks it lost and pauses scans;
 * the domain is resolved once per scan, every answer must be a public address, and only the stored IP is used;
 * at most one scan per website (a unique index) and at most SCAN_MAX_CONCURRENT on the server;
-* a total time limit: past it, or if the worker dies, the result is "incomplete", never "safe".
+* a total time limit, and a guard that stops a running scan cleanly if the website is removed or verification is lost
+  (see scan_guard.py). A stopped scan keeps its partial results, marked incomplete with the reason, never "clean".
 
 Every scan row is the audit record (user, website, IP, type, start, end, result) and each step also writes an
 execution event.
 """
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 import time
 from uuid import uuid4
 
@@ -24,8 +27,9 @@ from app.models.admin import Admin
 from app.models.jobs import ExecutionEvent
 from app.models.scan import ACTIVE_SCAN_STATES, Scan
 from app.models.website import Website
-from app.services import ip_policy, ownership
+from app.services import ip_policy, ownership, plans
 from app.services import job_engine as engine
+from app.services.scan_guard import ScanGuard, ScanStopped, stop_latency_seconds
 
 WORKER_NAME = "scan-worker"
 
@@ -36,19 +40,30 @@ MESSAGES = {
     "could_not_recheck": "We could not re-check your ownership verification right now, so this scan did not run. "
                          "It is not a problem with your website's security; try again later.",
     "owner_mismatch": "This scan no longer matches the website's owner, so it was not run.",
-    "website_removed": "The website was removed from the account, so this scan was stopped.",
+    "website_removed": "The website was removed from the account, so this scan was stopped. "
+                       "Results found so far are kept and are incomplete.",
+    "stopped_verification_lost": "The scan stopped because ownership verification is no longer valid. "
+                                 "Results found so far are kept and are incomplete.",
+    "stopped_owner_disabled": "The scan stopped because the account was disabled. "
+                              "Results found so far are kept and are incomplete.",
+    "plan_feature": "Your plan does not include this kind of scan, so it was not run.",
     "dns_lookup_failed": "We could not find this domain's address in DNS, so the scan could not run.",
     "private_or_reserved_address": "This domain points to a private or reserved network address. "
                                    "SNWebShield only scans public addresses.",
     "cloud_metadata_address": "This domain points to a cloud internal address. SNWebShield will not scan it.",
     "server_own_address": "This domain points to SNWebShield's own server, which is never scanned.",
-    "time_limit": "The scan reached its time limit before finishing. Results are incomplete.",
+    "time_limit": "The scan reached its time limit before finishing. Results found so far are kept and are incomplete.",
     "worker_stopped": "The scan stopped unexpectedly before finishing. Results are incomplete.",
     "internal_error": "Something went wrong while scanning. Results are incomplete; please try again.",
-    "checks_not_available": "Ownership confirmed and your website's public address checked. "
-                            "Detailed security checks (ports, versions, technologies) are not switched on yet, "
-                            "so this scan is incomplete. It does not mean your website is safe.",
+    "some_checks_incomplete": "Some checks could not be completed, so the results are incomplete. "
+                              "It does not mean your website is safe.",
+    "detect_completed": "Detection finished. This is a list of what we found, not a security verdict: "
+                        "vulnerability checks come in a later update.",
 }
+
+STOP_MESSAGES = {"verification_lost": "stopped_verification_lost", "owner_disabled": "stopped_owner_disabled",
+                 "website_removed": "website_removed", "time_limit": "time_limit", "internal_error": "internal_error",
+                 "scan_taken_over": "worker_stopped"}
 
 
 def serial(scan: Scan) -> dict:
@@ -71,6 +86,32 @@ def is_test_target(website: Website) -> bool:
     return website.verification_method == "test_target" and website.domain in settings.approved_test_targets
 
 
+def _day_start(now):
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _next_reset(now) -> str:
+    return (_day_start(now) + timedelta(days=1)).isoformat()
+
+
+def _count_events(db, action: str, *, since, resource_ids=None, actor_id=None) -> int:
+    conditions = [ExecutionEvent.action == action, ExecutionEvent.occurred_at >= since]
+    if resource_ids is not None:
+        conditions.append(ExecutionEvent.resource_id.in_(resource_ids))
+    if actor_id is not None:
+        conditions.append(ExecutionEvent.actor_id == actor_id)
+    return db.scalar(select(func.count()).select_from(ExecutionEvent).where(*conditions)) or 0
+
+
+def _test_target_used(db, website: Website, now) -> int:
+    same_domain = select(Website.id).where(Website.domain == website.domain)
+    return _count_events(db, "scan_requested", since=_day_start(now), resource_ids=same_domain)
+
+
+def _scan_limit_error(message: str, **extra) -> HTTPException:
+    return HTTPException(429, {"code": "scan_limit", "message": message, **extra})
+
+
 def _enforce_test_target_quota(db, website: Website, now) -> None:
     """At most TEST_TARGET_SCANS_PER_DAY scans of one approved test target per UTC day, across all accounts.
 
@@ -79,17 +120,14 @@ def _enforce_test_target_quota(db, website: Website, now) -> None:
     """
     if website.domain not in settings.approved_test_targets:
         return
-    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    same_domain = select(Website.id).where(Website.domain == website.domain)
-    used = db.scalar(select(func.count()).select_from(ExecutionEvent).where(
-        ExecutionEvent.action == "scan_requested", ExecutionEvent.resource_id.in_(same_domain),
-        ExecutionEvent.occurred_at >= start)) or 0
-    if used >= settings.test_target_scans_per_day:
-        raise HTTPException(429, f"Test target limit reached: {website.domain} can be scanned at most "
-                                 f"{settings.test_target_scans_per_day} times per day (UTC). Try again tomorrow.")
+    if _test_target_used(db, website, now) >= settings.test_target_scans_per_day:
+        raise _scan_limit_error(
+            f"Test target limit reached: {website.domain} can be scanned at most "
+            f"{settings.test_target_scans_per_day} times per day (UTC). Try again tomorrow.",
+            scope="test_target", remaining=0, resets_at=_next_reset(now))
 
 
-def request_scan(db, website: Website, trigger: str) -> Scan:
+def request_scan(db, website: Website, trigger: str, scan_type: str = "standard") -> Scan:
     """Queue a scan. Requires verified ownership; returns the already active scan instead of a second one."""
     if website.removed_at is not None or website.verification_status != "verified" or not website.owner_id:
         raise HTTPException(409, MESSAGES["not_verified"])
@@ -98,7 +136,7 @@ def request_scan(db, website: Website, trigger: str) -> Scan:
         return existing
     now = utc_now()
     _enforce_test_target_quota(db, website, now)
-    scan = Scan(id=str(uuid4()), website_id=website.id, owner_id=website.owner_id, scan_type="standard",
+    scan = Scan(id=str(uuid4()), website_id=website.id, owner_id=website.owner_id, scan_type=scan_type,
                 trigger=trigger, status="queued", requested_at=now,
                 progress={"step": "queued", "message": "Waiting to start…"})
     try:
@@ -116,11 +154,77 @@ def request_scan(db, website: Website, trigger: str) -> Scan:
     return scan
 
 
+# --- "Scan now" ------------------------------------------------------------------------------------------
+
+def scan_now_status(db, website: Website, account: Admin) -> dict:
+    """What the Scan now button shows: whether it may be used, how many scans are left today, and why not."""
+    now = utc_now()
+    plan = plans.get(account.plan)
+    limit = int(plan.get("manual_scans_per_day", 0))
+    scope = plan.get("manual_scans_per", "account")
+    since = _day_start(now)
+    if scope == "website":
+        same_site = select(Website.id).where(Website.owner_id == website.owner_id, Website.domain == website.domain)
+        used = _count_events(db, "manual_scan_requested", since=since, resource_ids=same_site)
+    else:
+        used = _count_events(db, "manual_scan_requested", since=since, actor_id=account.id)
+    remaining = max(0, limit - used)
+    test_remaining = None
+    if website.domain in settings.approved_test_targets:
+        test_remaining = max(0, settings.test_target_scans_per_day - _test_target_used(db, website, now))
+        remaining = min(remaining, test_remaining)
+    status = {"limit": limit, "scope": scope, "remaining": remaining, "plan_label": plan["label"],
+              "resets_at": _next_reset(now), "test_target_remaining": test_remaining,
+              "allowed": True, "reason": None, "message": None}
+    if website.verification_status != "verified":
+        status.update(allowed=False, reason="not_verified", message="Verify ownership of this website first.")
+    elif active_scan(db, website.id) is not None:
+        status.update(allowed=False, reason="scan_running", message="A scan is already running for this website.")
+    elif remaining <= 0:
+        status.update(allowed=False, reason="limit_reached", message=limit_message(plan, scope, test_remaining == 0))
+    return status
+
+
+def limit_message(plan: dict, scope: str, test_target: bool = False) -> str:
+    if test_target:
+        return (f"This test target can be scanned at most {settings.test_target_scans_per_day} times per day (UTC). "
+                "Try again tomorrow.")
+    where = "for this website" if scope == "website" else "on your account"
+    return (f"You have used all {plan.get('manual_scans_per_day')} manual scans {where} today on the {plan['label']} plan. "
+            "They reset at 00:00 UTC. Upgrade for more scans.")
+
+
+def request_manual_scan(db, website: Website, account: Admin, scan_type: str = "standard") -> tuple[Scan, dict, bool]:
+    """The Scan now button. Returns (scan, status_after, already_running). Limits come from plans.json."""
+    plan = plans.get(account.plan)
+    if scan_type == "full":
+        if is_test_target(website):
+            raise HTTPException(422, "Test targets only allow standard scans.")
+        if not plan.get("full_port_scan"):
+            raise HTTPException(402, {"code": "plan_feature", "plan": plan["name"], "plan_label": plan["label"],
+                                      "message": "Full port scans (all 65,535 ports) are available on the Pro and "
+                                                 "Business plans. Upgrade to use them."})
+    status = scan_now_status(db, website, account)
+    if status["reason"] == "not_verified":
+        raise HTTPException(409, status["message"])
+    if status["reason"] == "scan_running":
+        return active_scan(db, website.id), status, True
+    if status["reason"] == "limit_reached":
+        raise _scan_limit_error(status["message"], scope=status["scope"], remaining=0, limit=status["limit"],
+                                plan_label=status["plan_label"], resets_at=status["resets_at"])
+    scan = request_scan(db, website, "manual", scan_type)
+    engine.event(db, "manual_scan_requested", resource_id=website.id, actor_id=account.id,
+                 detail={"scan_id": scan.id, "scan_type": scan_type, "domain": website.domain})
+    db.flush()  # sessions do not auto-flush: make the new event count in the "scans left" shown next to the button
+    return scan, scan_now_status(db, website, account), False
+
+
 def discard_for_removal(db, website: Website) -> dict:
     """Stop the website's unfinished scans because its owner removed it. Finished scans are never touched.
 
-    A queued scan never started, so it is deleted. A running scan is ended as "refused" (the worker's claim is
-    cleared, so a late result from the worker cannot overwrite it) and stays as a past record with its audit entry.
+    A queued scan never started, so it is deleted. A running scan is ended at once as "incomplete" with the reason (its
+    claim is cleared, so a late result from the worker cannot change the status) and stays as a past record with its
+    audit entry. The worker notices within about a second (scan_guard), stops, and saves what it had found so far.
     """
     now = utc_now()
     deleted = db.execute(delete(Scan).where(Scan.website_id == website.id, Scan.status == "queued")
@@ -128,8 +232,9 @@ def discard_for_removal(db, website: Website) -> dict:
     stopped = 0
     for scan in list(db.scalars(select(Scan).where(Scan.website_id == website.id, Scan.status == "running"))):
         changed = db.execute(update(Scan).where(Scan.id == scan.id, Scan.status == "running").values(
-            status="refused", ended_at=now, claim_token=None, lease_until=None, message=MESSAGES["website_removed"],
-            result={"code": "website_removed"}, progress={"step": "finished", "message": "Stopped"})
+            status="incomplete", ended_at=now, claim_token=None, lease_until=None, message=MESSAGES["website_removed"],
+            result={"code": "website_removed", "stopped_step": (scan.progress or {}).get("step")},
+            progress={"step": "finished", "message": "Stopped"})
             .execution_options(synchronize_session=False))
         if changed.rowcount:
             db.expire(scan)
@@ -179,7 +284,6 @@ def claim(db, now=None):
     if candidate is None:
         return None
     token = str(uuid4())
-    from datetime import timedelta
     changed = db.execute(update(Scan).where(Scan.id == candidate.id, Scan.status == "queued").values(
         status="running", claim_token=token, started_at=now,
         lease_until=now + timedelta(seconds=settings.scan_time_limit_seconds + 60),
@@ -204,11 +308,23 @@ def _progress(db, scan_id, token, step, message):
     db.commit()
 
 
-def _finish(db, scan_id, token, status, code, **extra):
+def _write_progress(scan_id, token, step, message) -> None:
+    """Progress is cosmetic: a failure to write it never affects the scan."""
+    from app.db.session import SessionLocal
+    for attempt in range(3):  # a brief database lock must not leave a stale label on screen
+        try:
+            with SessionLocal() as db:
+                _progress(db, scan_id, token, step, message)
+            return
+        except Exception:
+            time.sleep(0.05 * (attempt + 1))
+
+
+def _finish(db, scan_id, token, status, code, message=None, **extra):
     now = utc_now()
     changed = db.execute(update(Scan).where(Scan.id == scan_id, Scan.claim_token == token, Scan.status == "running")
                          .values(status=status, ended_at=now, claim_token=None, lease_until=None,
-                                 message=MESSAGES[code], result={"code": code, **extra},
+                                 message=message or MESSAGES[code], result={"code": code, **extra},
                                  progress={"step": "finished", "message": "Finished"})
                          .execution_options(synchronize_session=False))
     if changed.rowcount == 1:
@@ -218,10 +334,59 @@ def _finish(db, scan_id, token, status, code, **extra):
     return changed.rowcount == 1
 
 
-def execute(scan_id: str, token: str, *, resolve=ip_policy.resolve_public, verify=ownership.ensure_verified) -> str:
+async def _drive(ctx, state, guard, detect) -> None:
+    """Run the detection steps with the guard watching. If the guard must stop the scan, the running step is cancelled."""
+    work = asyncio.create_task(detect(ctx, state, guard))
+    watcher = asyncio.create_task(guard.watch(work))
+    try:
+        await work
+    except ScanStopped:
+        pass
+    except asyncio.CancelledError:
+        if guard.stop is None:
+            raise
+    finally:
+        watcher.cancel()
+        await asyncio.gather(watcher, return_exceptions=True)
+
+
+def _conclude(db, scan_id, token, website_id, state, guard, meta) -> str:
+    from app.services.detect_runner import STEP_NAMES
+    extra = {"steps": state.steps, "ports": state.ports.summary(), "counts": state.counts(), **meta}
+    stop = guard.stop
+    if stop is not None:
+        engine.event(db, "scan_worker_stopped", resource_id=website_id, detail={
+            "scan_id": scan_id, "code": stop.code, "stopped_step": state.current,
+            "seconds_since_removal": stop_latency_seconds(stop), **state.counts()})
+        db.commit()
+        key = STOP_MESSAGES.get(stop.code, "internal_error")
+        # After a removal or takeover the scan is already finished by whoever did that; this is then a no-op.
+        _finish(db, scan_id, token, "incomplete", stop.code, message=MESSAGES[key], stopped_step=state.current, **extra)
+        return "incomplete"
+    unfinished = state.incomplete_steps()
+    if unfinished:
+        names = ", ".join(STEP_NAMES[name].lower() for name in unfinished)
+        _finish(db, scan_id, token, "incomplete", "some_checks_incomplete",
+                message=f"We could not finish these checks: {names}. Results are incomplete. "
+                        "It does not mean your website is safe.", **extra)
+        return "incomplete"
+    counts = state.counts()
+    _finish(db, scan_id, token, "completed", "detect_completed",
+            message=(f"Detection finished: {counts['open_ports']} open port(s), {counts['technologies']} "
+                     f"technolog{'y' if counts['technologies'] == 1 else 'ies'}, {counts['exposed_files']} exposed file(s) "
+                     "or page(s) found. This lists what we found; it is not a security verdict. "
+                     "Vulnerability checks come in a later update."), **extra)
+    return "completed"
+
+
+def execute(scan_id: str, token: str, *, resolve=ip_policy.resolve_public, verify=ownership.ensure_verified,
+            detect=None) -> str:
     """Run one claimed scan. Returns the final status. Never raises."""
     from app.db.session import SessionLocal
+    from app.services import detect_runner
+    detect = detect or detect_runner.run
     deadline = time.monotonic() + settings.scan_time_limit_seconds
+    ready = None
     with SessionLocal() as db:
         try:
             scan = _owned(db, scan_id, token)
@@ -245,6 +410,14 @@ def execute(scan_id: str, token: str, *, resolve=ip_policy.resolve_public, verif
                                  detail={"scan_id": scan_id})
                 _finish(db, scan_id, token, "refused", reason)
                 return "refused"
+            if scan.scan_type == "full":  # re-checked at run time: the plan may have changed since it was requested
+                try:
+                    full_ok = bool(plans.get(owner.plan).get("full_port_scan")) and not is_test_target(website)
+                except HTTPException:
+                    full_ok = False
+                if not full_ok:
+                    _finish(db, scan_id, token, "refused", "plan_feature")
+                    return "refused"
             if time.monotonic() > deadline:
                 _finish(db, scan_id, token, "incomplete", "time_limit")
                 return "incomplete"
@@ -262,11 +435,8 @@ def execute(scan_id: str, token: str, *, resolve=ip_policy.resolve_public, verif
             if time.monotonic() > deadline:
                 _finish(db, scan_id, token, "incomplete", "time_limit")
                 return "incomplete"
-
-            # Phase 2 adds the DETECT checks here, each bounded by the remaining time.
-            _finish(db, scan_id, token, "incomplete", "checks_not_available",
-                    all_addresses=addresses[:8], ownership=reason)
-            return "incomplete"
+            ready = (website.id, website.domain, addresses[0], scan.scan_type,
+                     {"ownership": reason, "all_addresses": addresses[:8]})
         except Exception:
             db.rollback()
             try:
@@ -274,6 +444,23 @@ def execute(scan_id: str, token: str, *, resolve=ip_policy.resolve_public, verif
             except Exception:
                 db.rollback()
             return "incomplete"
+
+    website_id, domain, ip, scan_type, meta = ready
+    state = detect_runner.ScanState()
+    ctx = detect_runner.ScanContext(scan_id=scan_id, domain=domain, ip=ip, scan_type=scan_type,
+                                    progress=lambda step, message: _write_progress(scan_id, token, step, message))
+    guard = ScanGuard(scan_id, token, deadline)
+    try:
+        asyncio.run(_drive(ctx, state, guard, detect))
+        with SessionLocal() as db:
+            return _conclude(db, scan_id, token, website_id, state, guard, meta)
+    except Exception:
+        try:
+            with SessionLocal() as db:
+                _finish(db, scan_id, token, "incomplete", "internal_error", steps=state.steps)
+        except Exception:
+            pass
+        return "incomplete"
 
 
 class Worker:

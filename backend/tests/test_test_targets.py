@@ -1,4 +1,4 @@
-"""Approved test targets (scanme.nmap.org): admin accounts only, labelled, fixed list, 2 scans a day, every scan audited."""
+﻿"""Approved test targets (scanme.nmap.org): admin accounts only, labelled, fixed list, 2 scans a day, every scan audited."""
 from datetime import timedelta
 
 import pytest
@@ -220,7 +220,7 @@ def test_at_most_two_test_target_scans_per_day(client):
     with SessionLocal() as db, pytest.raises(Exception) as refused:
         scans.request_scan(db, db.get(Website, site["id"]), "manual")
     assert getattr(refused.value, "status_code", None) == 429
-    assert "at most 2 times per day" in refused.value.detail
+    assert "at most 2 times per day" in refused.value.detail["message"] and refused.value.detail["code"] == "scan_limit"
     with SessionLocal() as db:
         assert len(db.scalars(select(Scan).where(Scan.website_id == site["id"])).all()) == 2
 
