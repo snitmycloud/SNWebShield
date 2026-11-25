@@ -23,6 +23,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.time import as_utc, utc_now
+from app.models.admin import Admin
 from app.models.website import Website
 from app.services import domains, ip_policy
 
@@ -281,7 +282,8 @@ def covering_website(db, website: Website) -> Website | None:
     for parent in db.scalars(select(Website).where(Website.owner_id == website.owner_id, Website.domain.in_(candidates),
                                                    Website.verification_status == "verified",
                                                    Website.removed_at.is_(None))):
-        if parent.verification_method != "parent" and domains.covers(parent.domain, website.domain):
+        # A test target proves nothing about its subdomains, so it never covers them.
+        if parent.verification_method not in ("parent", "test_target") and domains.covers(parent.domain, website.domain):
             return parent
     return None
 
@@ -312,6 +314,14 @@ def ensure_verified(db, website: Website, now=None) -> tuple[bool, str]:
     """
     now = now or utc_now()
     if website.verification_status != "verified":
+        return False, "not_verified"
+    if website.verification_method == "test_target":
+        # No DNS proof exists for a test target: it is allowed only while the domain is on the fixed approved list
+        # and its owner is a currently active admin account.
+        owner = db.get(Admin, website.owner_id) if website.owner_id else None
+        if (website.domain in settings.approved_test_targets and owner is not None
+                and owner.is_active and owner.role == "admin"):
+            return True, "test_target"
         return False, "not_verified"
     if website.verification_method == "parent":
         parent = covering_website(db, website)

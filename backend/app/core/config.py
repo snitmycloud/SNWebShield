@@ -9,6 +9,13 @@ from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# Fixed list of approved test targets: addresses the project that owns them publicly allows scanning for testing.
+# It is a constant in code, not a setting that can be read from .env or changed from the app. Only `admin`
+# accounts can use it, at most TEST_TARGET_SCANS_PER_DAY scans per target per UTC day, and every scan is audited.
+APPROVED_TEST_TARGETS = ("scanme.nmap.org",)  # published by the Nmap project for test scans
+TEST_TARGET_SCANS_PER_DAY = 2
+
+
 class Settings(BaseSettings):
     app_name: str = "SNWebShield API"
     app_version: str = "0.1.0"
@@ -88,6 +95,15 @@ class Settings(BaseSettings):
             if not re.fullmatch(r"https?://[A-Za-z0-9.-]+(:\d{1,5})?", origin):
                 raise ValueError("CORS_ORIGINS must be comma-separated http(s) origins without wildcards or paths")
         return value
+
+    @property
+    def approved_test_targets(self) -> tuple[str, ...]:
+        """Read-only. There is no environment variable or API for this list."""
+        return APPROVED_TEST_TARGETS
+
+    @property
+    def test_target_scans_per_day(self) -> int:
+        return TEST_TARGET_SCANS_PER_DAY
 
     @property
     def cors_origin_list(self) -> list[str]:

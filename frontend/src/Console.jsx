@@ -129,7 +129,8 @@ function DashboardView({ account, websites, plan, loading, onOpen, onAdd }) {
       : <div className="sw-cards">{websites.map(site => {
         const v = verificationView(site), s = scanView(site.latest_scan);
         return <button key={site.id} className="panel sw-card" onClick={() => onOpen(site.id)}>
-          <div className="sw-card-top"><div className="site-icon"><Globe2 size={17} /></div><strong>{site.domain || site.name}</strong><ChevronRight size={16} /></div>
+          <div className="sw-card-top"><div className="site-icon"><Globe2 size={17} /></div><strong>{site.domain || site.name}</strong>
+            {site.test_target && <Badge tone="info">Test target</Badge>}<ChevronRight size={16} /></div>
           <div className="sw-card-row"><span>Ownership</span><Badge tone={v.tone}>{v.label}</Badge></div>
           <div className="sw-card-row"><span>Last scan</span><Badge tone={s.tone}>{s.label}</Badge></div>
           <p className="sw-card-text">{site.verification_status === "verified" ? s.text : v.text}</p>
@@ -251,7 +252,8 @@ function WebsiteDetail({ id, onBack, onChanged, onRemoved }) {
   return <>
     <button className="text-button sw-back" onClick={onBack}>← All websites</button>
     <Heading eyebrow="WEBSITE" title={site.domain || site.name} text={v.text}
-      action={<div className="sw-heading-actions"><Badge tone={v.tone}>{v.label}</Badge>
+      action={<div className="sw-heading-actions">{site.test_target && <Badge tone="info">Test target</Badge>}
+        {!site.test_target && <Badge tone={v.tone}>{v.label}</Badge>}
         <button className="secondary-button sw-remove-button" onClick={() => setRemoving(true)}>Remove website</button></div>} />
     {removing && <RemoveDialog site={site} onClose={() => setRemoving(false)} onRemoved={onRemoved} />}
     {site.verification_status === "lost" && site.verification_result?.message && <div className="sw-result bad" role="alert">
@@ -274,7 +276,8 @@ function WebsitesView({ websites, plan, loading, openId, onOpen, onAdded, onLimi
       <tbody>{loading ? <tr><td colSpan={5}><div className="loading-rows"><div /><div /></div></td></tr>
         : websites.length ? websites.map(site => {
           const v = verificationView(site), s = scanView(site.latest_scan);
-          return <tr key={site.id}><td><div className="website-cell"><div className="site-icon"><Globe2 size={16} /></div><strong>{site.domain || site.name}</strong></div></td>
+          return <tr key={site.id}><td><div className="website-cell"><div className="site-icon"><Globe2 size={16} /></div><strong>{site.domain || site.name}</strong>
+              {site.test_target && <Badge tone="info">Test target</Badge>}</div></td>
             <td><Badge tone={v.tone}>{v.label}</Badge></td><td><Badge tone={s.tone}>{s.label}</Badge></td><td>{when(site.created_at)}</td>
             <td className="sw-row-actions"><button className="secondary-button" onClick={() => onOpen(site.id)}>{site.verification_status === "verified" ? "Open" : "Verify"}</button>
               <button className="secondary-button sw-remove-button" aria-label={`Remove ${site.domain || site.name}`} onClick={() => setRemoving(site)}>Remove</button></td></tr>;
