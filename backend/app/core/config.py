@@ -73,7 +73,8 @@ class Settings(BaseSettings):
     ownership_http_timeout_seconds: float = Field(default=8.0, ge=1, le=30)
     scan_max_concurrent: int = Field(default=3, ge=1, le=20)
     scan_max_per_website: Literal[1] = 1  # enforced by a unique index on active scans
-    scan_time_limit_seconds: int = Field(default=900, ge=30, le=7200)
+    scan_time_limit_seconds: int = Field(default=900, ge=30, le=7200)            # standard scan: 15 minutes
+    scan_full_time_limit_seconds: int = Field(default=3600, ge=60, le=14400)     # full 1-65535 scan: 60 minutes
     # --- Detection limits (Phase 2) ---
     scan_connect_concurrency: int = Field(default=100, ge=1, le=500)
     scan_port_timeout_seconds: float = Field(default=1.5, ge=0.2, le=10)

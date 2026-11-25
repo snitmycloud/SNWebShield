@@ -59,7 +59,7 @@ class FakeNet:
             self.inflight -= 1
 
 
-def start_scan(client, headers, domain="example.com", *, ports=(), test_target=False):
+def start_scan(client, headers, domain="example.com", *, ports=(), test_target=False, scan_type="standard"):
     site = client.post(W, headers=headers, json={"domain": domain}).json()
     with SessionLocal() as db:
         row = db.get(Website, site["id"])
@@ -67,7 +67,7 @@ def start_scan(client, headers, domain="example.com", *, ports=(), test_target=F
         row.verified_at = row.verification_checked_at = utc_now()
         db.query(Scan).filter_by(website_id=row.id).delete()  # drop the automatic first scan; this test controls it
         db.commit()
-        scan = scans.request_scan(db, row, "manual")
+        scan = scans.request_scan(db, row, "manual", scan_type)
         db.commit()
         scan_id = scan.id
     with SessionLocal() as db:
@@ -332,3 +332,51 @@ def test_an_unreadable_database_fails_closed_after_repeated_failures():
         assert guard.stop is None  # one hiccup does not stop a scan
     guard.poll()
     assert guard.stop.code == "internal_error"
+
+
+# --- time limits: 15 minutes for a standard scan, 60 minutes for a full scan --------------------------------------
+
+def test_the_default_limits_are_15_and_60_minutes():
+    assert settings.scan_time_limit_seconds == 900 and settings.scan_full_time_limit_seconds == 3600
+    assert scans.time_limit_for("standard") == 900 and scans.time_limit_for("full") == 3600
+
+
+def test_a_full_scan_is_leased_for_60_minutes_and_a_standard_scan_for_15(client):
+    _, _, headers = account_headers(client, plan="pro")
+    for scan_type, minutes in (("standard", 15), ("full", 60)):
+        site = client.post(W, headers=headers, json={"domain": f"{scan_type}.example.com"}).json()
+        with SessionLocal() as db:
+            row = db.get(Website, site["id"])
+            row.verification_status, row.verification_method = "verified", "dns"
+            db.query(Scan).filter_by(website_id=row.id).delete()
+            scans.request_scan(db, row, "manual", scan_type)
+            db.commit()
+        with SessionLocal() as db:
+            claimed = scans.claim(db)
+            scan = db.get(Scan, claimed[0])
+            lease_seconds = (scan.lease_until.replace(tzinfo=None) - scan.started_at.replace(tzinfo=None)).total_seconds()
+        assert abs(lease_seconds - (minutes * 60 + 60)) < 5, (scan_type, lease_seconds)
+        with SessionLocal() as db:
+            db.get(Scan, claimed[0]).status = "incomplete"
+            db.commit()
+
+
+def test_a_standard_scan_stops_at_its_limit_but_a_full_scan_keeps_going_to_its_own(client, monkeypatch):
+    monkeypatch.setattr(settings, "scan_time_limit_seconds", 1)        # stands in for 15 minutes
+    monkeypatch.setattr(settings, "scan_full_time_limit_seconds", 5)   # stands in for 60 minutes
+    net = FakeNet(monkeypatch)
+    _, _, headers = account_headers(client, plan="pro")
+
+    started = time.monotonic()
+    site, scan_id, thread, outcome = start_scan(client, headers, "standard.example.com", ports=list(range(1000, 1200)))
+    took = finished_within(thread, outcome, started, 6)
+    assert scan_row(scan_id).result["code"] == "time_limit" and took < 4.0  # stopped near its 1-second limit
+
+    started = time.monotonic()
+    site, scan_id, thread, outcome = start_scan(client, headers, "full.example.com", ports=list(range(1000, 1200)), scan_type="full")
+    time.sleep(2.5)
+    assert thread.is_alive() and scan_row(scan_id).status == "running"  # past the standard limit, still within the full one
+    took = finished_within(thread, outcome, started, 8)
+    scan = scan_row(scan_id)
+    assert scan.status == "incomplete" and scan.result["code"] == "time_limit" and 4.0 <= took < 8.0
+    assert net.inflight == 0

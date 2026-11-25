@@ -23,6 +23,8 @@ test("ports are described in plain language, never as TCP/port jargon", () => {
   assert.match(describePort({ port: 3389 }).sentence, /Remote Desktop is open to the internet/);
   assert.match(describePort({ port: 443, service: "https", http: { over_tls: true } }).sentence, /Your website is reachable securely on port 443/);
   assert.equal(describePort({ port: 80, service: "http" }).label, "Website (HTTP)");
+  assert.match(describePort({ port: 2375, service: "docker" }).sentence, /Docker.s remote control port is open to the internet/);
+  assert.equal(describePort({ port: 11211, service: "memcached" }).sentence, "Your database port is open to the internet.");
   assert.match(describePort({ port: 9929, service: "nping-echo" }).sentence, /guessed from the port number/);
   for (const port of [21, 22, 25, 445, 3306, 3389, 8080, 31337]) assert.doesNotMatch(describePort({ port }).sentence, /TCP\//);
 });

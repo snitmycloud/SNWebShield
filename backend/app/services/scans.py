@@ -86,6 +86,11 @@ def is_test_target(website: Website) -> bool:
     return website.verification_method == "test_target" and website.domain in settings.approved_test_targets
 
 
+def time_limit_for(scan_type: str) -> int:
+    """Total time a scan may run before it ends incomplete: standard 15 minutes, full (all 65,535 ports) 60 minutes."""
+    return settings.scan_full_time_limit_seconds if scan_type == "full" else settings.scan_time_limit_seconds
+
+
 def _day_start(now):
     return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -286,7 +291,7 @@ def claim(db, now=None):
     token = str(uuid4())
     changed = db.execute(update(Scan).where(Scan.id == candidate.id, Scan.status == "queued").values(
         status="running", claim_token=token, started_at=now,
-        lease_until=now + timedelta(seconds=settings.scan_time_limit_seconds + 60),
+        lease_until=now + timedelta(seconds=time_limit_for(candidate.scan_type) + 60),
         progress={"step": "starting", "message": "Starting…"}).execution_options(synchronize_session=False))
     if changed.rowcount != 1:
         db.rollback()
@@ -385,13 +390,15 @@ def execute(scan_id: str, token: str, *, resolve=ip_policy.resolve_public, verif
     from app.db.session import SessionLocal
     from app.services import detect_runner
     detect = detect or detect_runner.run
-    deadline = time.monotonic() + settings.scan_time_limit_seconds
+    began = time.monotonic()
+    deadline = began + settings.scan_time_limit_seconds
     ready = None
     with SessionLocal() as db:
         try:
             scan = _owned(db, scan_id, token)
             if scan is None:
                 return "lost_claim"
+            deadline = began + time_limit_for(scan.scan_type)  # 15 minutes for a standard scan, 60 for a full scan
             website = db.get(Website, scan.website_id)
             owner = db.get(Admin, scan.owner_id)
             if website is not None and website.removed_at is not None:

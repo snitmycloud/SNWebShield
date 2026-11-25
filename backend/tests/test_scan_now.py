@@ -229,7 +229,7 @@ def test_pro_and_business_can_queue_a_full_scan(client, plan):
 
 
 def test_the_full_scan_covers_every_port_and_the_standard_scan_does_not():
-    assert len(ports_for("full")) == 65535 == len(FULL_PORTS) and len(ports_for("standard")) == len(STANDARD_PORTS) == 1002
+    assert len(ports_for("full")) == 65535 == len(FULL_PORTS) and len(ports_for("standard")) == len(STANDARD_PORTS) == 1004
 
 
 def test_a_full_scan_is_refused_again_at_run_time_if_the_plan_was_downgraded(client):

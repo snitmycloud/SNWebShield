@@ -66,7 +66,8 @@ def run_scan(client, headers, ports, monkeypatch, domain="example.com"):
         claimed = scans.claim(db)
 
     async def detect(ctx, state, guard):
-        ctx.ports = tuple(ports)
+        if ports:  # None means: the real standard port list
+            ctx.ports = tuple(ports)
         await detect_runner.run(ctx, state, guard)
 
     status = scans.execute(*claimed, resolve=lambda d: ["127.0.0.1"], verify=lambda db, w: (True, "cached"), detect=detect)
@@ -193,3 +194,27 @@ def test_results_are_visible_only_to_the_owner_and_staff(client, monkeypatch):
     _, _, second = account_headers(client)
     other_site = client.post(W, headers=second, json={"domain": "another.example.com"}).json()
     assert client.get(f"{W}/{other_site['id']}/scans/{scan_id}", headers=second).status_code == 404  # wrong website
+
+
+def test_the_standard_scan_reports_ports_open_like_scanmes_including_31337(client, monkeypatch):
+    """scanme.nmap.org has 22, 80, 9929 and 31337 open. The whole standard scan, with its real port list, must report all four."""
+    fake_dns(monkeypatch)
+    fake_crtsh(monkeypatch)
+    with BackgroundServer(banner_handler(b"SSH-2.0-OpenSSH_6.6.1p1 Ubuntu\r\n")) as ssh, \
+            BackgroundServer(http_handler({"/": (200, HTML, b"<html></html>")})) as web, \
+            BackgroundServer(banner_handler(b"\x00")) as nping, BackgroundServer(banner_handler(b"hello\r\n")) as elite:
+        mapping = {22: ssh.port, 80: web.port, 9929: nping.port, 31337: elite.port}
+        real = netio.open_connection
+
+        async def fake(ip, port, **kwargs):
+            if port in mapping:
+                return await real(ip, mapping[port], **kwargs)
+            raise ConnectionRefusedError
+
+        monkeypatch.setattr(netio, "open_connection", fake)
+        _, _, headers = account_headers(client)
+        site, scan_id, status = run_scan(client, headers, None, monkeypatch)
+    body = client.get(f"{W}/{site['id']}/scans/{scan_id}", headers=headers).json()
+    assert [p["port"] for p in body["ports"]] == [22, 80, 9929, 31337]
+    assert body["scan"]["result"]["ports"]["planned"] == 1004 and body["scan"]["result"]["ports"]["open"] == 4
+    assert body["scan"]["result"]["steps"]["ports"]["state"] == "ok"

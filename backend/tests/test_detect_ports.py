@@ -1,4 +1,4 @@
-"""Port scan: the fixed Nmap top-1000 list, open / closed / filtered, the limits, and clean cancellation."""
+﻿"""Port scan: the fixed Nmap top-1000 list, open / closed / filtered, the limits, and clean cancellation."""
 import asyncio
 import errno
 import time
@@ -19,9 +19,12 @@ def test_the_fixed_port_lists():
     assert all(1 <= p <= 65535 for p in TOP_TCP_PORTS)
     assert set(TOP_TCP_PORTS[:10]) == {80, 23, 443, 21, 22, 25, 3389, 110, 445, 139}  # Nmap's ten most common
     assert {22, 80, 443, 3306, 5432, 1433, 9200, 8080, 31337}.issubset(TOP_TCP_PORTS)
-    # The spec's risky database ports that Nmap's default list omits are added, and only those.
-    assert EXTRA_RISKY_PORTS == (6379, 27017)
-    assert len(STANDARD_PORTS) == 1002 and set(STANDARD_PORTS) == set(TOP_TCP_PORTS) | {6379, 27017}
+    # Risky-service ports that Nmap's default list omits are added, and only those (9200 Elasticsearch is already in it).
+    assert EXTRA_RISKY_PORTS == (6379, 27017, 11211, 2375)
+    assert {9200, 3306, 5432, 1433, 23, 21, 3389, 445, 139}.issubset(TOP_TCP_PORTS)
+    assert len(STANDARD_PORTS) == 1004 and set(STANDARD_PORTS) == set(TOP_TCP_PORTS) | {6379, 27017, 11211, 2375}
+    assert len(set(STANDARD_PORTS)) == len(STANDARD_PORTS)
+    assert 31337 in STANDARD_PORTS and 9929 in STANDARD_PORTS  # scanme.nmap.org's ports
     assert ports_for("standard") == STANDARD_PORTS
     assert ports_for("full") == FULL_PORTS and len(FULL_PORTS) == 65535 and FULL_PORTS[0] == 1 and FULL_PORTS[-1] == 65535
 
@@ -166,3 +169,48 @@ def test_progress_is_reported(monkeypatch):
     seen = []
     scan(list(range(1, 400)), concurrency=5, progress=lambda r: seen.append((r.done, r.total)))
     assert seen and seen[-1] == (399, 399) and all(total == 399 for _, total in seen)
+
+
+class _Accepted:
+    """A connection that was accepted (what an open port looks like to the scanner)."""
+    def close(self):
+        pass
+
+    async def wait_closed(self):
+        pass
+
+
+def test_a_port_open_like_scanmes_31337_is_reported_by_a_full_standard_scan(monkeypatch):
+    open_like_scanme = {22, 80, 9929, 31337}
+
+    async def fake(ip, port, **kwargs):
+        if port in open_like_scanme:
+            return object(), _Accepted()
+        raise ConnectionRefusedError  # everything else is closed
+
+    monkeypatch.setattr(netio, "open_connection", fake)
+    result = scan(list(STANDARD_PORTS))
+    assert result.open == [22, 80, 9929, 31337]
+    assert result.done == result.total == len(STANDARD_PORTS) == 1004 and result.closed == 1000 and result.errors == 0
+
+
+@pytest.mark.parametrize("port", [31337, 9929, 6379, 27017, 11211, 2375, 9200])
+def test_every_extra_and_unusual_port_is_reported_when_open(monkeypatch, port):
+    async def fake(ip, p, **kwargs):
+        if p == port:
+            return object(), _Accepted()
+        raise ConnectionRefusedError
+
+    monkeypatch.setattr(netio, "open_connection", fake)
+    assert scan(list(STANDARD_PORTS)).open == [port]
+
+
+def test_a_port_that_answers_slowly_but_within_the_timeout_is_still_reported(monkeypatch):
+    async def fake(ip, p, **kwargs):
+        if p == 31337:
+            await asyncio.sleep(0.4)  # a distant server
+            return object(), _Accepted()
+        raise ConnectionRefusedError
+
+    monkeypatch.setattr(netio, "open_connection", fake)
+    assert scan(list(STANDARD_PORTS), timeout=1.5).open == [31337]

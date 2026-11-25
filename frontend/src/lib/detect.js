@@ -14,6 +14,7 @@ const KNOWN = {
   143: ["Email (IMAP)", "Email retrieval (IMAP) is open to the internet."],
   139: ["Windows file sharing", "Windows file sharing is open to the internet."],
   445: ["Windows file sharing (SMB)", "Windows file sharing (SMB) is open to the internet."],
+  2375: ["Docker remote control", "Docker's remote control port is open to the internet. Anyone who can reach it may be able to control your server."],
   3389: ["Remote Desktop", "Remote Desktop is open to the internet."],
   5900: ["Remote screen (VNC)", "Remote screen sharing (VNC) is open to the internet."],
 };
