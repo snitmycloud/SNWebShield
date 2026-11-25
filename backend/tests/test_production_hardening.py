@@ -626,7 +626,7 @@ def test_migration_0013_preserves_data_swaps_constraints_and_keeps_triggers(tmp_
     migrate(path)
     migrate(path)  # idempotent
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0013_production_hardening"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0014_fix_verification_signoff"
         assert db.execute("SELECT password_hash, role FROM admins WHERE id = 7").fetchone() == ("preserved-hash", "admin")
         for role in ("lead_analyst", "analyst"):
             db.execute("INSERT INTO admins (email,full_name,password_hash,role,is_active) VALUES (?, 'N', 'h', ?, 1)", (f"{role}@example.com", role))

@@ -108,6 +108,23 @@ class AssessmentClosure(Base):
     content_sha256: Mapped[str] = mapped_column(String(64))
 
 
+class FixVerificationSignoff(Base):
+    """A second person's decision on a retest's `verified_fixed` result. Append-only, one per retest."""
+    __tablename__ = "fix_verification_signoffs"
+    __table_args__ = (
+        UniqueConstraint("retest_id", name="uq_signoff_retest"),
+        CheckConstraint("decision IN ('confirmed','rejected')", name="ck_signoff_decision"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    vulnerability_id: Mapped[str] = mapped_column(ForeignKey("vulnerabilities.id", ondelete="RESTRICT"), index=True)
+    retest_id: Mapped[str] = mapped_column(ForeignKey("retest_requests.id", ondelete="RESTRICT"))
+    decision: Mapped[str] = mapped_column(String(12))
+    signed_by: Mapped[int] = mapped_column(ForeignKey("admins.id", ondelete="RESTRICT"))
+    signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    note: Mapped[str] = mapped_column(Text)
+    evidence_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
 def _append_only(mapper, connection, target):
     raise ValueError(f"{type(target).__name__} records are append-only")
 
@@ -124,7 +141,7 @@ def _retest_frozen(mapper, connection, target):
             raise ValueError(f"Retest column '{name}' is frozen after the request")
 
 
-for _model in (RemediationEvent, AssessmentClosure):
+for _model in (RemediationEvent, AssessmentClosure, FixVerificationSignoff):
     event.listen(_model, "before_update", _append_only)
     event.listen(_model, "before_delete", _append_only)
 event.listen(VulnerabilityRemediation, "before_delete", _no_delete)
@@ -159,3 +176,13 @@ for _model in (VulnerabilityRemediation, RetestRequest, RemediationEvent, Assess
     for _sql in trigger_sql():
         if f" ON {_model.__tablename__} " in _sql:
             event.listen(_model.__table__, "after_create", DDL(_sql).execute_if(dialect="sqlite"))
+
+
+def signoff_trigger_sql():
+    """Kept apart from trigger_sql(): migration 0013 re-creates that set, before this table exists."""
+    return [f"CREATE TRIGGER IF NOT EXISTS trg_fix_verification_signoffs_no_{verb.lower()} BEFORE {verb} ON fix_verification_signoffs "
+            f"BEGIN SELECT RAISE(ABORT, 'fix_verification_signoffs is append-only'); END" for verb in ("UPDATE", "DELETE")]
+
+
+for _sql in signoff_trigger_sql():
+    event.listen(FixVerificationSignoff.__table__, "after_create", DDL(_sql).execute_if(dialect="sqlite"))

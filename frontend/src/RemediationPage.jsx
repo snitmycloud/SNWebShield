@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./lib/api.js";
 import { humanize, safeText } from "./lib/workbench.js";
-import { REMEDIATION_STATUSES, buildClosure, buildClosureReopening, buildReopen, buildRetest, buildUpdate, canClose, closureSummary,
+import { REMEDIATION_STATUSES, buildFixVerification, buildClosure, buildClosureReopening, buildReopen, buildRetest, buildUpdate, canClose, closureSummary,
   outcomeLabel, reportableAssessment, statusLabel, updateOptions } from "./lib/remediation.js";
 import "./assessments.css";
 import "./findings.css";
@@ -67,6 +67,27 @@ function ReopenForm({ item, busy, onSubmit }) {
     {error && <p role="alert" className="form-error">{error}</p>}
     <label>Reason<textarea aria-label="Reopen reason" required minLength={20} maxLength={4000} value={reason} onChange={event => setReason(event.target.value)} /></label>
     <button>Reopen finding</button>
+  </fieldset></form>;
+}
+
+function FixVerificationForm({ item, busy, onSubmit }) {
+  const [form, setForm] = useState({ decision: "confirmed", note: "", attested: false }), [error, setError] = useState("");
+  const state = item.fix_verification;
+  if (!state?.applicable) return null;
+  if (state.state === "confirmed") return <p data-testid="fix-signoff-done">Fix verification confirmed by {safeText(state.signed_by_name ?? "a second analyst")} {when(state.signed_at)}.</p>;
+  return <form aria-label="Fix verification sign-off" onSubmit={event => {
+    event.preventDefault();
+    const result = buildFixVerification(item, form);
+    if (result.error) { setError(result.error); return; }
+    setError(""); onSubmit(result.payload);
+  }}><fieldset disabled={busy}><legend>Sign off the verified fix</legend>
+    <p>{state.required ? "A second person must confirm this scanner result before the assessment can be closed." : "Optional while dual sign-off is off."} The person who requested the retest or handled the remediation cannot sign off when dual sign-off is on.</p>
+    {error && <p role="alert" className="form-error">{error}</p>}
+    <label>Decision<select aria-label="Sign-off decision" value={form.decision} onChange={event => setForm({ ...form, decision: event.target.value })}>
+      <option value="confirmed">Confirm the fix is real</option><option value="rejected">Reject and reopen the finding</option></select></label>
+    <label>What you reviewed<textarea aria-label="Sign-off note" required minLength={20} maxLength={4000} value={form.note} onChange={event => setForm({ ...form, note: event.target.value })} /></label>
+    <label className="assessment-check"><input type="checkbox" checked={form.attested} onChange={event => setForm({ ...form, attested: event.target.checked })} />I reviewed the stored retest evidence myself.</label>
+    <button>Record sign-off</button>
   </fieldset></form>;
 }
 
@@ -211,6 +232,8 @@ export default function RemediationPage({ websites = [] }) {
         onSubmit={payload => run(async () => { await api.requestRetest(selected.vulnerability_id, payload); await refreshSelected(); }, "Retest queued. The scanner worker will revalidate the authorisation before it runs.")} />
       <ReopenForm key={`r:${selected.vulnerability_id}:${selected.version}`} item={selected} busy={busy}
         onSubmit={payload => run(async () => { await api.reopenRemediation(selected.vulnerability_id, payload); await refreshSelected(); }, "Finding reopened.")} />
+      <FixVerificationForm key={`f:${selected.vulnerability_id}:${selected.version}`} item={selected} busy={busy}
+        onSubmit={payload => run(async () => { await api.verifyFix(selected.vulnerability_id, payload); await refreshSelected(); }, "Fix verification sign-off recorded in the audit history.")} />
       <button disabled={busy} onClick={() => run(refreshSelected)}>Refresh retest status</button>
 
       <h3>Immutable remediation audit trail</h3>

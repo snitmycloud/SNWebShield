@@ -65,6 +65,17 @@ export function buildReopen(item, form) {
   return { payload: { expected_version: item.version, reason } };
 }
 
+// A scanner-verified fix is confirmed or rejected by a second person. The server enforces who may do it.
+export function buildFixVerification(item, form) {
+  const state = item?.fix_verification;
+  if (!state?.applicable || state.state !== "pending") return { error: "There is no verified fix waiting for sign-off." };
+  if (!["confirmed", "rejected"].includes(form.decision)) return { error: "Choose to confirm or reject the verified fix." };
+  const note = (form.note ?? "").trim();
+  if (note.length < 20) return { error: "Describe what you reviewed in at least 20 characters." };
+  if (!form.attested) return { error: "Confirm that you reviewed the retest evidence yourself." };
+  return { payload: { expected_version: item.version, decision: form.decision, note, human_validation_confirmed: true } };
+}
+
 // Closing needs the server to report no blockers, plus an attested justification.
 export const canClose = state => Boolean(state && state.can_close === true && !state.closed && !(state.blockers?.length));
 

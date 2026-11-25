@@ -135,3 +135,18 @@ test("reopening a closure needs an active closure, an attestation and a real rea
   assert.equal(options.method, "POST");
   assert.equal(options.headers.Authorization, "Bearer synthetic-unit-test-token");
 });
+
+test("fix verification needs a pending verified fix, a decision, a real note and attestation", async () => {
+  const { buildFixVerification } = await import("../src/lib/remediation.js");
+  const item = { version: 4, fix_verification: { applicable: true, state: "pending", required: true } };
+  const good = { decision: "confirmed", note: "I reviewed the stored retest evidence and the header is present.", attested: true };
+  assert.deepEqual(buildFixVerification(item, good).payload,
+    { expected_version: 4, decision: "confirmed", note: good.note, human_validation_confirmed: true });
+  assert.equal(buildFixVerification(item, { ...good, decision: "rejected" }).payload.decision, "rejected");
+  for (const bad of [{ ...good, decision: "maybe" }, { ...good, note: "short" }, { ...good, attested: false }, { ...good, note: "   " }]) {
+    assert.ok(buildFixVerification(item, bad).error, JSON.stringify(bad));
+  }
+  for (const other of [null, {}, { fix_verification: { applicable: false } }, { fix_verification: { applicable: true, state: "confirmed" } }]) {
+    assert.match(buildFixVerification(other, good).error, /no verified fix/);
+  }
+});

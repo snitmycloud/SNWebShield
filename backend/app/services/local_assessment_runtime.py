@@ -128,7 +128,8 @@ class LocalPythonAdapter:
         analysis=invoke("header_analyzer.py",data,permitted,5)
         if analysis!=expected:raise RuntimeFailure("analysis_contract_invalid")
         if not permitted():raise RuntimeFailure("permission_changed")
-        result.pop("facts",None)
+        from app.services.passive_checks import merge
+        analysis=merge(analysis,result,result.pop("facts",None))
         return {"state":"up","mode":"local_http","network_execution":True,
             "outcome":"header_assessment_completed","findings_created":0,
             "report":{"transport":result,"analysis":analysis,"adapter":self.name}}

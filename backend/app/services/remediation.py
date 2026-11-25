@@ -24,8 +24,8 @@ from app.core.time import as_utc, utc_now
 from app.models.assessment import AssessmentReport, AssessmentRequest
 from app.models.client import Client
 from app.models.jobs import Job
-from app.models.remediation import (BLOCKING_STATUSES, AssessmentClosure, RemediationEvent, RetestRequest,
-                                    VulnerabilityRemediation)
+from app.models.remediation import (BLOCKING_STATUSES, AssessmentClosure, FixVerificationSignoff, RemediationEvent,
+                                    RetestRequest, VulnerabilityRemediation)
 from app.models.security import ClosureReopening
 from app.models.vulnerability import Vulnerability, VulnerabilityIngestion, VulnerabilityOccurrence
 from app.models.website import Website
@@ -185,6 +185,76 @@ def reopen(db, vulnerability_id, actor_id, payload):
     except HTTPException:
         db.rollback()
         raise
+    return detail_of(db, vulnerability_id)
+
+
+# --- Independent sign-off of a verified fix --------------------------------------------------
+
+def _latest_verified_retest(db, vulnerability_id):
+    return db.scalar(select(RetestRequest).where(
+        RetestRequest.vulnerability_id == vulnerability_id, RetestRequest.status == "completed",
+        RetestRequest.outcome == "verified_fixed").order_by(RetestRequest.attempt.desc()).limit(1))
+
+
+def fix_verification(db, vulnerability_id, row=None):
+    """Where a `verified_fixed` finding stands on human sign-off. The scanner comparison alone is not final
+    when dual sign-off is enabled: a person who did not do the work must confirm the retest evidence."""
+    row = row if row is not None else current(db, vulnerability_id)
+    if status_of(row) != "verified_fixed":
+        return {"applicable": False, "required": False, "state": "not_applicable"}
+    retest = _latest_verified_retest(db, vulnerability_id)
+    signoff = db.scalar(select(FixVerificationSignoff).where(FixVerificationSignoff.retest_id == retest.id)) if retest else None
+    names = _names(db, [signoff.signed_by]) if signoff else {}
+    return {"applicable": True, "required": rbac.separation_of_duties_enabled(),
+            "retest_id": retest.id if retest else None, "evidence_sha256": retest.evidence_sha256 if retest else None,
+            "state": "confirmed" if signoff is not None and signoff.decision == "confirmed" else "pending",
+            "signed_by": signoff.signed_by if signoff else None,
+            "signed_by_name": names.get(signoff.signed_by) if signoff else None,
+            "signed_at": _iso(signoff.signed_at) if signoff else None, "note": signoff.note if signoff else None}
+
+
+def verify_fix(db, vulnerability_id, actor_id, payload):
+    """Record a second person's decision on the latest verified retest. `rejected` reopens the finding."""
+    from app.services import job_engine
+    vulnerability = confirmed(db, vulnerability_id)
+    closure_lock.assert_unlocked(db, vulnerability_id)
+    row = current(db, vulnerability_id)
+    _expect_version(row, payload.expected_version)
+    if status_of(row) != "verified_fixed":
+        raise HTTPException(409, "Only a finding that a retest verified as fixed can be signed off")
+    retest = _latest_verified_retest(db, vulnerability_id)
+    if retest is None:
+        raise HTTPException(409, "No completed retest supports this verification")
+    if db.scalar(select(FixVerificationSignoff.id).where(FixVerificationSignoff.retest_id == retest.id)):
+        raise HTTPException(409, "This verification was already signed off")
+    note = _clean(payload.note, 4000, 20, "Note")
+    # Whoever requested the retest or touched this finding's remediation cannot be the second person.
+    # An earlier rejection by a reviewer reopens the finding, but reviewing is not doing the work.
+    handled = {actor for actor, detail in db.execute(select(RemediationEvent.actor_id, RemediationEvent.detail).where(
+        RemediationEvent.vulnerability_id == vulnerability_id, RemediationEvent.actor_id.is_not(None)))
+        if not (isinstance(detail, dict) and detail.get("signoff") == "rejected")}
+    involved = {retest.requested_by} | handled
+    rbac.enforce_distinct(actor_id, involved, "sign off a fix verification for work they handled")
+    if payload.decision == "confirmed" and retest.evidence_sha256 is None:
+        raise HTTPException(409, "The retest has no stored evidence to confirm; reject it or request another retest")
+    now = utc_now()
+    try:
+        db.add(FixVerificationSignoff(id=str(uuid4()), vulnerability_id=vulnerability_id, retest_id=retest.id,
+                                      decision=payload.decision, signed_by=actor_id, signed_at=now, note=note,
+                                      evidence_sha256=retest.evidence_sha256))
+        job_engine.event(db, "fix_verification_" + payload.decision, resource_id=vulnerability.website_id, actor_id=actor_id,
+                         detail={"vulnerability_id": vulnerability_id, "retest_id": retest.id,
+                                 "evidence_sha256": retest.evidence_sha256})
+        if payload.decision == "rejected":
+            _move(db, vulnerability_id, row, "reopened", actor_id, "reopened", note,
+                  {"reopened_from": "verified_fixed", "signoff": "rejected", "retest_id": retest.id}, now, client_note=note)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except (IntegrityError, OperationalError) as error:
+        db.rollback()
+        raise HTTPException(409, "The verification was changed concurrently; refresh") from error
     return detail_of(db, vulnerability_id)
 
 
@@ -395,6 +465,7 @@ def detail_of(db, vulnerability_id):
                            for v in [getattr(e, c.name)]}, "actor_name": names.get(e.actor_id) or "system"} for e in events]
     value["retests"] = [_retest_serial(db, r) for r in db.scalars(select(RetestRequest).where(
         RetestRequest.vulnerability_id == vulnerability_id).order_by(RetestRequest.attempt.desc()).limit(50))]
+    value["fix_verification"] = fix_verification(db, vulnerability_id)
     return value
 
 
@@ -450,9 +521,16 @@ def closure_state(db, assessment_id):
         for b in blockers: by[b["status"]] = by.get(b["status"], 0) + 1
         reasons.append(f"{len(blockers)} confirmed finding(s) are unresolved ("
                        + ", ".join(f"{n} {s.replace('_', ' ')}" for s, n in sorted(by.items())) + ").")
+    # With dual sign-off on, a scanner-verified fix is not final until a second person confirms it.
+    signoffs = {f["vulnerability_id"]: fix_verification(db, f["vulnerability_id"]) for f in findings if f["status"] == "verified_fixed"}
+    checks = {f["vulnerability_id"]: f["check_id"] for f in findings}
+    awaiting = [{"vulnerability_id": k, "check_id": checks[k]} for k, v in signoffs.items()
+                if v["required"] and v["state"] != "confirmed"]
+    if awaiting:
+        reasons.append(f"{len(awaiting)} verified fix(es) await independent sign-off.")
     counts = {}
     for f in findings: counts[f["status"]] = counts.get(f["status"], 0) + 1
-    return {"assessment_id": assessment_id, "closed": closure is not None,
+    return {"assessment_id": assessment_id, "signoff_pending": awaiting, "closed": closure is not None,
             "closure": _closure_serial(db, closure) if closure else None, "can_close": not reasons,
             "blocking_reasons": reasons, "blockers": blockers, "confirmed_count": len(findings),
             "status_counts": counts, "unreviewed_count": unreviewed, "findings": findings,

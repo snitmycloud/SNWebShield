@@ -119,6 +119,7 @@ def collect(url, permitted):
         # authentication headers, bodies, Location, CSP nonces or raw header values.
         headers = {}
         locations = []
+        cookies = {"count": 0, "secure_missing": 0, "httponly_missing": 0, "samesite_missing": 0}
         allowed = {"strict-transport-security", "content-security-policy", "x-content-type-options", "x-frame-options", "referrer-policy", "permissions-policy", "server", "x-powered-by"}
         for line in lines[1:-2]:
             if ":" not in line or line[0].isspace() or any(ord(c) < 32 or ord(c) == 127 for c in line):
@@ -127,6 +128,12 @@ def collect(url, permitted):
             if not name or any(not (c.isascii() and (c.isalnum() or c in "!#$%&'*+-.^_`|~")) for c in name):
                 raise ValueError("invalid_response_header")
             name = name.lower()
+            if name == "set-cookie":
+                # Only attribute presence is counted; cookie names and values are discarded unseen.
+                attributes = {part.strip().lower().partition("=")[0] for part in value.split(";")[1:]}
+                cookies["count"] = min(50, cookies["count"] + 1)
+                for flag in ("secure", "httponly", "samesite"):
+                    cookies[flag + "_missing"] += 0 if flag in attributes else 1
             if name == "location":
                 locations.append(value)  # Classified below, then discarded.
             if name in allowed:
@@ -145,6 +152,7 @@ def collect(url, permitted):
             "nosniff": headers.get("x-content-type-options", "").lower() == "nosniff",
             "frame_policy_present": headers.get("x-frame-options", "").lower() in {"deny", "sameorigin"} or "frame-ancestors" in headers.get("content-security-policy", "").lower(),
             "referrer_policy_present": bool(headers.get("referrer-policy")),
+            "cookies": cookies,
         }
         return {"status": status, "connected_ip": address[0], "dns_addresses": sorted({a[0] for _, a in answers}),
                 "headers_sha256": sha256(bytes(data)).hexdigest(), "response_ms": round((time.monotonic() - started) * 1000, 2), "header_bytes": len(data),

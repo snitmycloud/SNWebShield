@@ -114,10 +114,11 @@ class RemoteDockerAdapter:
             if not permitted():
                 raise RemoteFailure("permission_changed", execution)
             completed = True
-            transport.pop("facts", None)
+            from app.services.passive_checks import merge
+            analysis = merge(reply["analysis"], transport, transport.pop("facts", None))  # backend-only extras
             return {"state": "up", "mode": "remote_docker", "network_execution": True,
                     "outcome": "header_assessment_completed", "findings_created": 0,
-                    "report": {"transport": transport, "analysis": reply["analysis"],
+                    "report": {"transport": transport, "analysis": analysis,
                                "adapter": self.name, "execution": execution}}
         except Exception as exc:
             # Disconnection is not evidence that remote removal completed. The runner has

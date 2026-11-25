@@ -121,7 +121,9 @@ def test_completed_assessment_ingests_unconfirmed_normalised_records(network, mo
     client = network[0]
     row = run(network, monkeypatch, ONLY_DISCLOSURE, 0)
     found = records()
-    assert set(found) == set(vulns.CHECKS)  # every failed check, nothing for passing ones
+    # Every failed header check and nothing for passing ones. The three backend-only passive checks
+    # (passive_checks.py) do not fire for this fixture: HTTPS is used, with no certificate date or cookies.
+    assert set(found) == set(vulns.CHECKS) - {"https_in_use", "certificate_expiry", "cookie_flags"}
     for record in found.values():
         assert record.validation_state == "unconfirmed" and record.analyst_severity is None
         assert record.detection_count == 1 and record.last_result == "detected" and record.revision == 1

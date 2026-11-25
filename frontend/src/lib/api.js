@@ -262,6 +262,7 @@ export const api = {
   },
   remediation: id => request(`/remediation/${encodeURIComponent(id)}`),
   updateRemediation: (id, data) => jsonPost(`/remediation/${encodeURIComponent(id)}/update`, data),
+  verifyFix: (id, data) => jsonPost(`/remediation/${encodeURIComponent(id)}/verify-fix`, data),
   reopenRemediation: (id, data) => jsonPost(`/remediation/${encodeURIComponent(id)}/reopen`, data),
   requestRetest: (id, data) => jsonPost(`/remediation/${encodeURIComponent(id)}/retests`, data),
   assessmentClosure: id => request(`/assessments/${encodeURIComponent(id)}/closure`),

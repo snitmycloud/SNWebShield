@@ -38,6 +38,14 @@ class Reopen(BaseModel):
     reason: str = Field(min_length=20, max_length=4000)
 
 
+class FixVerificationPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    expected_version: int = Field(ge=0, strict=True)
+    decision: Literal["confirmed", "rejected"]
+    note: str = Field(min_length=20, max_length=4000)
+    human_validation_confirmed: Literal[True]
+
+
 class RetestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     expected_version: int = Field(ge=0, strict=True)
@@ -84,3 +92,10 @@ def retests(vulnerability_id: UUID, db: Session = Depends(get_db)):
 def request_retest(vulnerability_id: UUID, payload: RetestPayload, db: Session = Depends(get_db),
                    admin: Admin = Depends(require_remediation_role)):
     return service.request_retest(db, str(vulnerability_id), admin.id, payload)
+
+
+@router.post("/{vulnerability_id}/verify-fix")
+def verify_fix(vulnerability_id: UUID, payload: FixVerificationPayload, db: Session = Depends(get_db),
+               admin: Admin = Depends(require_remediation_role)):
+    """A second person confirms (or rejects, which reopens) the scanner's verified-fixed result."""
+    return service.verify_fix(db, str(vulnerability_id), admin.id, payload)

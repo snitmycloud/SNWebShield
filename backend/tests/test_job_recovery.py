@@ -130,14 +130,14 @@ def test_startup_recovery_ingests_a_result_the_crashed_worker_never_ingested(net
     monkeypatch.setattr(vulns, "ingest_after_assessment", original)  # the restarted worker
     assert service.recover_on_start() == 1
     found = records()
-    assert set(found) == set(vulns.CHECKS)
+    assert set(found) == set(vulns.CHECKS) - {"https_in_use", "certificate_expiry", "cookie_flags"}
     assert all(v.validation_state == "unconfirmed" and v.detection_count == 1 for v in found.values())  # never auto-confirmed
     with SessionLocal() as db:
         assert not vulns.pending_reports(db)
         assert db.scalar(select(ExecutionEvent).where(ExecutionEvent.action == "worker_startup_recovery"))
     assert service.recover_on_start() == 0  # idempotent: nothing left, no duplicate occurrences
     with SessionLocal() as db:
-        assert len(list(db.scalars(select(VulnerabilityOccurrence)))) == len(vulns.CHECKS)
+        assert len(list(db.scalars(select(VulnerabilityOccurrence)))) == len(vulns.CHECKS) - 3
         assert len(list(db.scalars(select(VulnerabilityIngestion)))) == 1
     assert row["id"]
 

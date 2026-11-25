@@ -43,7 +43,7 @@ def test_dispositions_revision_history_and_original_report_preserved(completed):
     path = f"/api/v1/assessments/{row['id']}"
     original = client.get(path + "/report/download").content
     summary = client.get(path + "/reviews").json()
-    assert summary["reviewed"] == 0 and summary["total"] == 8
+    assert summary["reviewed"] == 0 and summary["total"] == 9  # 8 header checks + HTTPS use
     first = save(client, row)
     assert first.status_code == 201, first.text
     assert first.json()["revision"] == 1 and first.json()["reviewer_id"] == client.admin_id
@@ -112,7 +112,7 @@ def test_reviewed_export_is_complete_private_immutable_and_hash_checked(complete
     assert downloaded.headers["cache-control"] == "no-store, private"
     assert "attachment" in downloaded.headers["content-disposition"]
     snapshot = downloaded.json()
-    assert snapshot["summary"] == {"total": 8, "reviewed": 8, "analyst_confirmed": 0, "unresolved_confirmed": 0, "resolved": 0}
+    assert snapshot["summary"] == {"total": 9, "reviewed": 9, "analyst_confirmed": 0, "unresolved_confirmed": 0, "resolved": 0}
     assert snapshot["source_report"]["content"]["analysis"]["confirmed_findings"] == 0
     assert save(client, row, expected_revision=1, disposition="confirmed", severity="medium",
                 owner="Security team", remediation_status="in_progress",

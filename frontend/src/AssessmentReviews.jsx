@@ -4,6 +4,7 @@ import { api } from "./lib/api.js";
 const name = check => ({ csp: "CSP", hsts: "HSTS", x_frame_options: "X-Frame-Options",
   csp_frame_ancestors: "CSP frame-ancestors", x_content_type_options: "X-Content-Type-Options",
   referrer_policy: "Referrer-Policy", permissions_policy: "Permissions-Policy", server_disclosure: "Server disclosure",
+  https_in_use: "HTTPS in use", certificate_expiry: "Certificate expiry", cookie_flags: "Cookie flags",
   tcp_port_80: "TCP port 80", tcp_port_443: "TCP port 443" }[check] ?? check);
 const label = value => value.replaceAll("_", " ");
 

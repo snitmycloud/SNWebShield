@@ -51,6 +51,12 @@ CHECKS = {
                            "reliability": 50, "expect": "a policy that disables browser features the site does not use"},
     "server_disclosure": {"title": "Server software disclosed in response headers", "header": "Server and X-Powered-By",
                           "reliability": 70, "expect": "no Server or X-Powered-By header, or a generic value without versions"},
+    "https_in_use": {"title": "Site reached over plain HTTP", "header": "Request scheme",
+                     "reliability": 85, "expect": "an https:// URL, with HTTP redirecting to HTTPS"},
+    "certificate_expiry": {"title": "TLS certificate expires within 30 days", "header": "TLS certificate",
+                           "reliability": 90, "expect": "a certificate with more than 30 days of validity remaining"},
+    "cookie_flags": {"title": "Cookie set without Secure, HttpOnly or SameSite", "header": "Set-Cookie",
+                     "reliability": 55, "expect": "Secure, HttpOnly and SameSite attributes on security-relevant cookies"},
 }
 TRANSITIONS = {
     "unconfirmed": {"confirmed", "false_positive", "not_applicable"},
