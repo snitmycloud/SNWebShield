@@ -1,13 +1,7 @@
-"""Port watch (Option A): explicitly enabled, recurring TCP 80/443 state checks.
+"""Port watch (legacy, retired in Phase 1): read-only history of the old Nmap TCP 80/443 checks.
 
-Nothing here scans by itself. An administrator or lead analyst enables port watch for one website, with a
-written-permission attestation. From then on the scheduler asks for an ordinary Nmap assessment through
-`assessments.create_request`, exactly as a person would, so live authorisation, evidence, UTC dates, exact
-domain, `tcp_port_discovery`, the approved public IPv4 and the explicit-confirmation record are all
-re-checked at request time, again at claim, and again immediately before execution by the worker, which runs
-the scan on the VM under the existing isolation. A failed check blocks the watch and writes an audit event;
-it never falls back or scans anyway. Results are compared with the last known state and every change is
-stored append-only, audited and queued for notification. A change is an observation, not a vulnerability.
+It can no longer be enabled or scheduled (it depended on the removed written-permission system and on
+Nmap/Docker). Past baselines and changes stay readable. Deleted once Phase 2 port checks replace it.
 """
 from datetime import timedelta
 from types import SimpleNamespace
@@ -47,8 +41,13 @@ def diff(previous, current):
     return [{"port": port, "from": previous.get(port), "to": current[port]} for port in PORTS if previous.get(port) != current[port]]
 
 
+RETIRED = {"ready": False, "reason_code": "port_watch_retired", "authorization_id": None,
+           "reason": "Port watch has been retired. Port checks return as part of regular scans in a later update."}
+
+
 def _nmap_readiness(db, actor_id, website_id):
-    return next(p for p in assessments.readiness(db, actor_id, website_id) if p["profile_id"] == assessments.NMAP_PROFILE_ID)
+    # Nmap/Docker port watch is retired (Phase 1): it can never be enabled or scheduled again.
+    return RETIRED
 
 
 def _watch_or_none(db, website_id):
@@ -72,7 +71,7 @@ def describe(db, website_id, actor_id):
     return {"website_id": website_id, "configured": watch is not None, "enabled": bool(watch and watch.enabled),
             "state": watch.state if watch else None,
             "blocked_reason": watch.blocked_reason if watch else None,
-            "blocked_reason_text": assessments.DENIAL_TEXT.get(watch.blocked_reason, watch.blocked_reason) if watch and watch.blocked_reason else None,
+            "blocked_reason_text": watch.blocked_reason if watch and watch.blocked_reason else None,
             "interval_seconds": watch.interval_seconds if watch else DEFAULT_INTERVAL_SECONDS,
             "next_due": iso(watch.next_due) if watch else None, "last_requested_at": iso(watch.last_requested_at) if watch else None,
             "last_checked_at": iso(watch.last_checked_at) if watch else None, "last_outcome": watch.last_outcome if watch else None,
@@ -139,57 +138,9 @@ def _block(db, watch, code, now):
     db.commit()
 
 
-def _request(db, watch, now):
-    reconcile_one(db, watch)
-    if _active_assessment(db, watch.website_id):
-        watch.next_due = now + timedelta(seconds=RETRY_SECONDS)
-        db.commit()
-        return
-    ready = _nmap_readiness(db, watch.enabled_by, watch.website_id)
-    if not ready["ready"]:
-        _block(db, watch, ready["reason_code"] or "permission_not_valid", now)
-        return
-    # Stable across a crash and retry: the same slot can never queue two scans.
-    key = f"portwatch:{watch.website_id}:{watch.revision}:{as_utc(watch.next_due).isoformat()}"
-    website_id, interval, actor = watch.website_id, watch.interval_seconds, watch.enabled_by
-    try:
-        row = assessments.create_request(db, actor, SimpleNamespace(
-            website_id=website_id, authorization_id=ready["authorization_id"], profile_id=assessments.NMAP_PROFILE_ID,
-            idempotency_key=key, note="Scheduled port watch of TCP 80 and 443 (explicitly enabled).",
-            network_permission_confirmed=True))
-    except HTTPException as error:
-        db.rollback()
-        watch = db.get(PortWatch, website_id)
-        detail = str(error.detail)
-        if error.status_code == 429 or "already has a pending" in detail or "concurrently" in detail:
-            watch.next_due = now + timedelta(seconds=RETRY_SECONDS)
-            db.commit()
-        else:
-            _block(db, watch, detail.removeprefix("Assessment blocked: ")[:80], now)
-        return
-    watch = db.get(PortWatch, website_id)
-    watch.last_requested_at, watch.last_assessment_id = now, row.id
-    watch.state, watch.blocked_reason = "active", None
-    watch.next_due = now + timedelta(seconds=interval)
-    engine.event(db, "port_watch_requested", resource_id=website_id, actor_id=actor, detail={"assessment_id": row.id})
-    db.commit()
-
-
 def schedule(db, now=None):
-    """Scheduler hook (every tick): request the next run for each due watch. Cheap when nothing is due."""
-    now = now or utc_now()
-    due = list(db.scalars(select(PortWatch.website_id).where(PortWatch.enabled.is_(True), PortWatch.next_due <= now)
-                          .order_by(PortWatch.next_due).limit(BATCH)))
-    for website_id in due:
-        try:
-            watch = db.get(PortWatch, website_id)
-            if watch is not None and watch.enabled:
-                _request(db, watch, now)
-        except Exception:
-            db.rollback()  # one website's failure must not stop the others; the next tick retries
-            engine.event(db, "port_watch_schedule_failed", resource_id=website_id)
-            db.commit()
-
+    """Retired in Phase 1: port watch no longer requests scans. Kept as a no-op for the scheduler."""
+    return None
 
 # --- Results ---------------------------------------------------------------------------------------
 

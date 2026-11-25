@@ -4,41 +4,24 @@ from fastapi import HTTPException
 from sqlalchemy import select, update
 from app.core.time import as_utc, utc_now
 from app.models.website import Website
-from app.models.evidence import AuthorizationEvidence, EvidenceReview
-from app.models.authorization import WebsiteAuthorization
 from app.models.jobs import Job, JobAttempt
 from app.models.monitoring import MonitoringConfig, MonitoringConsent, MonitoringIncident, NotificationDelivery
-from app.services.evidence import verified_bytes
 from app.services import job_engine as engine
 
 
 def permission(db, config, now=None, verify_file=False):
+    """Legacy monitoring may keep running only while the website's ownership is verified (Phase 1).
+
+    The written-permission evidence it used to require was removed; `verify_file` is ignored. New monitoring
+    cannot be configured (the legacy routes are read-only); Phase 5 replaces this.
+    """
     now = now or utc_now()
     if not config: return False
     consent = db.get(MonitoringConsent, config.consent_id)
     website = db.get(Website, config.website_id)
     if not consent or not website or consent.website_id != website.id or consent.revoked_at or as_utc(consent.expires_at) <= now or consent.url != website.url:
         return False
-    evidence = db.get(AuthorizationEvidence, consent.evidence_id)
-    if not evidence or evidence.state != "available" or evidence.website_id != website.id: return False
-    if verify_file:
-        try: verified_bytes(evidence)
-        except HTTPException: return False
-    return True
-
-
-def reviewed_document(db, website_id, evidence_id, admin_id):
-    evidence = db.get(AuthorizationEvidence, evidence_id)
-    if not evidence or evidence.website_id != website_id or evidence.state != "available":
-        raise HTTPException(422, "Select available evidence belonging to this website")
-    authorization = db.get(WebsiteAuthorization, evidence.authorization_id)
-    review = db.scalar(select(EvidenceReview).where(EvidenceReview.authorization_id == authorization.id,
-        EvidenceReview.revision == authorization.evidence_revision, EvidenceReview.reviewer_id == admin_id,
-        EvidenceReview.decision == "accepted").limit(1))
-    if not review or evidence.id not in review.evidence_ids:
-        raise HTTPException(409, "First inspect and accept this document through the evidence review workflow")
-    verified_bytes(evidence)
-    return evidence
+    return website.verification_status == "verified"
 
 
 def cancel_pending(db, website_id, actor_id=None):

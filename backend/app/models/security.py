@@ -16,7 +16,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.models.evidence import AuthorizationEvidence, EvidenceEvent
 
-AUTH_EVENT_TYPES = ("login_success", "login_failure", "login_inactive", "login_throttled", "logout")
+AUTH_EVENT_TYPES = ("login_success", "login_failure", "login_inactive", "login_throttled", "logout",
+                    # Phase 1 self-service accounts
+                    "login_unverified", "signup", "signup_throttled", "email_verified", "verification_resent",
+                    "password_reset_requested", "password_reset", "password_changed", "account_disabled",
+                    "account_enabled", "plan_changed")
 _TYPE_SQL = "('" + "','".join(AUTH_EVENT_TYPES) + "')"
 EVIDENCE_FROZEN = ("id", "authorization_id", "filename", "media_type", "size", "sha256", "uploader_id", "uploaded_at")
 

@@ -44,6 +44,17 @@ def record(db, event_type, email, ip, *, admin_id=None, reason="", detail=None):
     return row
 
 
+def recent_count(db, event_types, *, ip=None, email=None, minutes=None) -> int:
+    """How many of these events happened within the window, for this address and/or email."""
+    since = utc_now() - timedelta(minutes=minutes or settings.signup_window_minutes)
+    conditions = [AuthEvent.event_type.in_(tuple(event_types)), AuthEvent.occurred_at > since]
+    if ip is not None:
+        conditions.append(AuthEvent.client_ip == ip[:MAX_IP_LENGTH])
+    if email is not None:
+        conditions.append(AuthEvent.email_sha256 == email_digest(email))
+    return int(db.scalar(select(func.count()).select_from(AuthEvent).where(*conditions)) or 0)
+
+
 def retry_after_seconds(db, email, ip) -> int:
     """Seconds until a login attempt would be considered, or 0 when it may proceed."""
     now = utc_now()

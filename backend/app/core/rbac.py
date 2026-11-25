@@ -1,20 +1,10 @@
-"""Role gates and separation of duties, layered on top of session authentication.
+"""Staff role gates for the legacy (read-only) analyst pages, layered on top of session authentication.
 
-Roles (`models.admin.ADMIN_ROLES`):
-
-* `analyst`      - assesses and signs off findings, prepares reports, records remediation and requests
-                   retests. Cannot approve or reject a report, accept a risk, or close/reopen an assessment.
-* `lead_analyst` - everything an analyst can do, plus report approval, risk acceptance and closure.
-* `admin`        - every role (the bootstrap account).
-
-Every route depends on one of the allow-lists below, read at call time, so each is the single source of
-truth. Separation of duties is a separate, configurable rule (`SEPARATION_OF_DUTIES_ENABLED`): when on,
-the same person cannot both prepare and approve (see `enforce_distinct`). With it off a single admin
-can run the whole workflow, which keeps first-time setup usable.
+Customer accounts have the `user` role and never pass `get_current_admin`. Staff roles
+(`models.admin.ADMIN_ROLES`): `analyst`, `lead_analyst` and `admin`. Dual sign-off was removed in Phase 1.
 """
 from fastapi import Depends, HTTPException
 
-from app.core.config import settings
 from app.core.security import get_current_admin
 from app.models.admin import Admin
 
@@ -77,23 +67,6 @@ def require_closure_reopen_role(admin: Admin = Depends(get_current_admin)) -> Ad
     if admin.role not in CLOSURE_REOPEN_ROLES:
         raise HTTPException(status_code=403, detail="Closure reopening role required")
     return admin
-
-
-# --- Separation of duties ---------------------------------------------------------------------
-
-def separation_of_duties_enabled() -> bool:
-    return bool(settings.separation_of_duties_enabled)
-
-
-def enforce_distinct(actor_id: int, prior_ids, action: str) -> None:
-    """Refuse `action` when dual sign-off is on and the actor already took part in the work."""
-    if not separation_of_duties_enabled():
-        return
-    if actor_id in {p for p in prior_ids if p is not None}:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Separation of duties: a second person must {action}; you took part in this work",
-        )
 
 
 INFRASTRUCTURE_ROLES = frozenset({"admin", "lead_analyst"})

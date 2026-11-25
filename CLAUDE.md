@@ -1,28 +1,25 @@
 # SNWebShield Engineering & Security Rules
 **Product Motto:** MONITORS. DETECTS. VALIDATES. PROTECTS.
-**Local Repo:** `C:\SNWebShield-Local` (Windows / PowerShell) | **GitHub:** `https://github.com/snitmycloud/SNWebShield` | **Remote Docker Host:** `azureuser@57.159.27.58`
+**Local Repo:** `C:\SNWebShield-Local` (Windows / PowerShell) | **GitHub:** `https://github.com/snitmycloud/SNWebShield`
+**Product spec:** `docs/SNWEBSHIELD_SPEC.md` — its section 1 rules apply to every task; work one phase at a time.
 
 ## Non-Negotiable Security Invariants
-- Never assess a website without explicit, non-expired, unrevoked written authorisation matching the exact domain scope and allowed methods.
-- Never trigger scans automatically on website registration or authorisation approval; require an explicit assessment request and revalidate permission/UTC dates/scope immediately before execution.
-- Prevent SSRF, DNS rebinding (pin resolved IPs), unsafe HTTP redirects, and command injection.
+- Domain ownership verification (DNS TXT, file or meta tag) is the only approval step. Never scan a website unless the account that owns it has verified ownership; re-check ownership before every scan (24-hour cache) and pause scans when verification is lost.
+- Start the first scan automatically only when ownership verification succeeds; never scan on registration alone. Immediately before execution, re-check the owner, the verification and the resolved IP.
+- Prevent SSRF, DNS rebinding (resolve once per scan and pin that IP), unsafe HTTP redirects, and command injection. Never contact private, loopback, link-local, multicast, cloud-metadata or this server's own addresses.
 - Treat all target HTTP responses, headers, and scanner outputs as untrusted data.
-- Require human analyst validation before marking any vulnerability confirmed or publishing any VAPT report.
+- Fail safe: a check that fails or times out is reported as "could not check" or "incomplete", never "safe" or "clean".
 - Never print, log, or request passwords, `.env` contents, JWT secrets, tokens, or SSH private keys.
-- Maintain complete audit logs for authentication, evidence reviews, assessments, analyst decisions, and remediation actions.
+- Maintain complete audit logs for authentication, ownership checks, scans (user, website, IP, type, start, end, result), admin actions and remediation actions.
 
-## Azure & Docker Constraints
+## Runtime Constraints
 - Keep the React frontend and FastAPI backend running locally on Windows; do not deploy the full stack to Azure.
-- Use `azureuser@57.159.27.58` strictly via SSH for remote Docker scanner execution; never expose Docker TCP port `2375` publicly.
-- Run scanner containers with `--network none` (for header analysis), non-root user, read-only root filesystem, and strict CPU, memory, PID, and timeout limits.
-- Record container execution time and resource usage; never fall back to unrestricted local host execution if Docker/SSH is unavailable.
-- Never create paid Azure resources/registries or delete existing VM containers, images, volumes, or data without explicit approval.
+- Scans run in Python inside the existing worker (standard library plus packages already in the project). Do not add Nmap, Docker or VM execution; ask before adding any new package.
+- The legacy Azure VM (`azureuser@57.159.27.58`) is not used by new code. Never expose Docker TCP port `2375`, create paid Azure resources, or delete existing VM containers, images, volumes or data without explicit approval.
 
 ## Development & Quality Workflow
 - Reuse existing models, migrations, APIs, workers, and frontend components; never rebuild working features.
 - Back up local database files before running schema migrations; preserve all existing data.
-- For every milestone: add migrations, backend unit/API tests, security boundary tests (valid, expired, revoked, out-of-scope auth; worker timeout/cancellation; Docker isolation), frontend tests, and verify the frontend production build.
-- Commit verified milestones locally on a feature branch; never push to GitHub without explicit instruction.
-- Update `docs/AUDIT_MATRIX.md` and `README.md` after every milestone.
-
-- Keep the scanner `Dockerfile` and analysis script version-controlled in the local repo; when modified, sync only that scanner build directory to `azureuser@57.159.27.58` via `scp` and rebuild the scanner image over SSH without touching other VM containers.
+- For every phase: add migrations, backend unit/API tests, security boundary tests (verified, unverified and lost ownership; another user's websites; private/reserved IPs; worker timeout/cancellation), frontend tests, and verify the frontend production build.
+- Commit verified phases locally on a feature branch; never push to GitHub or merge to `main` without explicit instruction.
+- Update `docs/AUDIT_MATRIX.md` and `README.md` after every phase.

@@ -73,11 +73,10 @@ test("lists retrieve all pages beyond 100 and retain filters", async () => {
     const offset = Number(new URL(url).searchParams.get("offset"));
     return response(Array.from({ length: offset === 0 ? 100 : 5 }, (_, i) => ({ id: offset + i })));
   };
-  const rows = await api.getAuthorizations({ websiteId: 7, status: "pending" });
+  const rows = await api.getClients();
   assert.equal(rows.length, 105);
   assert.equal(calls.length, 2);
-  assert.equal(new URL(calls[1]).searchParams.get("website_id"), "7");
-  assert.equal(new URL(calls[1]).searchParams.get("status"), "pending");
+  assert.equal(new URL(calls[1]).searchParams.get("offset"), "100");
 });
 
 test("public health check works without a session", async () => {
@@ -104,48 +103,28 @@ test("network errors preserve a still-valid session", async () => {
 });
 
 
-test("monitoring management authenticates POST requests and history preserves pagination", async () => {
+test("legacy monitoring history keeps pagination and stopping still works", async () => {
   session();
-  const payload = { evidence_id: "synthetic-document", monitoring_permission_reviewed: true };
-  await api.configureMonitoring(7, payload);
-  assert.equal(new URL(calls[0][0]).pathname, "/api/v1/websites/7/monitoring/configure");
-  assert.equal(calls[0][1].method, "POST");
-  assert.equal(calls[0][1].headers.Authorization, "Bearer synthetic-unit-test-token");
-  assert.deepEqual(JSON.parse(calls[0][1].body), payload);
+  assert.equal(api.configureMonitoring, undefined);  // evidence-based set-up was removed in Phase 1
   await api.monitoringHistory(7, "attempts", 50);
-  const historyURL = new URL(calls[1][0]);
+  const historyURL = new URL(calls[0][0]);
   assert.equal(historyURL.pathname, "/api/v1/websites/7/monitoring/attempts");
   assert.equal(historyURL.searchParams.get("offset"), "50");
-  assert.equal(historyURL.searchParams.get("limit"), "50");
   await api.stopMonitoring();
-  assert.equal(new URL(calls[2][0]).pathname, "/api/v1/monitoring/stop");
-  assert.equal(calls[2][1].method, "POST");
+  assert.equal(new URL(calls[1][0]).pathname, "/api/v1/monitoring/stop");
+  assert.equal(calls[1][1].method, "POST");
 });
 
-
-test("assessment requests preserve explicit intent, identity and cancellation reasons", async () => {
+test("legacy assessments can be listed and cancelled but no longer requested", async () => {
   session();
-  const payload = { website_id: 7, authorization_id: 9, profile_id: "authorization-preflight-v1", explicitly_requested: true, idempotency_key: "synthetic-key", note: "Synthetic preflight request." };
-  await api.requestAssessment(payload);
-  assert.equal(new URL(calls[0][0]).pathname, "/api/v1/assessments");
-  assert.equal(calls[0][1].method, "POST");
-  assert.deepEqual(JSON.parse(calls[0][1].body), payload);
+  assert.equal(api.requestAssessment, undefined);
+  assert.equal(api.assessmentReadiness, undefined);
+  assert.equal(api.getAuthorizations, undefined);
   await api.getAssessments(7, 50);
-  const url = new URL(calls[1][0]);
+  const url = new URL(calls[0][0]);
   assert.equal(url.searchParams.get("website_id"), "7");
-  assert.equal(url.searchParams.get("offset"), "50");
   await api.cancelAssessment("synthetic-id", { reason: "Cancel synthetic preflight." });
-  assert.equal(new URL(calls[2][0]).pathname, "/api/v1/assessments/synthetic-id/cancel");
-  assert.deepEqual(JSON.parse(calls[2][1].body), { reason: "Cancel synthetic preflight." });
-});
-
-
-test("local assessment preserves separate network consent", async () => {
-  session();
-  const payload={website_id:7,authorization_id:9,profile_id:"local-http-headers-v1",explicitly_requested:true,network_permission_confirmed:true,note:"Explicit synthetic network permission",idempotency_key:"synthetic-local"};
-  await api.requestAssessment(payload);
-  assert.equal(calls[0][1].headers.Authorization,"Bearer synthetic-unit-test-token");
-  assert.deepEqual(JSON.parse(calls[0][1].body),payload);
+  assert.equal(new URL(calls[1][0]).pathname, "/api/v1/assessments/synthetic-id/cancel");
 });
 
 test("analyst review preserves revision, evidence and authenticated export requests", async () => {

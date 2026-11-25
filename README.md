@@ -1,12 +1,19 @@
 # SNWebShield
 
-**Website Security Assessment & Vulnerability Management Platform**
+**Self-service website security scanner — MONITORS. DETECTS. VALIDATES. PROTECTS.**
 
-Tagline: **Identify. Analyse. Secure.**
+SNWebShield is a self-service website security scanner for website owners. A user signs up, adds their websites, proves they own each one (DNS TXT record, uploaded file or homepage meta tag), and SNWebShield scans it automatically. The product spec and build phases are in [docs/SNWEBSHIELD_SPEC.md](docs/SNWEBSHIELD_SPEC.md).
 
-SNWebShield is an internal platform for a website cybersecurity services team. It manages clients, websites, written authorisation and evidence, consented monitoring, explicitly requested and authorisation-gated security assessments (remote Docker header analysis, restricted Nmap), vulnerability management, a human analyst workbench, human-approved VAPT PDF reports, remediation, scoped retests and assessment closure. Nothing is confirmed or published without a human decision, and nothing scans without an explicit request.
+> Safety principle: domain ownership verification is the only approval step, and nothing is scanned without it. Ownership is re-checked before every scan, only the single public IP resolved at the start of a scan is contacted, private and cloud-internal addresses are refused, and a check that cannot finish is reported as "incomplete", never as "safe".
 
-> Safety principle: SNWebShield must only support assessments that have been explicitly authorised in writing by a person with authority over the target assets. A website URL submitted to the platform is not, by itself, permission to test it.
+### Phase 1 (self-service accounts and ownership): what changed
+
+- **Accounts:** sign up with email and password, confirm the email, sign in and out, forgot/reset password, change password. Passwords use Argon2 and the existing policy; sign-up, login and reset emails are rate-limited. Roles are `user` (customer) and `admin`; the older staff roles `lead_analyst` and `analyst` remain for the read-only legacy pages. Customers see only their own websites and scans and are refused by every staff route.
+- **Plans:** limits live in one file, [backend/app/plans.json](backend/app/plans.json) (Free = 5 websites, Pro = 25, Business = 100), re-read when it changes. New accounts are Free; an admin changes plans on the Admin page. Adding a website past the limit shows a friendly message with an **Upgrade** button.
+- **Websites and verification:** the domain is cleaned up (scheme, path, port, case) and IP addresses, `localhost` and internal names are refused. Each website gets its own random code. "Verify now" checks at once and shows what was found against what was expected; if the file/meta method fails because the site has no valid HTTPS, it points to the DNS TXT method. Verifying `example.com` covers its subdomains; verifying `www.example.com` covers only that host.
+- **Remove website:** the owner can remove a website from its page or the list. They must type the domain to confirm. Removal deletes the website's verification code, deletes its queued scans, ends a running scan, and frees a plan slot. The website row, finished scan records, execution events and the audit log are kept, and `website_removed` (user, domain, time, what was cancelled) is written to the audit log (migration `0017_website_removal`). The same domain can be added again later with a new code.
+- **Automatic first scan:** as soon as verification succeeds, the first scan is queued and run by the new `scan-worker`. In Phase 1 a scan re-checks ownership, resolves and pins one public IP, records the audit entry and ends as **incomplete**; the port, version and technology checks arrive in Phase 2.
+- **Removed:** written authorisations, evidence uploads, approval states, attestation checkboxes, the assessment profile picker and dual sign-off. Their tables and data are kept and listed in `retired_tables` (migration `0016_self_service`). The earlier analyst pipeline (assessments, Docker/Nmap profiles, workbench, VAPT reports, remediation, port watch, monitoring set-up) is **read-only**: staff can still read past data, only "stop" actions work, and it will be deleted after Phases 2–4 replace it.
 
 ## Initial product goals
 
@@ -89,7 +96,9 @@ SNWebShield/
 
 ## Status
 
-**Milestones 1 to 6 complete (Modules A to H plus production hardening).** Authentication, authorisation evidence, monitoring, the scanner worker, vulnerability management, the analyst workbench, VAPT reporting, remediation and closure are implemented and tested, with an end-to-end lifecycle test. Open items are manual user steps (VM runner redeploy, real-target acceptance) and the risks listed as open in the audit matrix. Authorisation creation has an API but no UI form. Neither website registration nor authorisation approval starts a scan.
+**Phase 1 of the self-service spec is implemented on branch `feat/phase1-self-service`** (see the Phase 1 section above and [docs/AUDIT_MATRIX.md](docs/AUDIT_MATRIX.md)). The milestone notes below describe the earlier analyst workflow, which is now read-only.
+
+Earlier status — **Milestones 1 to 6 complete (Modules A to H plus production hardening).** Authentication, authorisation evidence, monitoring, the scanner worker, vulnerability management, the analyst workbench, VAPT reporting, remediation and closure are implemented and tested, with an end-to-end lifecycle test. Open items are manual user steps (VM runner redeploy, real-target acceptance) and the risks listed as open in the audit matrix. Authorisation creation has an API but no UI form. Neither website registration nor authorisation approval starts a scan.
 
 ## Milestone 1: scanner worker hardening (Module D)
 
@@ -143,19 +152,23 @@ npm install
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m app.cli.backup_database      # verified copy of the SQLite file, outside the repository
-.\.venv\Scripts\python.exe -m alembic upgrade head          # head is 0013_production_hardening
+.\.venv\Scripts\python.exe -m alembic upgrade head          # head is 0017_website_removal
 ```
+
+To restore a backup: stop the API and all workers, then copy the backup file over `backend\snwebshield_dev.db` and check out the code that matches it (for `0016` and `0017`, the commit before Phase 1).
 
 Back up before every migration. Migrations are additive and downgrades are refused; to go back, restore the backup together with the matching code. The API refuses to start if a required table is missing.
 
 ### 3. Create accounts
 
+Customers sign up in the browser (`http://127.0.0.1:5173`, "Create an account") and confirm their email. The admin account is created locally:
+
 ```powershell
 cd backend
-.\.venv\Scripts\python.exe -m app.cli.create_admin                    # bootstrap admin
-.\.venv\Scripts\python.exe -m app.cli.create_admin --role lead_analyst
-.\.venv\Scripts\python.exe -m app.cli.create_admin --role analyst
+.\.venv\Scripts\python.exe -m app.cli.create_admin                    # admin (manages users and plans)
 ```
+
+Account emails (confirmation and password reset) go through SMTP when `SMTP_HOST` and `SMTP_SENDER` are set. Otherwise, for development only, each email is saved as a `.eml` file in `MAIL_OUTBOX_DIR` (default `%USERPROFILE%\SNWebShield-Private\outbox`, outside the repository); open it to click the link. To switch to real email, set in `backend\.env`: `SMTP_HOST`, `SMTP_PORT` (465 for SSL or 587 for STARTTLS), `SMTP_SECURITY` (`ssl` or `starttls`), `SMTP_SENDER` (the From address), `SMTP_USERNAME` and `SMTP_PASSWORD` (if your provider needs them), and `FRONTEND_BASE_URL` (the address users open, used in the email links). Restart the API afterwards.
 
 Passwords are typed at a hidden prompt: 12 to 128 characters, at least three of lowercase, uppercase, digits and symbols, not common and not containing the email name.
 
@@ -168,7 +181,9 @@ Passwords are typed at a hidden prompt: 12 to 128 characters, at least three of 
 .\.venv\Scripts\python.exe -m app.cli.operations scheduler
 .\.venv\Scripts\python.exe -m app.cli.operations worker
 .\.venv\Scripts\python.exe -m app.cli.operations notifications
-# Assessment worker: runs scanner jobs, vulnerability ingestion and retest reconciliation (from backend)
+# Scan worker: runs self-service scans (at most SCAN_MAX_CONCURRENT at once). Run one scan-worker process. (from backend)
+.\.venv\Scripts\python.exe -m app.cli.operations scan-worker
+# Legacy assessment worker: only cancels leftover queued legacy jobs (optional) (from backend)
 .\.venv\Scripts\python.exe -m app.cli.operations assessment-worker
 # Frontend (from frontend)
 npm run dev        # http://127.0.0.1:5173
@@ -187,9 +202,15 @@ Restart the API and the assessment worker after changing `.env` or upgrading. Ke
 | `CORS_ORIGINS` | Comma-separated frontend origins (`http://localhost:5173,...`); `*` is rejected |
 | `EVIDENCE_ROOT`, `EVIDENCE_MAX_BYTES`, `EVIDENCE_RETENTION_DAYS` | Private evidence storage outside the repository, upload limit, retention |
 | `LOGIN_MAX_FAILURES` (5), `LOGIN_WINDOW_MINUTES` (15) | Login throttling |
-| `SEPARATION_OF_DUTIES_ENABLED` (false) | Dual sign-off for findings, reports and closure |
 | `HSTS_MAX_AGE_SECONDS` | `Strict-Transport-Security` lifetime when served over HTTPS |
-| `NOTIFICATION_CHANNEL`, `NOTIFICATION_RECIPIENT`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SENDER`, `SMTP_USERNAME`, `SMTP_PASSWORD` | Monitoring notifications (dashboard by default) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY` (`ssl`/`starttls`), `SMTP_SENDER`, `SMTP_USERNAME`, `SMTP_PASSWORD` | Account emails (confirmation, password reset) and monitoring notifications |
+| `MAIL_OUTBOX_DIR` | Development only: where account emails are saved when SMTP is not configured (must be outside the repository) |
+| `FRONTEND_BASE_URL` (`http://localhost:5173`) | Address used in email links |
+| `EMAIL_VERIFICATION_HOURS` (24), `PASSWORD_RESET_MINUTES` (60) | Lifetime of emailed links |
+| `SIGNUP_MAX_PER_IP` (5), `ACCOUNT_EMAIL_MAX_PER_IP` (10), `SIGNUP_WINDOW_MINUTES` (60) | Sign-up and account-email rate limits |
+| `OWNERSHIP_CACHE_HOURS` (24), `OWNERSHIP_HTTP_TIMEOUT_SECONDS` (8) | How long a verification is trusted before a scan re-checks it; file/meta fetch timeout |
+| `SCAN_MAX_CONCURRENT` (3), `SCAN_TIME_LIMIT_SECONDS` (900), `SERVER_PUBLIC_IPS` | Scans running at once on the server; total time per scan (past it the result is "incomplete"); this server's public IPs, never scanned |
+| `NOTIFICATION_CHANNEL`, `NOTIFICATION_RECIPIENT` | Legacy monitoring notifications (dashboard by default) |
 | `ASSESSMENT_LOCAL_HTTP_ENABLED` (false) | Fixed local single-HEAD profile |
 | `ASSESSMENT_REMOTE_DOCKER_ENABLED`, `ASSESSMENT_REMOTE_IMAGE_ID`, `ASSESSMENT_REMOTE_REQUIRE_ISOLATION_ATTESTATION` | Remote Docker header analysis on the Azure VM; image ID is the immutable `sha256:` ID of the scanner image |
 | `ASSESSMENT_NMAP_ENABLED`, `ASSESSMENT_NMAP_IMAGE_ID` | Restricted Nmap profile |
@@ -208,6 +229,8 @@ npm run test:e2e                              # optional Chromium journeys (Play
 ```
 
 Run `pytest`, `npm test` and `npm run build` strictly one after another; running them together can exhaust memory on this machine.
+
+The legacy analyst-pipeline suites are listed in `collect_ignore` in `backend/tests/conftest.py`: they exercise the removed written-permission system and stay in the repository until Phases 2–4 replace that code. Phase 1 tests: `test_accounts.py`, `test_websites.py`, `test_website_removal.py`, `test_ownership.py`, `test_scans.py`, `test_legacy_read_only.py`, `test_auth.py`, `test_migrations.py`, and `frontend/tests/account.test.js`.
 
 ### 7. Deploy or update the isolated scanner container on the Azure VM
 
@@ -275,6 +298,10 @@ After updating `scanner/remote_runner.py` and `scanner/nmap/runner.py`, install 
 ## After a worker crash or restart
 
 Start the assessment worker again. It fails any run whose lease expired (once, never repeated), ingests results that were stored but not yet turned into observations, and records a `worker_startup_recovery` audit event. A request that cannot progress is labelled on the Assessments page, and it can be cancelled at any time without a worker.
+
+## Testing
+
+See [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for the step-by-step test process: automated suites, a manual walk through Monitors, Detects, Validates and Protects, negative and security tests, the Azure VM checks, port watch, crash recovery and a results sheet.
 
 ## The four pillars as one cycle
 

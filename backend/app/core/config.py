@@ -47,10 +47,29 @@ class Settings(BaseSettings):
     login_max_failures: int = Field(default=5, ge=1, le=100)
     login_window_minutes: int = Field(default=15, ge=1, le=1440)
 
-    # Dual sign-off. Off by default so a single bootstrap admin can still operate the whole workflow.
-    # When true: the analyst who assessed a finding cannot approve it, the report creator cannot approve
-    # the report, and whoever updated remediation (or accepted risk) cannot close the assessment.
-    separation_of_duties_enabled: bool = False
+    # --- Self-service accounts (Phase 1) ---
+    # Used to build the links in verification and password-reset emails.
+    frontend_base_url: str = Field(default="http://localhost:5173", pattern=r"^https?://[A-Za-z0-9.-]+(:\d{1,5})?$")
+    # Account emails use SMTP when SMTP_HOST and SMTP_SENDER are set; otherwise (development only) each email
+    # is written as a .eml file to this private folder, which must stay outside the repository.
+    mail_outbox_dir: Path = Path.home() / "SNWebShield-Private" / "outbox"
+    smtp_security: Literal["ssl", "starttls"] = "ssl"
+    email_verification_hours: int = Field(default=24, ge=1, le=168)
+    password_reset_minutes: int = Field(default=60, ge=10, le=1440)
+    # Sign-ups per client address, and reset/verification emails per address, within signup_window_minutes.
+    signup_max_per_ip: int = Field(default=5, ge=1, le=1000)
+    account_email_max_per_ip: int = Field(default=10, ge=1, le=1000)
+    signup_window_minutes: int = Field(default=60, ge=1, le=1440)
+
+    # --- Ownership verification and scans ---
+    ownership_cache_hours: int = Field(default=24, ge=1, le=168)
+    ownership_http_timeout_seconds: float = Field(default=8.0, ge=1, le=30)
+    scan_max_concurrent: int = Field(default=3, ge=1, le=20)
+    scan_max_per_website: Literal[1] = 1  # enforced by a unique index on active scans
+    scan_time_limit_seconds: int = Field(default=900, ge=30, le=7200)
+    # Extra addresses of this server (comma-separated) that a scan must never target, on top of its own
+    # interface addresses, which are detected automatically.
+    server_public_ips: str = ""
 
     # Sent only when the API itself is served over HTTPS.
     hsts_max_age_seconds: int = Field(default=31536000, ge=0, le=63072000)

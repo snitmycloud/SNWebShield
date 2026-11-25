@@ -63,16 +63,14 @@ def _detect(db, actor_id, website):
                        .order_by(AssessmentRequest.requested_at.desc()).limit(1))
     job = db.get(Job, latest.job_id) if latest else None
     total = db.scalar(select(func.count()).select_from(AssessmentRequest).where(AssessmentRequest.website_id == website.id))
-    ready = assessments.readiness(db, actor_id, website.id)
-    usable = [p for p in ready if p["ready"]]
-    blocked = next((p for p in ready if not p["ready"] and p["reason_code"] != "assessment_already_active"), None)
+    # Legacy assessments are retired (Phase 1); new scans start from ownership verification on the Websites page.
     return {"total_assessments": total,
             "latest": None if latest is None else {
                 "id": latest.id, "profile_id": latest.profile_id, "status": job.status if job else "unknown",
                 "requested_at": as_utc(latest.requested_at).isoformat(),
                 "completed_at": as_utc(job.completed_at).isoformat() if job and job.completed_at else None},
-            "can_run": bool(usable), "ready_profiles": [p["profile_id"] for p in usable],
-            "blocked_reason": None if usable or blocked is None else blocked["reason"]}
+            "can_run": False, "ready_profiles": [],
+            "blocked_reason": "Legacy assessments are read-only. Verify ownership on the Websites page to scan."}
 
 
 def _validate(db, website):
@@ -110,7 +108,7 @@ def next_step(monitor, detect, validate, protect):
     if latest is None:
         if detect["can_run"]:
             return {"code": "run_assessment", "message": "Run the first authorised assessment."}
-        return {"code": "fix_permission", "message": detect["blocked_reason"] or "Add and approve written authorisation first."}
+        return {"code": "fix_permission", "message": detect["blocked_reason"] or "Verify ownership on the Websites page."}
     if latest["status"] in ("queued", "running"):
         return {"code": "wait_for_assessment", "message": "An assessment is in progress. Check that the assessment worker is running."}
     watch = monitor.get("port_watch") or {}
@@ -120,8 +118,6 @@ def next_step(monitor, detect, validate, protect):
     if validate["awaiting_review"]:
         return {"code": "review_findings", "message": f"{validate['awaiting_review']} observation(s) need analyst validation."}
     counts = protect["status_counts"]
-    if protect["awaiting_signoff"]:
-        return {"code": "sign_off_fix", "message": f"{protect['awaiting_signoff']} verified fix(es) need a second person's sign-off."}
     if counts.get("retest_requested"):
         return {"code": "wait_for_retest", "message": "A retest is running."}
     if counts.get("fix_submitted"):

@@ -14,6 +14,40 @@
 | After Milestone 6 (production hardening) | **580 backend tests (incl. 39 in `test_production_hardening.py` and 1 end-to-end lifecycle test), 53 frontend unit tests, production build: all passing** |
 | Database | Alembic head is `0013_production_hardening` after Milestone 6 (`0012_remediation_retesting` after Milestone 5). Pre-0013 backup: `backups/db-*-pre-0013/` (gitignored, integrity-checked). `0013` was applied to a **copy** of the development database and verified (data, triggers and `integrity_check` intact); the development database file itself is migrated by the operator with `python -m alembic upgrade head` (see Milestone 6 manual steps). |
 
+## Self-service Phase 1 (branch `feat/phase1-self-service`, 2026-11-25)
+
+Product direction changed to the self-service scanner in [SNWEBSHIELD_SPEC.md](SNWEBSHIELD_SPEC.md). Everything below this section describes the earlier analyst workflow, which is now **read-only** (staff can read; only stop actions work) and will be deleted after Phases 2–4 replace it.
+
+| Spec item (Phase 1) | Status | Tests / proof |
+|---|---|---|
+| Sign up, email verification, log in/out, forgot/reset/change password; Argon2; rate-limited sign-up, login and account emails | ✅ | `test_accounts.py`, `test_auth.py`, `test_auth_claims.py`; real run screenshots 01–04 |
+| Roles `user` / `admin`; admin lists users, changes plans, disables accounts (audited); customers refused by every staff route | ✅ | `test_accounts.py::test_admin_*`, `test_only_the_admin_role_manages_users`, `test_auth.py::test_customer_is_refused_by_every_staff_route` |
+| Each user sees only their own websites and scans | ✅ | `test_websites.py::test_each_user_sees_only_their_own_websites`, `test_another_users_verified_parent_covers_nothing` |
+| Plans in one file (`backend/app/plans.json`), Free = 5; friendly limit message with Upgrade button | ✅ | `test_websites.py::test_free_plan_allows_five_websites_*`, `test_plan_limits_are_read_from_the_config_file`; screenshot 07 |
+| Add website: normalise, refuse IPs, `localhost`, internal names | ✅ | `test_websites.py::test_domain_normalisation`, `test_ip_addresses_localhost_and_internal_names_are_refused` |
+| Verify by DNS TXT / file / meta; found vs expected; no-HTTPS → use DNS; parent covers subdomains, `www.` covers only itself | ✅ | `test_ownership.py`, `test_websites.py`; screenshots 05–06b (real DNS and redirect results from snitsolutions.in) |
+| Hardened ownership fetch: one vetted IP, pinned connection, certificate checked, same-host HTTPS redirects only, 256 KB cap | ✅ | `test_ownership.py::test_fetch_*` |
+| Re-check ownership before each scan (24 h cache); lost → scans paused; uncertain → scan refused without declaring loss | ✅ | `test_ownership.py::test_*recheck*`, `test_scans.py::test_lost_verification_refuses_and_pauses` |
+| Automatic first scan on successful verification | ✅ | `test_websites.py::test_successful_verification_starts_the_first_scan_automatically`; real run pending the owner's DNS record |
+| Scan safety: resolve once, refuse private/loopback/link-local/multicast/CGNAT/metadata/own IPs, 1 per website (unique index), 3 per server, time limit → incomplete, worker crash → incomplete, audit per scan | ✅ | `test_scans.py` |
+| Old permission system removed (authorisations, evidence, approvals, attestations, pickers, dual sign-off); tables kept and listed in `retired_tables` | ✅ | `test_auth.py::test_the_written_permission_api_is_gone`, `test_legacy_read_only.py`, `test_migrations.py::test_self_service_migration_*` |
+| Remove website: typed-domain confirmation, owner only, verification deleted, queued scans deleted / running scan stopped, past scans + audit kept, `website_removed` audited, plan slot freed, domain can be re-added, nothing scans a removed site | ✅ | `test_website_removal.py` (20 tests), `test_migrations.py::test_website_removal_migration_*`; real run screenshots 11–14 |
+| Scan checks (ports, versions, technologies) | ❌ Phase 2 | Phase 1 scans end "incomplete" by design |
+
+**Migration `0017_website_removal`** (added `websites.removed_at`; the unique "owner + domain" rule now covers only websites that are not removed). Applied to the development database on 2026-11-25 after a verified backup (`%USERPROFILE%\SNWebShield-Backups\snwebshield-before-auth-correctness-20261125T125230773926Z.db`); counts unchanged, integrity OK.
+
+**Migration `0016_self_service`.** Applied to the development database on 2026-11-25 after a verified backup (`%USERPROFILE%\SNWebShield-Backups\snwebshield-before-auth-correctness-20261125T123720495115Z.db`). All row counts unchanged; integrity check OK; `auth_events` append-only triggers re-created. Of the 4 legacy websites, 2 were given to the first admin account; the other 2 share a domain with those and stay staff-only legacy rows.
+
+**Test results (2026-11-25, Windows, run sequentially).** Backend: **247 passed** (legacy analyst-pipeline suites are excluded via `collect_ignore` in `backend/tests/conftest.py` until that code is deleted). Frontend: **75 unit tests passed**; production build OK.
+
+**Live checks (2026-11-25).** All five background roles (scheduler, monitoring worker, notifications, assessment worker, scan worker) and the API were restarted on the final code and their heartbeats are current. The development database has no port-watch rows, no queued legacy jobs, and no legacy request newer than 10:35 UTC (before Phase 1); the code paths that created them (`port_watch.schedule`, `AssessmentHandler.eligible`) are retired and tested.
+
+**Pending item accepted by the owner (2026-11-25): the first real scan on `snitsolutions.in` is pending DNS access.** The owner confirms they own the domain, but the person with the DNS/hosting login is unavailable, and the verification TXT record was never visible on any resolver or on the authoritative nameservers (`ns1/ns2.md-in-40.webhostbox.net`). Until then `www.snitsolutions.in` stays **unverified** in the admin account (website #2), has **zero scans**, and must not be scanned or marked verified. To finish later: in that account add the bare `snitsolutions.in` (`www` is a CNAME, so a TXT record cannot live on it), add its TXT record, click Verify, and `www` is covered automatically; then capture the first-scan screenshots (numbered 15+). Phase 1 was accepted with this one item pending.
+
+**Not done in Phase 1:** a running scan removed mid-way stops at its next step, so Phase 2's long checks must also re-check `removed_at` between steps; manual "Scan now" and scheduled scans (Phases 4–5); dark theme and the four website tabs (Phase 6); payments (Phase 7).
+
+---
+
 **Status legend.** ✅ Fully implemented and tested · 🟡 Partially implemented · 🧪 Implemented but not tested · ❌ Missing · 🔧 Broken or requiring improvement
 
 Test paths are relative to `backend/tests/`. Milestone 6 tests are in `test_production_hardening.py` (`H::` below) and `test_e2e_lifecycle.py` (`E2E::`). Module E and F test names below are real function names in `test_vulnerabilities.py` and `test_workbench.py`. Browser journeys are in `frontend/tests/e2e/authorization.spec.js`. All API routes are under `/api/v1`.

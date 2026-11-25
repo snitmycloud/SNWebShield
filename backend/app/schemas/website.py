@@ -1,39 +1,20 @@
-from datetime import datetime
 from typing import Literal
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
-
-from app.schemas.authorization import EffectiveAuthorizationStatus
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class WebsiteCreate(BaseModel):
-    client_id: int = Field(gt=0)
-    name: str = Field(min_length=2, max_length=200)
-    url: AnyHttpUrl
-    platform: str | None = Field(default=None, max_length=100)
-    environment: str = Field(default="production", pattern="^(production|staging|development)$")
-    hosting_provider: str | None = Field(default=None, max_length=150)
-    notes: str | None = Field(default=None, max_length=5000)
-
-    @field_validator("url")
-    @classmethod
-    def reject_url_credentials(cls, value: AnyHttpUrl) -> AnyHttpUrl:
-        if value.username or value.password:
-            raise ValueError("Website URL must not contain a username or password")
-        return value
+    model_config = ConfigDict(extra="forbid")
+    # Cleaned up and checked by services.domains.normalize_domain (scheme, path, case, IPs, internal names).
+    domain: str = Field(min_length=1, max_length=2048)
 
 
-class WebsiteRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class RemoveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # The owner must type the website's domain to confirm.
+    confirm_domain: str = Field(min_length=1, max_length=2048)
 
-    id: int
-    client_id: int
-    name: str
-    url: str
-    platform: str | None
-    environment: str
-    hosting_provider: str | None
-    notes: str | None
-    authorisation_status: str
-    effective_authorisation_status: EffectiveAuthorizationStatus | Literal["not_requested"]
-    created_at: datetime
+
+class VerifyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    method: Literal["dns", "file", "meta"]

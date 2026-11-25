@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.admin import ADMIN_ROLES, Admin
+from app.core.time import as_utc
+from app.models.admin import ACCOUNT_ROLES, ADMIN_ROLES, Admin
 from app.models.security import RevokedToken
 
 
@@ -128,7 +129,7 @@ def authenticate(credentials: HTTPAuthorizationCredentials | None, db: Session) 
     except jwt.InvalidTokenError as exc:
         raise _unauthorized() from exc
 
-    if claims.get("token_type") != "access" or claims.get("role") not in ADMIN_ROLES:
+    if claims.get("token_type") != "access" or claims.get("role") not in ACCOUNT_ROLES:
         raise _unauthorized()
     if db.get(RevokedToken, claims["jti"]) is not None:
         raise _unauthorized()
@@ -142,16 +143,38 @@ def authenticate(credentials: HTTPAuthorizationCredentials | None, db: Session) 
     if admin is None or not admin.is_active:
         raise _unauthorized()
     # A token minted before a role change must not keep the old privileges.
-    if admin.role not in ADMIN_ROLES or admin.role != claims["role"]:
+    if admin.role not in ACCOUNT_ROLES or admin.role != claims["role"]:
+        raise _unauthorized()
+    # A token minted before a password change or reset is no longer valid.
+    if admin.password_changed_at is not None and int(claims["iat"]) < int(as_utc(admin.password_changed_at).timestamp()):
         raise _unauthorized()
     return admin, claims
+
+
+def get_current_account(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> Admin:
+    """Any signed-in, active account: a customer or staff."""
+    return authenticate(credentials, db)[0]
 
 
 def get_current_admin(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> Admin:
-    return authenticate(credentials, db)[0]
+    """Staff only. Customer (`user`) accounts are refused, so internal routes stay closed to them."""
+    account = authenticate(credentials, db)[0]
+    if account.role not in ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="This page is for SNWebShield staff only")
+    return account
+
+
+def require_platform_admin(account: Admin = Depends(get_current_account)) -> Admin:
+    """The `admin` role only: manage users, plans and accounts."""
+    if account.role != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    return account
 
 
 def get_current_session(

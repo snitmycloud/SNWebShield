@@ -209,7 +209,7 @@ def fix_verification(db, vulnerability_id, row=None):
         db.rollback()  # migration 0014 not applied yet: show the fix as awaiting sign-off instead of failing the page
         signoff = None
     names = _names(db, [signoff.signed_by]) if signoff else {}
-    return {"applicable": True, "required": rbac.separation_of_duties_enabled(),
+    return {"applicable": True, "required": False,  # dual sign-off removed (Phase 1)
             "retest_id": retest.id if retest else None, "evidence_sha256": retest.evidence_sha256 if retest else None,
             "state": "confirmed" if signoff is not None and signoff.decision == "confirmed" else "pending",
             "signed_by": signoff.signed_by if signoff else None,
@@ -234,11 +234,6 @@ def verify_fix(db, vulnerability_id, actor_id, payload):
     note = _clean(payload.note, 4000, 20, "Note")
     # Whoever requested the retest or touched this finding's remediation cannot be the second person.
     # An earlier rejection by a reviewer reopens the finding, but reviewing is not doing the work.
-    handled = {actor for actor, detail in db.execute(select(RemediationEvent.actor_id, RemediationEvent.detail).where(
-        RemediationEvent.vulnerability_id == vulnerability_id, RemediationEvent.actor_id.is_not(None)))
-        if not (isinstance(detail, dict) and detail.get("signoff") == "rejected")}
-    involved = {retest.requested_by} | handled
-    rbac.enforce_distinct(actor_id, involved, "sign off a fix verification for work they handled")
     if payload.decision == "confirmed" and retest.evidence_sha256 is None:
         raise HTTPException(409, "The retest has no stored evidence to confirm; reject it or request another retest")
     now = utc_now()
@@ -265,53 +260,9 @@ def verify_fix(db, vulnerability_id, actor_id, payload):
 # --- Retests ---------------------------------------------------------------------------------
 
 def request_retest(db, vulnerability_id, actor_id, payload):
-    vulnerability = confirmed(db, vulnerability_id)
-    closure_lock.assert_unlocked(db, vulnerability_id)
-    row = current(db, vulnerability_id)
-    _expect_version(row, payload.expected_version)
-    if status_of(row) != "fix_submitted":
-        raise HTTPException(409, "A retest can only be requested after a fix has been submitted")
-    reconcile_vulnerability(db, vulnerability_id)
-    if db.scalar(select(RetestRequest.id).where(RetestRequest.vulnerability_id == vulnerability_id,
-                                                 RetestRequest.status == "requested")):
-        raise HTTPException(409, "A retest is already in progress for this finding")
-    attempt = (db.scalar(select(func.max(RetestRequest.attempt)).where(RetestRequest.vulnerability_id == vulnerability_id)) or 0) + 1
-    if attempt > MAX_RETESTS:
-        raise HTTPException(409, f"At most {MAX_RETESTS} retests are allowed per finding")
-    website = db.get(Website, vulnerability.website_id)
-    if website is None or website.url != vulnerability.target_url:
-        raise HTTPException(409, "The website target no longer matches the finding's exact target")
-    profile_id = db.scalar(select(AssessmentRequest.profile_id).join(
-        VulnerabilityOccurrence, VulnerabilityOccurrence.assessment_id == AssessmentRequest.id).where(
-        VulnerabilityOccurrence.vulnerability_id == vulnerability_id, VulnerabilityOccurrence.result == "detected")
-        .order_by(VulnerabilityOccurrence.observed_at.desc()).limit(1))
-    if profile_id not in vulns.HEADER_PROFILES:
-        raise HTTPException(409, "No header assessment profile is available to retest this finding")
-    note = _clean(payload.note, 1500, 20, "Note")
-    # The scanner worker's own request path performs every authorisation, scope, method and evidence
-    # check (and audits a denial). Any refusal propagates here and nothing is recorded.
-    request = assessments.create_request(db, actor_id, SimpleNamespace(
-        website_id=website.id, authorization_id=payload.authorization_id, profile_id=profile_id,
-        idempotency_key=uuid4(), note=f"Retest attempt {attempt} of {vulnerability.check_id}: {note}"[:2000],
-        network_permission_confirmed=True))
-    now = utc_now()
-    retest = RetestRequest(id=str(uuid4()), vulnerability_id=vulnerability_id, attempt=attempt, requested_by=actor_id,
-                           requested_at=now, authorization_id=payload.authorization_id, assessment_id=request.id,
-                           profile_id=profile_id, note=note, status="requested")
-    try:
-        db.add(retest)
-        db.flush()
-        _move(db, vulnerability_id, current(db, vulnerability_id), "retest_requested", actor_id, "retest_requested",
-              note, {"retest_id": retest.id, "assessment_id": request.id, "attempt": attempt,
-                     "authorization_id": payload.authorization_id, "profile_id": profile_id}, now)
-        db.commit()
-    except HTTPException:
-        db.rollback()
-        raise
-    except (IntegrityError, OperationalError) as error:
-        db.rollback()
-        raise HTTPException(409, "Remediation changed concurrently; the queued assessment remains audited") from error
-    return detail_of(db, vulnerability_id)
+    """Retired in Phase 1: legacy retests ran through the removed written-permission system.
+    Phase 4 adds "Re-scan to confirm fix" on top of self-service scans."""
+    raise HTTPException(410, "Legacy retests are retired. Re-scanning to confirm a fix arrives in a later update.")
 
 
 def _finish(db, retest, status, outcome, occurrence=None, failure=None):
@@ -546,13 +497,6 @@ def close_assessment(db, assessment_id, actor_id, justification):
     if not state["can_close"]:
         raise HTTPException(409, "Cannot close: " + " ".join(state["blocking_reasons"]))
     text = _clean(justification, 4000, 20, "Justification")
-    # Dual sign-off (when enabled): whoever updated remediation, accepted a risk or requested a retest
-    # for these findings cannot also close the assessment.
-    involved = [f["vulnerability_id"] for f in state["findings"]]
-    if involved:
-        prior = set(db.scalars(select(RemediationEvent.actor_id).where(
-            RemediationEvent.vulnerability_id.in_(involved), RemediationEvent.actor_id.is_not(None))))
-        rbac.enforce_distinct(actor_id, prior, "close an assessment whose remediation they handled")
     now = utc_now()
     generation = (db.scalar(select(func.max(AssessmentClosure.generation)).where(
         AssessmentClosure.assessment_id == assessment_id)) or 0) + 1
