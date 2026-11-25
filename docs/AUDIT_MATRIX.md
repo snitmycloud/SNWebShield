@@ -42,7 +42,9 @@ Product direction changed to the self-service scanner in [SNWEBSHIELD_SPEC.md](S
 
 **Live checks (2026-11-25).** All five background roles (scheduler, monitoring worker, notifications, assessment worker, scan worker) and the API were restarted on the final code and their heartbeats are current. The development database has no port-watch rows, no queued legacy jobs, and no legacy request newer than 10:35 UTC (before Phase 1); the code paths that created them (`port_watch.schedule`, `AssessmentHandler.eligible`) are retired and tested.
 
-**Not done in Phase 1:** first scan on the real `snitsolutions.in`, because the verification TXT record was not yet visible on any resolver or on the authoritative nameservers (`ns1/ns2.md-in-40.webhostbox.net`) when last checked; a running scan removed mid-way stops at its next step, so Phase 2's long checks must also re-check `removed_at` between steps; manual "Scan now" and scheduled scans (Phases 4–5); dark theme and the four website tabs (Phase 6); payments (Phase 7).
+**Pending item accepted by the owner (2026-11-25): the first real scan on `snitsolutions.in` is pending DNS access.** The owner confirms they own the domain, but the person with the DNS/hosting login is unavailable, and the verification TXT record was never visible on any resolver or on the authoritative nameservers (`ns1/ns2.md-in-40.webhostbox.net`). Until then `www.snitsolutions.in` stays **unverified** in the admin account (website #2), has **zero scans**, and must not be scanned or marked verified. To finish later: in that account add the bare `snitsolutions.in` (`www` is a CNAME, so a TXT record cannot live on it), add its TXT record, click Verify, and `www` is covered automatically; then capture the first-scan screenshots (numbered 15+). Phase 1 was accepted with this one item pending.
+
+**Not done in Phase 1:** a running scan removed mid-way stops at its next step, so Phase 2's long checks must also re-check `removed_at` between steps; manual "Scan now" and scheduled scans (Phases 4–5); dark theme and the four website tabs (Phase 6); payments (Phase 7).
 
 ---
 
