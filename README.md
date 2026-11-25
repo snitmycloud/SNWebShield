@@ -143,7 +143,7 @@ npm install
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m app.cli.backup_database      # verified copy of the SQLite file, outside the repository
-.\.venv\Scripts\python.exe -m alembic upgrade head          # head is 0013_production_hardening
+.\.venv\Scripts\python.exe -m alembic upgrade head          # head is 0015_port_watch
 ```
 
 Back up before every migration. Migrations are additive and downgrades are refused; to go back, restore the backup together with the matching code. The API refuses to start if a required table is missing.
@@ -275,6 +275,10 @@ After updating `scanner/remote_runner.py` and `scanner/nmap/runner.py`, install 
 ## After a worker crash or restart
 
 Start the assessment worker again. It fails any run whose lease expired (once, never repeated), ingests results that were stored but not yet turned into observations, and records a `worker_startup_recovery` audit event. A request that cannot progress is labelled on the Assessments page, and it can be cancelled at any time without a worker.
+
+## Testing
+
+See [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for the step-by-step test process: automated suites, a manual walk through Monitors, Detects, Validates and Protects, negative and security tests, the Azure VM checks, port watch, crash recovery and a results sheet.
 
 ## The four pillars as one cycle
 
