@@ -1,4 +1,4 @@
-"""Run scheduler, monitoring worker or notification dispatcher independently."""
+"""Run scheduler, monitoring worker, notification dispatcher, legacy assessment worker or scan worker independently."""
 import argparse
 from datetime import timedelta
 from email.message import EmailMessage
@@ -137,10 +137,14 @@ def _heartbeat_loop(name, stop, progress, limit, interval=10):
 
 
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument("role", choices=["scheduler", "worker", "notifications", "assessment-worker"])
+    parser = argparse.ArgumentParser(); parser.add_argument("role", choices=["scheduler", "worker", "notifications", "assessment-worker", "scan-worker"])
     parser.add_argument("--once", action="store_true"); args = parser.parse_args()
     stop = threading.Event()
     progress = {"at": time.monotonic()}
+    scan_worker = None
+    if args.role == "scan-worker":
+        from app.services import scans
+        scan_worker = scans.Worker()
     if args.role == "assessment-worker":
         try: assessments.recover_on_start()  # a crash between a result and its ingestion must not lose it
         except Exception: print("assessment-worker: startup recovery failed; check execution history", flush=True)
@@ -155,6 +159,7 @@ def main():
                     with SessionLocal() as db: engine.scheduler_tick(db)
                 elif args.role == "worker": worker_tick()
                 elif args.role == "assessment-worker": assessments.worker_tick()
+                elif args.role == "scan-worker": scan_worker.tick()
                 else: notification_tick()
             except Exception:
                 # Never print URLs, credentials or response contents.
@@ -164,7 +169,9 @@ def main():
             if args.once: break
             time.sleep(2)
     except KeyboardInterrupt: pass
-    finally: stop.set()
+    finally:
+        stop.set()
+        if scan_worker is not None: scan_worker.drain()
 
 
 if __name__ == "__main__": main()

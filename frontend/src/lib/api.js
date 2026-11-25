@@ -67,6 +67,29 @@ function startSessionTimer() {
   }
 }
 
+// Turn an API error body into an Error with a plain message. Structured details such as
+// {code: "plan_limit", message, ...} keep their fields on `error.code` / `error.detail`.
+export function apiError(status, detail, retryAfter) {
+  let message = Array.isArray(detail)
+    ? detail.map((item) => item.msg || JSON.stringify(item)).join("; ")
+    : typeof detail === "string"
+      ? detail
+      : detail && typeof detail.message === "string"
+        ? detail.message
+        : `Request failed with HTTP ${status}`;
+  const wait = Number(retryAfter);
+  if (status === 429 && Number.isFinite(wait) && wait > 0) {
+    message += ` (retry in about ${Math.ceil(wait / 60)} min)`;
+  }
+  const error = new Error(message);
+  error.status = status;
+  if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+    error.code = detail.code;
+    error.detail = detail;
+  }
+  return error;
+}
+
 async function request(path, options = {}) {
   const { auth = true, binary = false, ...fetchOptions } = options;
   const token = auth ? getAccessToken() : null;
@@ -111,21 +134,7 @@ async function request(path, options = {}) {
       expireSession();
     }
 
-    const detail = payload?.detail;
-
-    let message = Array.isArray(detail)
-      ? detail.map((item) => item.msg || JSON.stringify(item)).join("; ")
-      : typeof detail === "string"
-        ? detail
-        : `Request failed with HTTP ${response.status}`;
-
-    // Login throttling: tell the person when they may try again.
-    const wait = Number(response.headers?.get?.("Retry-After"));
-    if (response.status === 429 && Number.isFinite(wait) && wait > 0) {
-      message += ` (retry in about ${Math.ceil(wait / 60)} min)`;
-    }
-
-    throw new Error(message);
+    throw apiError(response.status, payload?.detail, response.headers?.get?.("Retry-After"));
   }
 
   if (auth && token !== getAccessToken()) {
@@ -166,6 +175,33 @@ export const api = {
   },
 
   getCurrentAdmin: () => request("/auth/me"),
+  myPlan: () => request("/auth/me/plan"),
+  signUp: (data) => request("/auth/signup", { method: "POST", body: JSON.stringify(data), auth: false }),
+  verifyEmail: (token) => request("/auth/verify-email", { method: "POST", body: JSON.stringify({ token }), auth: false }),
+  resendVerification: (email) => request("/auth/resend-verification", { method: "POST", body: JSON.stringify({ email }), auth: false }),
+  forgotPassword: (email) => request("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }), auth: false }),
+  resetPassword: (token, newPassword) => request("/auth/reset-password", {
+    method: "POST", body: JSON.stringify({ token, new_password: newPassword }), auth: false,
+  }),
+  // A password change ends every other session; keep this one by saving the new token.
+  changePassword: async (currentPassword, newPassword) => {
+    const result = await jsonPost("/auth/change-password", { current_password: currentPassword, new_password: newPassword });
+    saveSession(result);
+    return result;
+  },
+
+  // Websites and ownership verification (self-service)
+  myWebsites: () => request("/websites?limit=200"),
+  allWebsites: () => request("/websites?limit=200&all_accounts=true"),
+  website: (id) => request(`/websites/${encodeURIComponent(id)}`),
+  addWebsite: (domain) => jsonPost("/websites", { domain }),
+  verifyWebsite: (id, method) => jsonPost(`/websites/${encodeURIComponent(id)}/verify`, { method }),
+  websiteScans: (id) => request(`/websites/${encodeURIComponent(id)}/scans?limit=10`),
+
+  // Admin
+  adminUsers: () => request("/admin/users?limit=500"),
+  setUserPlan: (id, plan) => jsonPost(`/admin/users/${encodeURIComponent(id)}/plan`, { plan }),
+  setUserActive: (id, active) => jsonPost(`/admin/users/${encodeURIComponent(id)}/${active ? "enable" : "disable"}`, {}),
 
   hasSession: () => Boolean(getAccessToken()),
   startSessionTimer,
@@ -189,15 +225,11 @@ export const api = {
   monitoringOverview: () => request("/monitoring/overview"),
   monitoringHistory: (id, collection, offset = 0) => request(`/websites/${id}/monitoring/${collection}?limit=50&offset=${offset}`),
   monitoringConfig: (id) => request(`/websites/${id}/monitoring`),
-  configureMonitoring: (id, data) => jsonPost(`/websites/${id}/monitoring/configure`, data),
   monitoringAction: (id, action) => jsonPost(`/websites/${id}/monitoring/${action}`, {}),
   stopMonitoring: () => jsonPost("/monitoring/stop", {}),
 
-  // Assessment stage one: explicit network-free permission preflight.
-  assessmentProfiles: () => request("/assessments/profiles"),
-  assessmentReadiness: websiteId => request(`/assessments/readiness?website_id=${encodeURIComponent(websiteId)}`),
+  // Legacy assessments (staff, read-only; stop actions only).
   portWatch: id => request(`/port-watch/${encodeURIComponent(id)}`),
-  enablePortWatch: (id, data) => jsonPost(`/port-watch/${encodeURIComponent(id)}/enable`, data),
   disablePortWatch: (id, data) => jsonPost(`/port-watch/${encodeURIComponent(id)}/disable`, data),
   websiteLifecycle: id => request(`/websites/${encodeURIComponent(id)}/lifecycle`),
   orphanContainers: () => request("/assessments/orphan-containers"),
@@ -211,7 +243,6 @@ export const api = {
   downloadReviewedReport: (id, exportId) => request(`/assessments/${id}/reviewed-reports/${exportId}/download`, { binary: true }),
   getAssessment: (id) => request(`/assessments/${id}`),
   assessmentHistory: (id, collection, offset = 0) => request(`/assessments/${id}/${collection}?limit=50&offset=${offset}`),
-  requestAssessment: (data) => jsonPost("/assessments", data),
   cancelAssessment: (id, data) => jsonPost(`/assessments/${id}/cancel`, data),
 
   getFindings: (filters = {}, offset = 0) => {
@@ -268,7 +299,6 @@ export const api = {
   updateRemediation: (id, data) => jsonPost(`/remediation/${encodeURIComponent(id)}/update`, data),
   verifyFix: (id, data) => jsonPost(`/remediation/${encodeURIComponent(id)}/verify-fix`, data),
   reopenRemediation: (id, data) => jsonPost(`/remediation/${encodeURIComponent(id)}/reopen`, data),
-  requestRetest: (id, data) => jsonPost(`/remediation/${encodeURIComponent(id)}/retests`, data),
   assessmentClosure: id => request(`/assessments/${encodeURIComponent(id)}/closure`),
   closeAssessment: (id, data) => jsonPost(`/assessments/${encodeURIComponent(id)}/close`, data),
   reopenClosure: (id, data) => jsonPost(`/assessments/${encodeURIComponent(id)}/reopen-closure`, data),
@@ -278,59 +308,8 @@ export const api = {
   // Health
   health: () => request("/health", { auth: false }),
 
-  // Clients
+  // Legacy clients (staff, read-only)
   getClients: () => allPages("/clients"),
-
-  createClient: (data) => jsonPost("/clients", data),
-
-  // Websites
-  getWebsites: () => allPages("/websites"),
-
-  createWebsite: (data) => jsonPost("/websites", data),
-
-  // Private evidence: authentication stays in the header, never in URLs.
-  getEvidence: (id) => request(`/authorizations/${id}/evidence`),
-  getEvidenceEvents: (id) => request(`/authorizations/${id}/evidence/events`),
-  uploadEvidence: (id, file) => request(`/authorizations/${id}/evidence`, {
-    method: "POST", body: file,
-    headers: { "Content-Type": "application/octet-stream", "X-Evidence-Filename": encodeURIComponent(file.name) },
-  }),
-  openEvidence: (id, preview = false) => request(`/evidence/${id}/${preview ? "preview" : "download"}`, { binary: true }),
-  reviewEvidence: (id, data) => jsonPost(`/authorizations/${id}/evidence/reviews`, data),
-  evidenceAction: (id, action, data) => jsonPost(`/evidence/${id}/${action}`, data),
-
-  // Authorizations
-  getAuthorizations: (filters = {}) => {
-    const params = {};
-
-    if (filters.status && filters.status !== "all") {
-      params.status = filters.status;
-    }
-
-    if (filters.websiteId) {
-      params.website_id = String(filters.websiteId);
-    }
-
-    return allPages("/authorizations", params);
-  },
-
-  getAuthorizationSummary: () => request("/authorizations/summary"),
-  getAuthorization: (id) => request(`/authorizations/${id}`),
-
-  getAuthorizationEvents: (authorizationId) =>
-    request(`/authorizations/${authorizationId}/events`),
-
-  createAuthorization: (data) =>
-    jsonPost("/authorizations", data),
-
-  approveAuthorization: (authorizationId, data) =>
-    jsonPost(`/authorizations/${authorizationId}/approve`, data),
-
-  rejectAuthorization: (authorizationId, data) =>
-    jsonPost(`/authorizations/${authorizationId}/reject`, data),
-
-  revokeAuthorization: (authorizationId, data) =>
-    jsonPost(`/authorizations/${authorizationId}/revoke`, data),
 };
 
 export { API_BASE_URL };

@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect
 
-from app.api.routes import auth, authorizations, clients, health, websites, evidence, monitoring, assessments, findings, vulnerabilities, workbench, reports, remediation, port_watch
+from app.api import legacy
+from app.api.routes import (admin_users, assessments, auth, clients, findings, health, monitoring, port_watch,
+                            remediation, reports, vulnerabilities, websites, workbench)
 from app.core.config import settings
 from app.core.headers import SecurityHeadersMiddleware
 from app.db.session import engine
@@ -46,6 +48,9 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("Remediation migration required: python -m alembic upgrade head")
     if not all(inspector.has_table(name) for name in ("auth_events", "revoked_tokens", "assessment_closure_reopenings")) or "purged_at" not in {c["name"] for c in inspector.get_columns("authorization_evidence")}:
         raise RuntimeError("Production hardening migration required: python -m alembic upgrade head")
+    if not all(inspector.has_table(name) for name in ("scans", "account_tokens", "retired_tables")) or "owner_id" not in {
+            c["name"] for c in inspector.get_columns("websites")}:
+        raise RuntimeError("Self-service migration required (back up first): python -m alembic upgrade head")
     yield
 
 
@@ -53,9 +58,8 @@ app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description=(
-        "SNWebShield local development API. Authorization records require admin authentication "
-        "for access and decisions. Approval requires a stored document and a current accepted human evidence review; "
-        "it does not itself start security testing."
+        "SNWebShield API. Customers sign up, add websites and prove ownership (DNS TXT, file or meta tag); "
+        "ownership verification is the only approval step and starts the first scan automatically."
     ),
     lifespan=lifespan,
 )
@@ -65,7 +69,7 @@ app.add_middleware(
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Evidence-Filename"],
+    allow_headers=["Content-Type", "Authorization"],
     max_age=600,
 )
 # Added last so it is outermost and also decorates CORS preflight and error responses.
@@ -73,18 +77,10 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
-app.include_router(clients.router, prefix="/api/v1")
 app.include_router(websites.router, prefix="/api/v1")
-app.include_router(authorizations.router, prefix="/api/v1")
+app.include_router(admin_users.router, prefix="/api/v1")
 
-app.include_router(evidence.router, prefix="/api/v1")
-
-app.include_router(monitoring.router, prefix="/api/v1")
-
-app.include_router(assessments.router, prefix="/api/v1")
-app.include_router(findings.router, prefix="/api/v1")
-app.include_router(vulnerabilities.router, prefix="/api/v1")
-app.include_router(workbench.router, prefix="/api/v1")
-app.include_router(reports.router, prefix="/api/v1")
-app.include_router(remediation.router, prefix="/api/v1")
-app.include_router(port_watch.router, prefix="/api/v1")
+# Legacy analyst pipeline: staff-only and read-only (stop actions excepted) until Phases 2-4 replace it.
+# The written-permission system (authorisations, evidence) was removed in Phase 1; its tables keep their data.
+for _legacy in (clients, monitoring, assessments, findings, vulnerabilities, workbench, reports, remediation, port_watch):
+    app.include_router(_legacy.router, prefix="/api/v1", dependencies=[Depends(legacy.read_only)])

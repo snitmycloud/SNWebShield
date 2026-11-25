@@ -1,4 +1,5 @@
-from app.models.admin import Admin
+from app.models.admin import AccountToken, Admin
+from app.models.scan import RetiredTable, Scan
 from app.models.authorization import WebsiteAuthorization
 from app.models.authorization_audit_event import AuthorizationAuditEvent
 from app.models.client import Client

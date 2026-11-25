@@ -1,4 +1,4 @@
-"""Assessment lifecycle API for fixed local profiles."""
+"""Legacy assessment records (staff, read-only since Phase 1). New scans: see routes/websites.py."""
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
@@ -20,17 +20,6 @@ from app.services import remediation as remediation_service
 WORKER_STALE_SECONDS = 45  # worker heartbeats every ~10 s from a dedicated thread
 
 router = APIRouter(prefix="/assessments", tags=["Assessments"], dependencies=[Depends(get_current_admin)])
-
-
-class CreateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    website_id: int = Field(gt=0)
-    authorization_id: int = Field(gt=0)
-    profile_id: str = Field(min_length=1, max_length=80)
-    idempotency_key: UUID
-    explicitly_requested: Literal[True]
-    network_permission_confirmed: bool = False
-    note: str = Field(min_length=20, max_length=2000)
 
 
 class Cancellation(BaseModel):
@@ -95,22 +84,11 @@ def worker_status(db: Session = Depends(get_db)):
             "scanner_tools_enabled": service.profile_available(service.PROFILES[service.NMAP_PROFILE_ID])}
 
 
-@router.get("/readiness")
-def readiness(website_id: int = Query(gt=0), db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
-    """Network-free permission preflight for every profile; schedules nothing and writes nothing."""
-    return service.readiness(db, admin.id, website_id)
-
-
 @router.get("/orphan-containers")
 def orphan_containers(db: Session = Depends(get_db), admin: Admin = Depends(rbac.require_infrastructure_role)):
     """Explicit, read-only VM inventory of leftover scanner containers (lead analyst or admin; audited)."""
     from app.services import orphan_report
     return orphan_report.collect(db, admin.id)
-
-
-@router.post("", status_code=201)
-def create(payload: CreateRequest, db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
-    return read(db, service.create_request(db, admin.id, payload))
 
 
 @router.get("")

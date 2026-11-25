@@ -155,7 +155,6 @@ function ClosurePanel({ assessments, busy, onChanged }) {
 export default function RemediationPage({ websites = [] }) {
   const [status, setStatus] = useState(""), [website, setWebsite] = useState(""), [search, setSearch] = useState(""), [offset, setOffset] = useState(0);
   const [data, setData] = useState(null), [selected, setSelected] = useState(null), [assessments, setAssessments] = useState([]);
-  const [authorizations, setAuthorizations] = useState([]);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const generation = useRef(0), detailVersion = useRef(0);
 
@@ -178,11 +177,8 @@ export default function RemediationPage({ websites = [] }) {
 
   async function open(id, siteId) {
     const version = ++detailVersion.current;
-    const [detail, permissions] = await Promise.all([api.remediation(id), api.getAuthorizations({ websiteId: siteId })]);
-    if (version === detailVersion.current) {
-      setSelected(detail);
-      setAuthorizations(permissions.filter(a => a.status === "approved" && a.effective_status === "active"));
-    }
+    const detail = await api.remediation(id);
+    if (version === detailVersion.current) setSelected(detail);
   }
   async function run(action, message) {
     setBusy(true); setError(""); setNotice("");
@@ -194,8 +190,8 @@ export default function RemediationPage({ websites = [] }) {
   const refreshSelected = () => selected ? open(selected.vulnerability_id, selected.website_id) : Promise.resolve();
 
   return <section className="assessment-page findings-page">
-    <div className="eyebrow">REMEDIATION AND RETESTING</div><h1>Remediation and retesting</h1>
-    <p>Track the fix for every confirmed finding, request a scoped retest once a fix is submitted, and close an assessment when each confirmed finding is verified fixed or formally risk accepted. A retest is one authorised request that the scanner worker revalidates; a finding that still reproduces is reopened automatically.</p>
+    <div className="eyebrow">LEGACY · READ-ONLY</div><h1>Remediation history</h1>
+    <p>Remediation records from the earlier analyst workflow, kept for reference. Changes are no longer accepted; re-scanning to confirm a fix arrives in a later update.</p>
     {error && <p role="alert" className="form-error">{error}</p>}{notice && <p role="status">{notice}</p>}
 
     <form className="panel findings-filters" aria-label="Remediation filters" onSubmit={event => event.preventDefault()}>
@@ -228,8 +224,6 @@ export default function RemediationPage({ websites = [] }) {
 
       <UpdateForm key={`u:${selected.vulnerability_id}:${selected.version}`} item={selected} busy={busy}
         onSubmit={payload => run(async () => { await api.updateRemediation(selected.vulnerability_id, payload); await refreshSelected(); }, "Remediation update recorded in the audit history.")} />
-      <RetestForm key={`t:${selected.vulnerability_id}:${selected.version}`} item={selected} authorizations={authorizations} busy={busy}
-        onSubmit={payload => run(async () => { await api.requestRetest(selected.vulnerability_id, payload); await refreshSelected(); }, "Retest queued. The scanner worker will revalidate the authorisation before it runs.")} />
       <ReopenForm key={`r:${selected.vulnerability_id}:${selected.version}`} item={selected} busy={busy}
         onSubmit={payload => run(async () => { await api.reopenRemediation(selected.vulnerability_id, payload); await refreshSelected(); }, "Finding reopened.")} />
       <FixVerificationForm key={`f:${selected.vulnerability_id}:${selected.version}`} item={selected} busy={busy}

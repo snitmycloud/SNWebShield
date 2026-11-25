@@ -1,0 +1,41 @@
+{
+  "default_plan": "free",
+  "plans": {
+    "free": {
+      "label": "Free",
+      "max_websites": 5,
+      "automatic_scan": "weekly",
+      "manual_scans_per_day": 1,
+      "manual_scans_per": "website",
+      "ports": "top_1000",
+      "full_port_scan": false,
+      "report": ["online"],
+      "alerts": ["email"],
+      "history_days": 30
+    },
+    "pro": {
+      "label": "Pro",
+      "max_websites": 25,
+      "automatic_scan": "daily",
+      "manual_scans_per_day": 5,
+      "manual_scans_per": "account",
+      "ports": "top_1000",
+      "full_port_scan": true,
+      "report": ["online", "pdf"],
+      "alerts": ["email"],
+      "history_days": 365
+    },
+    "business": {
+      "label": "Business",
+      "max_websites": 100,
+      "automatic_scan": "daily",
+      "manual_scans_per_day": 20,
+      "manual_scans_per": "account",
+      "ports": "top_1000",
+      "full_port_scan": true,
+      "report": ["online", "pdf", "white_label"],
+      "alerts": ["email", "webhook"],
+      "history_days": 730
+    }
+  }
+}

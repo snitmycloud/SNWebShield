@@ -451,8 +451,6 @@ def decide(db, vulnerability_id, actor_id, payload):
         assessment = current_assessment(db, vulnerability)
         if assessment is None:
             raise HTTPException(409, "Save a risk assessment for the current revision before confirming")
-        # Dual sign-off (when enabled): the analyst who authored the risk assessment cannot also approve it.
-        rbac.enforce_distinct(actor_id, [assessment.author_id], "approve a finding assessed by someone else")
         if payload.severity != assessment.risk_rating:
             raise HTTPException(409, "Severity must match the saved risk assessment rating")
         values.update(analyst_severity=payload.severity, reproduction_steps=payload.reproduction_steps)

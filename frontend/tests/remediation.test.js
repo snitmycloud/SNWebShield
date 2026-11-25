@@ -26,21 +26,21 @@ test("remediation API calls are authenticated, encode identifiers and use POST b
   await api.remediation("a/b");
   await api.updateRemediation("v1", { expected_version: 0, status: "in_progress", note: "x".repeat(10) });
   await api.reopenRemediation("v1", { expected_version: 3, reason: "y".repeat(20) });
-  await api.requestRetest("v1", { expected_version: 2 });
+  assert.equal(api.requestRetest, undefined);  // legacy retests were retired in Phase 1
   await api.assessmentClosure("as 1");
   await api.closeAssessment("as1", { human_validation_confirmed: true, justification: "z".repeat(20) });
   const paths = calls.map(([url]) => new URL(url).pathname + new URL(url).search);
   assert.deepEqual(paths, ["/api/v1/remediation?limit=50&offset=50&status=reopened&search=csp", "/api/v1/remediation/a%2Fb",
-    "/api/v1/remediation/v1/update", "/api/v1/remediation/v1/reopen", "/api/v1/remediation/v1/retests",
+    "/api/v1/remediation/v1/update", "/api/v1/remediation/v1/reopen",
     "/api/v1/assessments/as%201/closure", "/api/v1/assessments/as1/close"]);
   assert.ok(calls.every(([, options]) => options.headers.Authorization === "Bearer synthetic-unit-test-token"));
-  assert.equal(calls.filter(([, options]) => options.method === "POST").length, 4);  // update, reopen, retest, close
-  assert.equal(JSON.parse(calls[6][1].body).human_validation_confirmed, true);
+  assert.equal(calls.filter(([, options]) => options.method === "POST").length, 3);  // update, reopen, close
+  assert.equal(JSON.parse(calls[5][1].body).human_validation_confirmed, true);
 });
 
-test("server refusals such as a blocked retest or closure surface as errors", async () => {
-  globalThis.fetch = async () => ({ ok: false, status: 409, text: async () => JSON.stringify({ detail: "Assessment blocked: authorization_outside_validity_window" }) });
-  await assert.rejects(api.requestRetest("v1", {}), /Assessment blocked: authorization_outside_validity_window/);
+test("server refusals such as a retired action or closure surface as errors", async () => {
+  globalThis.fetch = async () => ({ ok: false, status: 410, text: async () => JSON.stringify({ detail: "This older feature is now read-only." }) });
+  await assert.rejects(api.updateRemediation("v1", {}), /now read-only/);
   globalThis.fetch = async () => ({ ok: false, status: 409, text: async () => JSON.stringify({ detail: "Cannot close: 1 confirmed finding(s) are unresolved" }) });
   await assert.rejects(api.closeAssessment("a", {}), /Cannot close/);
 });

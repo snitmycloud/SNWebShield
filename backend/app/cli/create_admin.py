@@ -5,6 +5,7 @@ from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy import inspect, select
 
 from app.core.security import hash_password, validate_password_policy
+from app.core.time import utc_now
 from app.db.session import SessionLocal, engine
 from app.models.admin import ADMIN_ROLES
 from app.models import Admin, AuthorizationAuditEvent, Client, Website, WebsiteAuthorization  # noqa: F401
@@ -16,8 +17,8 @@ def main(argv=None) -> int:
                         help="admin (default, bootstrap), lead_analyst or analyst")
     role = parser.parse_args(argv).role
     inspector = inspect(engine)
-    if not inspector.has_table("website_authorizations") or "timestamps_verified" not in {
-        column["name"] for column in inspector.get_columns("website_authorizations")
+    if not inspector.has_table("account_tokens") or "email_verified_at" not in {
+        column["name"] for column in inspector.get_columns("admins")
     }:
         print("Run python -m alembic upgrade head from backend before provisioning an administrator.")
         return 1
@@ -58,6 +59,8 @@ def main(argv=None) -> int:
             password_hash=hash_password(password),
             role=role,
             is_active=True,
+            # Provisioned locally by someone at the keyboard, so the address needs no emailed confirmation.
+            email_verified_at=utc_now(),
         )
         db.add(admin)
         db.commit()
