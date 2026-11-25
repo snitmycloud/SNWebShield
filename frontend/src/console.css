@@ -55,6 +55,15 @@
 .sw-history{list-style:none;padding:0;margin:14px 0 0;display:flex;flex-direction:column;gap:6px;font-size:11px;color:#7e8a9e}
 .sw-history li{display:flex;gap:10px;align-items:center}
 
+.sw-heading-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sw-row-actions{display:flex;gap:6px;justify-content:flex-end}
+.sw-remove-button{color:#a64b45;border-color:#ecc9c6}
+.sw-remove-button:hover{background:#fff6f5;border-color:#d99a95}
+.sw-danger{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:8px;padding:10px 15px;background:#b34e48;color:#fff;font-size:11px;font-weight:700}
+.sw-danger:hover:not(:disabled){background:#9a3f3a}
+.sw-remove-list{margin:0 0 14px;padding-left:18px;font-size:12px;line-height:1.7;color:#34445c}
+.sw-notice{display:flex;align-items:center;gap:9px;margin-bottom:16px;padding:11px 14px;border-radius:10px;background:#effaf4;border:1px solid #cdebd9;color:#16704b;font-size:12px}
+.sw-notice .icon-button{margin-left:auto}
 .sw-settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
 .sw-box{padding:18px;display:flex;flex-direction:column;gap:10px}
 .sw-box p{margin:0;display:flex;justify-content:space-between;gap:10px;font-size:12px;color:#5d6b80}

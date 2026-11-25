@@ -197,6 +197,7 @@ export const api = {
   addWebsite: (domain) => jsonPost("/websites", { domain }),
   verifyWebsite: (id, method) => jsonPost(`/websites/${encodeURIComponent(id)}/verify`, { method }),
   websiteScans: (id) => request(`/websites/${encodeURIComponent(id)}/scans?limit=10`),
+  removeWebsite: (id, confirmDomain) => jsonPost(`/websites/${encodeURIComponent(id)}/remove`, { confirm_domain: confirmDomain }),
 
   // Admin
   adminUsers: () => request("/admin/users?limit=500"),

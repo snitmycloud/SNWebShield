@@ -15,7 +15,7 @@ import time
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
@@ -35,6 +35,7 @@ MESSAGES = {
     "could_not_recheck": "We could not re-check your ownership verification right now, so this scan did not run. "
                          "It is not a problem with your website's security; try again later.",
     "owner_mismatch": "This scan no longer matches the website's owner, so it was not run.",
+    "website_removed": "The website was removed from the account, so this scan was stopped.",
     "dns_lookup_failed": "We could not find this domain's address in DNS, so the scan could not run.",
     "private_or_reserved_address": "This domain points to a private or reserved network address. "
                                    "SNWebShield only scans public addresses.",
@@ -67,7 +68,7 @@ def latest_scan(db, website_id: int) -> Scan | None:
 
 def request_scan(db, website: Website, trigger: str) -> Scan:
     """Queue a scan. Requires verified ownership; returns the already active scan instead of a second one."""
-    if website.verification_status != "verified" or not website.owner_id:
+    if website.removed_at is not None or website.verification_status != "verified" or not website.owner_id:
         raise HTTPException(409, MESSAGES["not_verified"])
     existing = active_scan(db, website.id)
     if existing:
@@ -88,6 +89,28 @@ def request_scan(db, website: Website, trigger: str) -> Scan:
     engine.event(db, "scan_requested", resource_id=website.id, actor_id=website.owner_id,
                  detail={"scan_id": scan.id, "trigger": trigger, "scan_type": scan.scan_type})
     return scan
+
+
+def discard_for_removal(db, website: Website) -> dict:
+    """Stop the website's unfinished scans because its owner removed it. Finished scans are never touched.
+
+    A queued scan never started, so it is deleted. A running scan is ended as "refused" (the worker's claim is
+    cleared, so a late result from the worker cannot overwrite it) and stays as a past record with its audit entry.
+    """
+    now = utc_now()
+    deleted = db.execute(delete(Scan).where(Scan.website_id == website.id, Scan.status == "queued")
+                         .execution_options(synchronize_session=False)).rowcount
+    stopped = 0
+    for scan in list(db.scalars(select(Scan).where(Scan.website_id == website.id, Scan.status == "running"))):
+        changed = db.execute(update(Scan).where(Scan.id == scan.id, Scan.status == "running").values(
+            status="refused", ended_at=now, claim_token=None, lease_until=None, message=MESSAGES["website_removed"],
+            result={"code": "website_removed"}, progress={"step": "finished", "message": "Stopped"})
+            .execution_options(synchronize_session=False))
+        if changed.rowcount:
+            db.expire(scan)
+            _audit_finish(db, scan)
+            stopped += 1
+    return {"queued_scans_deleted": deleted, "running_scans_stopped": stopped}
 
 
 # --- Worker --------------------------------------------------------------------------------------
@@ -179,6 +202,9 @@ def execute(scan_id: str, token: str, *, resolve=ip_policy.resolve_public, verif
                 return "lost_claim"
             website = db.get(Website, scan.website_id)
             owner = db.get(Admin, scan.owner_id)
+            if website is not None and website.removed_at is not None:
+                _finish(db, scan_id, token, "refused", "website_removed")
+                return "refused"
             if website is None or owner is None or not owner.is_active or website.owner_id != scan.owner_id:
                 _finish(db, scan_id, token, "refused", "owner_mismatch")
                 return "refused"

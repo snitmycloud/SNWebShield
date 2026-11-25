@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -13,7 +13,9 @@ VERIFICATION_STATES = ("unverified", "verified", "lost")
 
 class Website(Base):
     __tablename__ = "websites"
-    __table_args__ = (UniqueConstraint("owner_id", "domain", name="uq_website_owner_domain"),)
+    # One live entry per owner and domain. A removed website keeps its row (past scans and audit records point to it).
+    __table_args__ = (Index("uq_website_owner_domain_active", "owner_id", "domain", unique=True,
+                            sqlite_where=text("removed_at IS NULL"), postgresql_where=text("removed_at IS NULL")),)
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     # Legacy (analyst era): the client company. Self-service websites have no client.
@@ -37,6 +39,8 @@ class Website(Base):
     verification_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # The last check's plain result: what was expected, what was found, and the advice shown to the owner.
     verification_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Set when the owner removes the website: it leaves their account and frees a plan slot.
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     client: Mapped["Client"] = relationship(back_populates="websites")

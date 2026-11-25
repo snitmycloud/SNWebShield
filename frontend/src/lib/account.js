@@ -65,6 +65,12 @@ export function checkView(check) {
   };
 }
 
+// Removing a website needs its domain typed exactly (the server checks again). Case, spaces and a final dot are ignored.
+export function removalConfirmed(site, typed) {
+  const domain = String(site?.domain || "").trim().toLowerCase();
+  return domain !== "" && String(typed || "").trim().toLowerCase().replace(/\.$/, "") === domain;
+}
+
 export function passwordHint(password = "", email = "") {
   const problems = [];
   if (password.length < 12) problems.push("at least 12 characters");

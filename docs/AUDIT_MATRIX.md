@@ -31,13 +31,18 @@ Product direction changed to the self-service scanner in [SNWEBSHIELD_SPEC.md](S
 | Automatic first scan on successful verification | ✅ | `test_websites.py::test_successful_verification_starts_the_first_scan_automatically`; real run pending the owner's DNS record |
 | Scan safety: resolve once, refuse private/loopback/link-local/multicast/CGNAT/metadata/own IPs, 1 per website (unique index), 3 per server, time limit → incomplete, worker crash → incomplete, audit per scan | ✅ | `test_scans.py` |
 | Old permission system removed (authorisations, evidence, approvals, attestations, pickers, dual sign-off); tables kept and listed in `retired_tables` | ✅ | `test_auth.py::test_the_written_permission_api_is_gone`, `test_legacy_read_only.py`, `test_migrations.py::test_self_service_migration_*` |
+| Remove website: typed-domain confirmation, owner only, verification deleted, queued scans deleted / running scan stopped, past scans + audit kept, `website_removed` audited, plan slot freed, domain can be re-added, nothing scans a removed site | ✅ | `test_website_removal.py` (20 tests), `test_migrations.py::test_website_removal_migration_*`; real run screenshots 11–14 |
 | Scan checks (ports, versions, technologies) | ❌ Phase 2 | Phase 1 scans end "incomplete" by design |
+
+**Migration `0017_website_removal`** (added `websites.removed_at`; the unique "owner + domain" rule now covers only websites that are not removed). Applied to the development database on 2026-11-25 after a verified backup (`%USERPROFILE%\SNWebShield-Backups\snwebshield-before-auth-correctness-20261125T125230773926Z.db`); counts unchanged, integrity OK.
 
 **Migration `0016_self_service`.** Applied to the development database on 2026-11-25 after a verified backup (`%USERPROFILE%\SNWebShield-Backups\snwebshield-before-auth-correctness-20261125T123720495115Z.db`). All row counts unchanged; integrity check OK; `auth_events` append-only triggers re-created. Of the 4 legacy websites, 2 were given to the first admin account; the other 2 share a domain with those and stay staff-only legacy rows.
 
-**Test results (2026-11-25, Windows, run sequentially).** Backend: **226 passed** (legacy analyst-pipeline suites are excluded via `collect_ignore` in `backend/tests/conftest.py` until that code is deleted). Frontend: **73 unit tests passed**; production build OK.
+**Test results (2026-11-25, Windows, run sequentially).** Backend: **247 passed** (legacy analyst-pipeline suites are excluded via `collect_ignore` in `backend/tests/conftest.py` until that code is deleted). Frontend: **75 unit tests passed**; production build OK.
 
-**Not done in Phase 1:** removing a website (not in the spec; ask first); manual "Scan now" and scheduled scans (Phases 4–5); dark theme and the four website tabs (Phase 6); payments (Phase 7).
+**Live checks (2026-11-25).** All five background roles (scheduler, monitoring worker, notifications, assessment worker, scan worker) and the API were restarted on the final code and their heartbeats are current. The development database has no port-watch rows, no queued legacy jobs, and no legacy request newer than 10:35 UTC (before Phase 1); the code paths that created them (`port_watch.schedule`, `AssessmentHandler.eligible`) are retired and tested.
+
+**Not done in Phase 1:** first scan on the real `snitsolutions.in`, because the verification TXT record was not yet visible on any resolver or on the authoritative nameservers (`ns1/ns2.md-in-40.webhostbox.net`) when last checked; a running scan removed mid-way stops at its next step, so Phase 2's long checks must also re-check `removed_at` between steps; manual "Scan now" and scheduled scans (Phases 4–5); dark theme and the four website tabs (Phase 6); payments (Phase 7).
 
 ---
 

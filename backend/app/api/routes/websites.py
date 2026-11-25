@@ -7,12 +7,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_account, get_current_admin
-from app.core.time import as_utc
+from app.core.time import as_utc, utc_now
 from app.db.session import get_db
 from app.models.admin import Admin
 from app.models.scan import Scan
 from app.models.website import Website
-from app.schemas.website import VerifyRequest, WebsiteCreate
+from app.schemas.website import RemoveRequest, VerifyRequest, WebsiteCreate
 from app.services import job_engine as engine
 from app.services import lifecycle, ownership, plans, scans
 from app.services.domains import DomainError, normalize_domain
@@ -32,6 +32,7 @@ def read_website(db: Session, website: Website, *, with_instructions=False) -> d
         "verification_status": website.verification_status, "verification_method": website.verification_method,
         "verified_at": _iso(website.verified_at), "verification_checked_at": _iso(website.verification_checked_at),
         "verification_result": website.verification_result, "created_at": _iso(website.created_at),
+        "removed_at": _iso(website.removed_at),
         "scans_paused": website.verification_status == "lost",
         "latest_scan": scans.serial(latest) if latest else None,
     }
@@ -46,13 +47,15 @@ def _visible(db: Session, account: Admin, website_id: int) -> Website:
     website = db.get(Website, website_id)
     if website is None or (website.owner_id != account.id and not account.is_staff):
         raise HTTPException(404, "Website not found")
+    if website.removed_at is not None and not account.is_staff:
+        raise HTTPException(404, "Website not found")
     return website
 
 
 def _owned(db: Session, account: Admin, website_id: int) -> Website:
-    """Only the owner may change a website or start work on it."""
+    """Only the owner may change a website or start work on it. A removed website no longer exists for them."""
     website = db.get(Website, website_id)
-    if website is None or website.owner_id != account.id:
+    if website is None or website.owner_id != account.id or website.removed_at is not None:
         raise HTTPException(404, "Website not found")
     return website
 
@@ -64,10 +67,12 @@ def create_website(payload: WebsiteCreate, account: Admin = Depends(get_current_
     except DomainError as error:
         raise HTTPException(422, str(error)) from error
     plan = plans.get(account.plan)
-    used = db.scalar(select(func.count()).select_from(Website).where(Website.owner_id == account.id)) or 0
+    used = db.scalar(select(func.count()).select_from(Website).where(
+        Website.owner_id == account.id, Website.removed_at.is_(None))) or 0
     if used >= plan["max_websites"]:
         raise plans.limit_reached(plan, "websites", plan["max_websites"])
-    if db.scalar(select(Website.id).where(Website.owner_id == account.id, Website.domain == domain)):
+    if db.scalar(select(Website.id).where(Website.owner_id == account.id, Website.domain == domain,
+                                          Website.removed_at.is_(None))):
         raise HTTPException(409, f"You have already added {domain}.")
     website = Website(owner_id=account.id, client_id=None, domain=domain, name=domain, url=f"https://{domain}/",
                       environment="production", authorisation_status="retired",
@@ -101,7 +106,7 @@ def list_websites(
 ):
     statement = select(Website).order_by(Website.id.desc())
     if not (all_accounts and account.is_staff):
-        statement = statement.where(Website.owner_id == account.id)
+        statement = statement.where(Website.owner_id == account.id, Website.removed_at.is_(None))
     rows = db.scalars(statement.offset(offset).limit(limit)).all()
     return [read_website(db, row) for row in rows]
 
@@ -138,6 +143,35 @@ def verify_website(website_id: int, payload: VerifyRequest, account: Admin = Dep
     db.refresh(website)
     return {"website": read_website(db, website, with_instructions=True), "check": result,
             "scan": scans.serial(scan) if scan else None}
+
+
+@router.post("/{website_id}/remove")
+def remove_website(website_id: int, payload: RemoveRequest, account: Admin = Depends(get_current_account),
+                   db: Session = Depends(get_db)):
+    """Remove a website from the account (owner only; the owner must type its domain).
+
+    Clears its verification, deletes its queued scans and ends a running one, and frees a plan slot. Finished scan
+    records, execution events and the audit log are kept, and the removal itself is written to the audit log.
+    """
+    website = _owned(db, account, website_id)
+    if payload.confirm_domain.strip().lower().rstrip(".") != (website.domain or website.name).lower():
+        raise HTTPException(422, f"To remove this website, type its domain exactly: {website.domain or website.name}")
+    now = utc_now()
+    was = website.verification_status
+    stopped = scans.discard_for_removal(db, website)
+    website.verification_status = "unverified"
+    website.verification_method = None
+    website.verification_token = None
+    website.verification_result = None
+    website.verified_at = None
+    website.verification_checked_at = None
+    website.removed_at = now
+    engine.event(db, "website_removed", resource_id=website.id, actor_id=account.id, detail={
+        "domain": website.domain, "user_id": account.id, "removed_at": now.isoformat(),
+        "verification_was": was, **stopped})
+    db.commit()
+    return {"status": "removed", "domain": website.domain, **stopped,
+            "message": f"{website.domain} was removed. Your past scan records are kept."}
 
 
 @router.get("/{website_id}/scans")

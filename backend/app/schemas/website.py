@@ -9,6 +9,12 @@ class WebsiteCreate(BaseModel):
     domain: str = Field(min_length=1, max_length=2048)
 
 
+class RemoveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # The owner must type the website's domain to confirm.
+    confirm_domain: str = Field(min_length=1, max_length=2048)
+
+
 class VerifyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     method: Literal["dns", "file", "meta"]

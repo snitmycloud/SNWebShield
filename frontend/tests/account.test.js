@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, test } from "node:test";
+﻿import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { api, apiError } from "../src/lib/api.js";
-import { authRoute, checkView, isStaff, passwordHint, planLimit, scanView, verificationView } from "../src/lib/account.js";
+import { authRoute, checkView, isStaff, passwordHint, planLimit, removalConfirmed, scanView, verificationView } from "../src/lib/account.js";
 
 let calls, storage;
 beforeEach(() => {
@@ -49,7 +49,7 @@ test("verification states read in plain language", () => {
 
 test("a scan is never shown as safe or clean", () => {
   assert.equal(scanView(null).label, "No scan yet");
-  const running = scanView({ status: "running", progress: { message: "Finding your website's address…" } });
+  const running = scanView({ status: "running", progress: { message: "Finding your website's addressâ€¦" } });
   assert.equal(running.active, true);
   assert.match(running.text, /address/);
   const incomplete = scanView({ status: "incomplete", message: "This scan is incomplete. It does not mean your website is safe." });
@@ -113,4 +113,24 @@ test("changing the password keeps this session by saving the new token", async (
   globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ access_token: "fresh-token", expires_in: 600 }) });
   await api.changePassword("old", "New-password-123!");
   assert.equal(storage.get("snwebshield_access_token"), "fresh-token");
+});
+
+
+test("removing a website needs its domain typed exactly (case, spaces and a final dot are ignored)", () => {
+  const site = { domain: "www.snitsolutions.in" };
+  assert.equal(removalConfirmed(site, "www.snitsolutions.in"), true);
+  assert.equal(removalConfirmed(site, "  WWW.SnitSolutions.IN. "), true);
+  for (const wrong of ["", "   ", "snitsolutions.in", "www.snitsolutions.i", "www.snitsolutions.in.evil.net", undefined, null]) {
+    assert.equal(removalConfirmed(site, wrong), false, String(wrong));
+  }
+  assert.equal(removalConfirmed({ domain: "" }, ""), false);
+  assert.equal(removalConfirmed(null, "x"), false);
+});
+
+test("removing a website posts the typed domain to the authenticated remove endpoint", async () => {
+  await api.removeWebsite(7, "example.com");
+  assert.equal(new URL(calls[0][0]).pathname, "/api/v1/websites/7/remove");
+  assert.equal(calls[0][1].method, "POST");
+  assert.equal(calls[0][1].headers.Authorization, "Bearer synthetic-unit-test-token");
+  assert.deepEqual(JSON.parse(calls[0][1].body), { confirm_domain: "example.com" });
 });

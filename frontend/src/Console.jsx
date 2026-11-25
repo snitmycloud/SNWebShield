@@ -5,7 +5,7 @@ import {
   UserCheck, X,
 } from "lucide-react";
 import { api } from "./lib/api.js";
-import { METHODS, checkView, isStaff, passwordHint, planLimit, scanView, verificationView } from "./lib/account.js";
+import { METHODS, checkView, isStaff, passwordHint, planLimit, removalConfirmed, scanView, verificationView } from "./lib/account.js";
 import MonitoringPage from "./MonitoringPage.jsx";
 import AssessmentsPage from "./AssessmentsPage.jsx";
 import FindingsPage from "./FindingsPage.jsx";
@@ -53,6 +53,44 @@ function UpgradeNotice({ detail, onUpgrade, onClose }) {
     <div><strong>You have reached your plan limit</strong><span>{detail.message}</span></div>
     <button className="primary-button" onClick={onUpgrade}>Upgrade</button>
     <button className="icon-button" aria-label="Dismiss" onClick={onClose}><X size={15} /></button>
+  </div>;
+}
+
+function RemoveDialog({ site, onClose, onRemoved }) {
+  const [typed, setTyped] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState("");
+  useEffect(() => {
+    const onKey = event => { if (event.key === "Escape" && !busy) onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, busy]);
+  const ready = removalConfirmed(site, typed);
+  const submit = async event => {
+    event.preventDefault();
+    if (!ready) return;
+    setBusy(true); setError("");
+    try { const result = await api.removeWebsite(site.id, typed.trim()); onRemoved(result); }
+    catch (err) { setError(err.message); setBusy(false); }
+  };
+  return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+    <form className="modal-card sw-remove" role="dialog" aria-modal="true" aria-labelledby="sw-remove-title" onSubmit={submit}>
+      <div className="modal-heading"><div><h2 id="sw-remove-title">Remove {site.domain}?</h2>
+        <p>This frees one of your website slots.</p></div>
+        <button type="button" className="icon-button" onClick={onClose} disabled={busy} aria-label="Close"><X size={19} /></button></div>
+      <div className="modal-form">
+        <ul className="sw-remove-list">
+          <li>Its ownership verification is deleted. To scan it again later, you add it and verify it again.</li>
+          <li>Scans that have not finished are cancelled.</li>
+          <li>Your past scan records and the audit log are kept.</li>
+        </ul>
+        <label className="form-field"><span>Type <b>{site.domain}</b> to confirm</span>
+          <input value={typed} onChange={e => setTyped(e.target.value)} autoFocus autoComplete="off" spellCheck="false" maxLength={2048} aria-label="Type the domain to confirm" /></label>
+        {error && <div className="form-error" role="alert"><ShieldAlert size={15} />{error}</div>}
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Keep website</button>
+          <button className="sw-danger" disabled={!ready || busy}>{busy && <LoaderCircle className="spin" size={14} />}Remove website</button>
+        </div>
+      </div>
+    </form>
   </div>;
 }
 
@@ -186,8 +224,9 @@ function ScanPanel({ scans }) {
   </section>;
 }
 
-function WebsiteDetail({ id, onBack, onChanged }) {
+function WebsiteDetail({ id, onBack, onChanged, onRemoved }) {
   const [site, setSite] = useState(null), [scans, setScans] = useState([]), [error, setError] = useState("");
+  const [removing, setRemoving] = useState(false);
   const alive = useRef(true);
   const load = useCallback(async () => {
     const [detail, history] = await Promise.all([api.website(id), api.websiteScans(id)]);
@@ -211,7 +250,10 @@ function WebsiteDetail({ id, onBack, onChanged }) {
   const v = verificationView(site);
   return <>
     <button className="text-button sw-back" onClick={onBack}>← All websites</button>
-    <Heading eyebrow="WEBSITE" title={site.domain || site.name} text={v.text} action={<Badge tone={v.tone}>{v.label}</Badge>} />
+    <Heading eyebrow="WEBSITE" title={site.domain || site.name} text={v.text}
+      action={<div className="sw-heading-actions"><Badge tone={v.tone}>{v.label}</Badge>
+        <button className="secondary-button sw-remove-button" onClick={() => setRemoving(true)}>Remove website</button></div>} />
+    {removing && <RemoveDialog site={site} onClose={() => setRemoving(false)} onRemoved={onRemoved} />}
     {site.verification_status === "lost" && site.verification_result?.message && <div className="sw-result bad" role="alert">
       <strong><AlertTriangle size={16} />Scans are paused</strong><p>{site.verification_result.message}</p>
       {site.verification_result.hint && <p>{site.verification_result.hint}</p>}</div>}
@@ -220,9 +262,11 @@ function WebsiteDetail({ id, onBack, onChanged }) {
   </>;
 }
 
-function WebsitesView({ websites, plan, loading, openId, onOpen, onAdded, onLimit, onChanged }) {
-  if (openId) return <WebsiteDetail id={openId} onBack={() => onOpen(null)} onChanged={onChanged} />;
+function WebsitesView({ websites, plan, loading, openId, onOpen, onAdded, onLimit, onChanged, onRemoved }) {
+  const [removing, setRemoving] = useState(null);
+  if (openId) return <WebsiteDetail id={openId} onBack={() => onOpen(null)} onChanged={onChanged} onRemoved={onRemoved} />;
   return <>
+    {removing && <RemoveDialog site={removing} onClose={() => setRemoving(null)} onRemoved={result => { setRemoving(null); onRemoved(result); }} />}
     <Heading eyebrow="WEBSITES" title="Websites" text="Add a website, prove you own it, and we scan it automatically." />
     <AddWebsite plan={plan} count={websites.length} onAdded={site => { onAdded(site); onOpen(site.id); }} onLimit={onLimit} />
     <section className="panel table-panel"><div className="table-scroll"><table>
@@ -232,7 +276,8 @@ function WebsitesView({ websites, plan, loading, openId, onOpen, onAdded, onLimi
           const v = verificationView(site), s = scanView(site.latest_scan);
           return <tr key={site.id}><td><div className="website-cell"><div className="site-icon"><Globe2 size={16} /></div><strong>{site.domain || site.name}</strong></div></td>
             <td><Badge tone={v.tone}>{v.label}</Badge></td><td><Badge tone={s.tone}>{s.label}</Badge></td><td>{when(site.created_at)}</td>
-            <td><button className="secondary-button" onClick={() => onOpen(site.id)}>{site.verification_status === "verified" ? "Open" : "Verify"}</button></td></tr>;
+            <td className="sw-row-actions"><button className="secondary-button" onClick={() => onOpen(site.id)}>{site.verification_status === "verified" ? "Open" : "Verify"}</button>
+              <button className="secondary-button sw-remove-button" aria-label={`Remove ${site.domain || site.name}`} onClick={() => setRemoving(site)}>Remove</button></td></tr>;
         }) : <tr><td colSpan={5}><div className="empty-state"><div className="empty-icon"><Globe2 size={22} /></div>
           <strong>No websites yet</strong><p>Type your website address above and click “Add website”.</p></div></td></tr>}</tbody>
     </table></div></section>
@@ -308,7 +353,7 @@ export default function Console({ account, onLogout }) {
   const [page, setPage] = useState("dashboard"), [openId, setOpenId] = useState(null);
   const [websites, setWebsites] = useState([]), [plan, setPlan] = useState(null), [loading, setLoading] = useState(true);
   const [legacySites, setLegacySites] = useState([]), [clients, setClients] = useState([]);
-  const [error, setError] = useState(""), [limit, setLimit] = useState(null);
+  const [error, setError] = useState(""), [limit, setLimit] = useState(null), [notice, setNotice] = useState("");
   const load = useCallback(async () => {
     setError("");
     try {
@@ -323,7 +368,17 @@ export default function Console({ account, onLogout }) {
     if (page === "legacy-findings") api.getClients().then(setClients).catch(() => setClients([]));
   }, [staff, page]);
 
-  const go = id => { setPage(id); setOpenId(null); setError(""); };
+  const go = id => { setPage(id); setOpenId(null); setError(""); setNotice(""); };
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(""), 6000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+  const removed = result => {
+    setOpenId(null); setLimit(null); setNotice(result.message || "Website removed.");
+    setWebsites(rows => rows.filter(site => site.domain !== result.domain));
+    load();
+  };
   const nav = useMemo(() => [...MAIN_NAV, ...(account.role === "admin" ? [{ id: "admin", label: "Admin", icon: Users }] : [])], [account.role]);
   const title = [...nav, ...LEGACY_NAV].find(item => item.id === page)?.label || "Dashboard";
 
@@ -353,11 +408,13 @@ export default function Console({ account, onLogout }) {
       <div className="content-area">
         {error && <div className="alert alert-error" role="alert"><ShieldAlert size={18} /><div><strong>Something went wrong</strong><span>{error}</span></div>
           <button className="alert-action" onClick={load}>Try again</button></div>}
+        {notice && <div className="sw-notice" role="status" data-testid="notice"><CheckCircle2 size={16} />{notice}
+          <button className="icon-button" aria-label="Dismiss" onClick={() => setNotice("")}><X size={14} /></button></div>}
         <UpgradeNotice detail={limit} onClose={() => setLimit(null)} onUpgrade={() => { setLimit(null); go("settings"); }} />
         {page === "dashboard" && <DashboardView account={account} websites={websites} plan={plan} loading={loading}
           onOpen={id => { setPage("websites"); setOpenId(id); }} onAdd={() => go("websites")} />}
         {page === "websites" && <WebsitesView websites={websites} plan={plan} loading={loading} openId={openId} onOpen={setOpenId}
-          onAdded={site => { setWebsites(rows => [site, ...rows]); load(); }} onLimit={setLimit} onChanged={load} />}
+          onAdded={site => { setWebsites(rows => [site, ...rows]); load(); }} onLimit={setLimit} onChanged={load} onRemoved={removed} />}
         {page === "settings" && <SettingsView account={account} plan={plan} />}
         {page === "admin" && account.role === "admin" && <AdminView account={account} />}
         {staff && page.startsWith("legacy-") && <div className="sw-legacy-note"><Shield size={15} />Earlier analyst workflow: read-only. Nothing can be started from these pages.</div>}

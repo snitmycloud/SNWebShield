@@ -48,8 +48,8 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("Remediation migration required: python -m alembic upgrade head")
     if not all(inspector.has_table(name) for name in ("auth_events", "revoked_tokens", "assessment_closure_reopenings")) or "purged_at" not in {c["name"] for c in inspector.get_columns("authorization_evidence")}:
         raise RuntimeError("Production hardening migration required: python -m alembic upgrade head")
-    if not all(inspector.has_table(name) for name in ("scans", "account_tokens", "retired_tables")) or "owner_id" not in {
-            c["name"] for c in inspector.get_columns("websites")}:
+    if not all(inspector.has_table(name) for name in ("scans", "account_tokens", "retired_tables")) or not {
+            "owner_id", "removed_at"} <= {c["name"] for c in inspector.get_columns("websites")}:
         raise RuntimeError("Self-service migration required (back up first): python -m alembic upgrade head")
     yield
 

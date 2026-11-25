@@ -20,7 +20,8 @@ class PlanChange(BaseModel):
 
 
 def _read(db, account: Admin) -> dict:
-    websites = db.scalar(select(func.count()).select_from(Website).where(Website.owner_id == account.id)) or 0
+    websites = db.scalar(select(func.count()).select_from(Website).where(
+        Website.owner_id == account.id, Website.removed_at.is_(None))) or 0
     iso = lambda v: as_utc(v).isoformat() if v else None
     return {"id": account.id, "email": account.email, "full_name": account.full_name, "role": account.role,
             "plan": account.plan, "is_active": account.is_active, "email_verified": account.email_verified_at is not None,

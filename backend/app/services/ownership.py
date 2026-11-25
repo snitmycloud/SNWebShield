@@ -279,7 +279,8 @@ def covering_website(db, website: Website) -> Website | None:
     if not candidates:
         return None
     for parent in db.scalars(select(Website).where(Website.owner_id == website.owner_id, Website.domain.in_(candidates),
-                                                   Website.verification_status == "verified")):
+                                                   Website.verification_status == "verified",
+                                                   Website.removed_at.is_(None))):
         if parent.verification_method != "parent" and domains.covers(parent.domain, website.domain):
             return parent
     return None

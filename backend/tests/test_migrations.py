@@ -1,4 +1,4 @@
-import os
+﻿import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -21,7 +21,7 @@ def test_new_database_migrates_and_upgrade_is_idempotent(tmp_path):
     migrate(path)
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0016_self_service"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0017_website_removal"
         columns = {row[1] for row in db.execute("PRAGMA table_info(website_authorizations)")}
         assert "timestamps_verified" in columns
         assert db.execute("SELECT COUNT(*) FROM admins").fetchone()[0] == 0
@@ -152,7 +152,7 @@ def test_vulnerability_migration_preserves_reports_reviews_and_deadlines(tmp_pat
     migrate(path)
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0016_self_service"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0017_website_removal"
         after = {table: db.execute(f'SELECT * FROM {table}').fetchall() for table in tables}
         # 0016 appends account columns to admins; every pre-existing value is unchanged.
         after["admins"] = [row[:len(before["admins"][0])] for row in after["admins"]]
@@ -162,3 +162,31 @@ def test_vulnerability_migration_preserves_reports_reviews_and_deadlines(tmp_pat
             assert db.execute(f'SELECT COUNT(*) FROM {table}').fetchone() == (0,)
         checks = db.execute("SELECT sql FROM sqlite_master WHERE name='vulnerabilities'").fetchone()[0]
         assert "ck_vulnerability_state" in checks and "fingerprint" in checks
+
+
+def test_website_removal_migration_keeps_rows_and_only_limits_the_unique_rule_to_live_websites(tmp_path):
+    path = tmp_path / "pre-removal.db"
+    migrate(path, "0016_self_service")
+    with sqlite3.connect(path) as db:
+        db.execute("INSERT INTO admins (id,email,full_name,password_hash,role,is_active,plan) VALUES (1,'o@example.com','Owner','h','user',1,'free')")
+        db.execute("INSERT INTO websites (id,owner_id,name,url,domain,environment,authorisation_status,verification_status) VALUES (1,1,'a.example.com','https://a.example.com/','a.example.com','production','retired','verified')")
+        db.execute("INSERT INTO scans (id,website_id,owner_id,scan_type,trigger,status,requested_at) VALUES ('s1',1,1,'standard','first','incomplete','2026-11-25')")
+        before = db.execute("SELECT id,owner_id,domain,verification_status FROM websites").fetchall()
+    migrate(path)
+    migrate(path)  # idempotent
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0017_website_removal"
+        assert db.execute("SELECT id,owner_id,domain,verification_status FROM websites").fetchall() == before
+        assert db.execute("SELECT removed_at FROM websites WHERE id=1").fetchone() == (None,)
+        assert db.execute("SELECT COUNT(*) FROM scans").fetchone() == (1,)
+        # A second live website with the same owner and domain is refused...
+        try:
+            db.execute("INSERT INTO websites (owner_id,name,url,domain,environment,authorisation_status) VALUES (1,'dup','https://a.example.com/','a.example.com','production','retired')")
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            raise AssertionError("a live duplicate must be refused")
+        # ...but once the first one is removed, the domain can be added again.
+        db.execute("UPDATE websites SET removed_at='2026-11-25' WHERE id=1")
+        db.execute("INSERT INTO websites (owner_id,name,url,domain,environment,authorisation_status) VALUES (1,'again','https://a.example.com/','a.example.com','production','retired')")
+        assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"

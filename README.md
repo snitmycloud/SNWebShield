@@ -11,6 +11,7 @@ SNWebShield is a self-service website security scanner for website owners. A use
 - **Accounts:** sign up with email and password, confirm the email, sign in and out, forgot/reset password, change password. Passwords use Argon2 and the existing policy; sign-up, login and reset emails are rate-limited. Roles are `user` (customer) and `admin`; the older staff roles `lead_analyst` and `analyst` remain for the read-only legacy pages. Customers see only their own websites and scans and are refused by every staff route.
 - **Plans:** limits live in one file, [backend/app/plans.json](backend/app/plans.json) (Free = 5 websites, Pro = 25, Business = 100), re-read when it changes. New accounts are Free; an admin changes plans on the Admin page. Adding a website past the limit shows a friendly message with an **Upgrade** button.
 - **Websites and verification:** the domain is cleaned up (scheme, path, port, case) and IP addresses, `localhost` and internal names are refused. Each website gets its own random code. "Verify now" checks at once and shows what was found against what was expected; if the file/meta method fails because the site has no valid HTTPS, it points to the DNS TXT method. Verifying `example.com` covers its subdomains; verifying `www.example.com` covers only that host.
+- **Remove website:** the owner can remove a website from its page or the list. They must type the domain to confirm. Removal deletes the website's verification code, deletes its queued scans, ends a running scan, and frees a plan slot. The website row, finished scan records, execution events and the audit log are kept, and `website_removed` (user, domain, time, what was cancelled) is written to the audit log (migration `0017_website_removal`). The same domain can be added again later with a new code.
 - **Automatic first scan:** as soon as verification succeeds, the first scan is queued and run by the new `scan-worker`. In Phase 1 a scan re-checks ownership, resolves and pins one public IP, records the audit entry and ends as **incomplete**; the port, version and technology checks arrive in Phase 2.
 - **Removed:** written authorisations, evidence uploads, approval states, attestation checkboxes, the assessment profile picker and dual sign-off. Their tables and data are kept and listed in `retired_tables` (migration `0016_self_service`). The earlier analyst pipeline (assessments, Docker/Nmap profiles, workbench, VAPT reports, remediation, port watch, monitoring set-up) is **read-only**: staff can still read past data, only "stop" actions work, and it will be deleted after Phases 2–4 replace it.
 
@@ -151,10 +152,10 @@ npm install
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m app.cli.backup_database      # verified copy of the SQLite file, outside the repository
-.\.venv\Scripts\python.exe -m alembic upgrade head          # head is 0016_self_service
+.\.venv\Scripts\python.exe -m alembic upgrade head          # head is 0017_website_removal
 ```
 
-To restore a backup: stop the API and all workers, then copy the backup file over `backend\snwebshield_dev.db` and check out the code that matches it (for `0016`, the commit before Phase 1).
+To restore a backup: stop the API and all workers, then copy the backup file over `backend\snwebshield_dev.db` and check out the code that matches it (for `0016` and `0017`, the commit before Phase 1).
 
 Back up before every migration. Migrations are additive and downgrades are refused; to go back, restore the backup together with the matching code. The API refuses to start if a required table is missing.
 
@@ -229,7 +230,7 @@ npm run test:e2e                              # optional Chromium journeys (Play
 
 Run `pytest`, `npm test` and `npm run build` strictly one after another; running them together can exhaust memory on this machine.
 
-The legacy analyst-pipeline suites are listed in `collect_ignore` in `backend/tests/conftest.py`: they exercise the removed written-permission system and stay in the repository until Phases 2–4 replace that code. Phase 1 tests: `test_accounts.py`, `test_websites.py`, `test_ownership.py`, `test_scans.py`, `test_legacy_read_only.py`, `test_auth.py`, `test_migrations.py`, and `frontend/tests/account.test.js`.
+The legacy analyst-pipeline suites are listed in `collect_ignore` in `backend/tests/conftest.py`: they exercise the removed written-permission system and stay in the repository until Phases 2–4 replace that code. Phase 1 tests: `test_accounts.py`, `test_websites.py`, `test_website_removal.py`, `test_ownership.py`, `test_scans.py`, `test_legacy_read_only.py`, `test_auth.py`, `test_migrations.py`, and `frontend/tests/account.test.js`.
 
 ### 7. Deploy or update the isolated scanner container on the Azure VM
 

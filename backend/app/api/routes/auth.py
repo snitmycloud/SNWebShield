@@ -162,5 +162,6 @@ def my_plan(current: Admin = Depends(get_current_account), db: Session = Depends
     from sqlalchemy import func
     from app.models.website import Website
     plan = plans.get(current.plan)
-    used = db.scalar(select(func.count()).select_from(Website).where(Website.owner_id == current.id)) or 0
+    used = db.scalar(select(func.count()).select_from(Website).where(
+        Website.owner_id == current.id, Website.removed_at.is_(None))) or 0
     return {**plan, "websites_used": used}
