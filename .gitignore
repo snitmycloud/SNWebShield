@@ -39,3 +39,6 @@ Thumbs.db
 
 # Local database backups (contain application data and password hashes)
 backups/
+
+# ...but the vendored Nuclei templates must be committed in full, even inside folders named "backups".
+!backend/app/data/nuclei/templates/**

@@ -275,7 +275,7 @@ function MonitorTab({ site, data }) {
   </section>;
 }
 
-function ScanTabs({ site, scan }) {
+function ScanTabs({ site, scan, plan }) {
   const [tab, setTab] = useState("monitor");
   const { data, error } = useScanDetail(site.id, scan);
   if (error) return <div className="form-error" role="alert"><AlertTriangle size={15} />{error}</div>;
@@ -288,11 +288,11 @@ function ScanTabs({ site, scan }) {
     {tab === "monitor" && <MonitorTab site={site} data={data} />}
     {tab === "detect" && <DetectSections data={data} running={running} />}
     {tab === "vulnerabilities" && <FindingsPanel findings={data.findings || []} result={data.scan.result || {}} running={running} />}
-    {tab === "report" && <ReportView site={site} data={data} />}
+    {tab === "report" && <ReportView site={site} data={data} plan={plan} />}
   </>;
 }
 
-function ScanPanel({ site, scans, onScanNow, busy, limitNote, onUpgrade }) {
+function ScanPanel({ site, scans, onScanNow, busy, limitNote, onUpgrade, plan }) {
   const latest = scans[0];
   const view = scanView(latest);
   const scanNow = site.scan_now;
@@ -311,7 +311,7 @@ function ScanPanel({ site, scans, onScanNow, busy, limitNote, onUpgrade }) {
     <div className="sw-scan-now"><Badge tone={view.tone}>{view.label}</Badge>
       {view.active && <LoaderCircle className="spin" size={15} />}
       <span data-testid="scan-status">{view.active || !["completed", "incomplete", "refused"].includes(latest?.status) ? view.text : ""}</span></div>
-    {latest && <ScanTabs site={site} scan={latest} />}
+    {latest && <ScanTabs site={site} scan={latest} plan={plan} />}
     {scans.length > 1 && <ul className="sw-history">{scans.slice(1).map(scan => {
       const v = scanView(scan);
       return <li key={scan.id}><Badge tone={v.tone}>{v.label}</Badge><span>{when(scan.ended_at || scan.requested_at)}</span></li>;
@@ -319,7 +319,7 @@ function ScanPanel({ site, scans, onScanNow, busy, limitNote, onUpgrade }) {
   </section>;
 }
 
-function WebsiteDetail({ id, onBack, onChanged, onRemoved, onUpgrade }) {
+function WebsiteDetail({ id, onBack, onChanged, onRemoved, onUpgrade, plan }) {
   const [site, setSite] = useState(null), [scans, setScans] = useState([]), [error, setError] = useState("");
   const [removing, setRemoving] = useState(false), [scanBusy, setScanBusy] = useState(false), [limitNote, setLimitNote] = useState("");
   const alive = useRef(true);
@@ -363,13 +363,13 @@ function WebsiteDetail({ id, onBack, onChanged, onRemoved, onUpgrade }) {
       <strong><AlertTriangle size={16} />Scans are paused</strong><p>{site.verification_result.message}</p>
       {site.verification_result.hint && <p>{site.verification_result.hint}</p>}</div>}
     {site.verification_status !== "verified" && <VerifyPanel site={site} onVerified={() => { load(); onChanged(); }} />}
-    <ScanPanel site={site} scans={scans} onScanNow={scanNow} busy={scanBusy} limitNote={limitNote} onUpgrade={onUpgrade} />
+    <ScanPanel site={site} scans={scans} onScanNow={scanNow} busy={scanBusy} limitNote={limitNote} onUpgrade={onUpgrade} plan={plan} />
   </>;
 }
 
 function WebsitesView({ websites, plan, loading, openId, onOpen, onAdded, onLimit, onChanged, onRemoved, onUpgrade }) {
   const [removing, setRemoving] = useState(null);
-  if (openId) return <WebsiteDetail id={openId} onBack={() => onOpen(null)} onChanged={onChanged} onRemoved={onRemoved} onUpgrade={onUpgrade} />;
+  if (openId) return <WebsiteDetail id={openId} onBack={() => onOpen(null)} onChanged={onChanged} onRemoved={onRemoved} onUpgrade={onUpgrade} plan={plan} />;
   return <>
     {removing && <RemoveDialog site={removing} onClose={() => setRemoving(null)} onRemoved={result => { setRemoving(null); onRemoved(result); }} />}
     <Heading eyebrow="WEBSITES" title="Websites" text="Add a website, prove you own it, and we scan it automatically." />

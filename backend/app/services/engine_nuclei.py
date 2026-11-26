@@ -11,6 +11,7 @@ Not running is never "safe": the step is `skipped` (disabled) or `could_not_chec
 """
 import json
 import re
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -216,6 +217,52 @@ def process_results(raw_results: list, domain: str, index: dict, equivalents: di
             "sensitive_panels": sum(1 for p in panels if p["sensitive"])}
 
 
+# --- Which templates run: QUICK (normal scans) or DEEP (all of them; scheduled deep scans later) ---------------------------------------
+QUICK_CATEGORIES = ("exposures", "misconfiguration")
+_GENERIC = {"http", "https", "server", "web", "the", "and", "for", "with", "framework", "library", "cms", "panel", "service", "api", "app",
+            "login", "admin", "detect", "version", "plugin", "wp", "php", "js", "css", "html", "net", "linux", "unix", "windows"}
+_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
+
+
+def detected_tokens(technologies, probes) -> set[str]:
+    """Lower-case words for the software we already detected (names and server products), used to pick matching CVE templates."""
+    import re
+    names = [t.get("name", "") for t in technologies] + [getattr(p, "product", "") or "" for p in probes]
+    tokens = set()
+    for name in names:
+        for word in re.split(r"[^a-z0-9]+", str(name).lower()):
+            if len(word) >= 3 and word not in _GENERIC:
+                tokens.add(word)
+        compact = re.sub(r"[^a-z0-9]+", "", str(name).lower())
+        if len(compact) >= 3 and compact not in _GENERIC:
+            tokens.add(compact)
+    return tokens
+
+
+def select_templates(manifest: dict, mode: str, tokens: set[str], rules=None, max_cves: int | None = None) -> list[str]:
+    """Relative template paths to run. QUICK: every exposures and misconfiguration template, the SENSITIVE panels only, and the CVE
+    templates whose tags/product match software we detected (highest severity first, capped). DEEP: all vendored templates."""
+    index = manifest.get("index", {})
+    if mode == "deep":
+        return sorted(index)
+    rules = sensitive_panels.load_sensitive() if rules is None else rules
+    chosen, cves = [], []
+    for path, meta in index.items():
+        category = meta.get("category")
+        if category in QUICK_CATEGORIES:
+            chosen.append(path)
+        elif category == "exposed-panels":
+            if sensitive_panels.sensitive_label(meta.get("id", ""), meta.get("name") or "", rules):
+                chosen.append(path)
+        elif category == "cves" and tokens:
+            words = set(meta.get("tags") or []) | {meta.get("product")}   # not the vendor: "apache" would pull in every Apache product
+            if words & tokens:
+                cves.append((_RANK.get(meta.get("severity"), 5), meta.get("id", ""), path))
+    limit = settings.nuclei_max_quick_cves if max_cves is None else max_cves
+    chosen += [path for _, _, path in sorted(cves)[:limit]]
+    return sorted(chosen)
+
+
 class NucleiEngine(engines.Engine):
     name = "nuclei"
     label = "Running extra template checks"
@@ -237,11 +284,18 @@ class NucleiEngine(engines.Engine):
         check = await nuclei_selftest.ensure(guard)
         if not check["ok"]:
             return engines.EngineResult("could_not_check", [], {"reason": "selftest_failed", "selftest": check["failed"]})
+        mode = "deep" if getattr(ctx, "scan_type", "standard") == "deep" else "quick"
+        chosen = select_templates(manifest, mode, detected_tokens(state.technologies, state.probes))
+        if not chosen:
+            return engines.EngineResult("ok", [], {"mode": mode, "templates": 0, "reason": "no_matching_templates"})
         log_path = Path(settings.nuclei_log_dir) / f"{ctx.scan_id}.jsonl"
         proxy = egress_proxy.EgressProxy(host=ctx.domain, ip=ctx.ip, scan_id=ctx.scan_id, log_path=log_path)
         await proxy.start()
         try:
-            outcome = await nuclei_runner.run(binary, TEMPLATES_DIR, targets, proxy.url, guard)
+            started = time.monotonic()
+            outcome = await nuclei_runner.run(binary, [TEMPLATES_DIR / path for path in chosen], targets, proxy.url, guard,
+                                              timeout_seconds=settings.nuclei_deep_run_seconds if mode == "deep" else settings.nuclei_run_seconds)
+            seconds = round(time.monotonic() - started, 1)
         finally:
             await proxy.stop()
         index = {meta["id"]: meta for meta in manifest.get("index", {}).values()}
@@ -253,7 +307,8 @@ class NucleiEngine(engines.Engine):
             from app.services import detect_runner   # imported here: detect_runner imports the engines
             detect_runner.save_technologies(ctx, state.technologies)
         summary = proxy.summary()
-        detail = {"templates": len(manifest["templates"]), "targets": targets, "findings": len(found), "dropped_results": dropped, "technologies_added": len(processed["technologies"]),
+        detail = {"mode": mode, "templates": len(chosen), "templates_available": len(manifest["templates"]), "seconds": seconds,
+                  "requests": summary["allowed"], "targets": targets, "findings": len(found), "dropped_results": dropped, "technologies_added": len(processed["technologies"]),
                   "panels": processed["panels"], "sensitive_panels": processed["sensitive_panels"],
                   "proxy": summary, "proxy_log": str(log_path), "exit_code": outcome.exit_code, "selftest_at": check["at"]}
         if outcome.timed_out or outcome.truncated or (outcome.exit_code not in (0, None) and not found):

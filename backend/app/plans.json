@@ -9,9 +9,14 @@
       "manual_scans_per": "website",
       "ports": "top_1000",
       "full_port_scan": false,
-      "report": ["online"],
-      "alerts": ["email"],
-      "history_days": 30
+      "report": [
+        "online"
+      ],
+      "alerts": [
+        "email"
+      ],
+      "history_days": 30,
+      "pdf_report": true
     },
     "pro": {
       "label": "Pro",
@@ -21,9 +26,15 @@
       "manual_scans_per": "account",
       "ports": "top_1000",
       "full_port_scan": true,
-      "report": ["online", "pdf"],
-      "alerts": ["email"],
-      "history_days": 365
+      "report": [
+        "online",
+        "pdf"
+      ],
+      "alerts": [
+        "email"
+      ],
+      "history_days": 365,
+      "pdf_report": true
     },
     "business": {
       "label": "Business",
@@ -33,9 +44,17 @@
       "manual_scans_per": "account",
       "ports": "top_1000",
       "full_port_scan": true,
-      "report": ["online", "pdf", "white_label"],
-      "alerts": ["email", "webhook"],
-      "history_days": 730
+      "report": [
+        "online",
+        "pdf",
+        "white_label"
+      ],
+      "alerts": [
+        "email",
+        "webhook"
+      ],
+      "history_days": 730,
+      "pdf_report": true
     }
   }
 }

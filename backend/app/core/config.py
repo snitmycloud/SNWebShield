@@ -115,7 +115,9 @@ class Settings(BaseSettings):
     nuclei_enabled: bool = False
     nuclei_dir: Path = Path.home() / "SNWebShield-Private" / "engines"          # where the pinned binary is installed (outside the repo)
     nuclei_log_dir: Path = Path.home() / "SNWebShield-Private" / "nuclei-logs"  # one proxy log per scan
-    nuclei_run_seconds: int = Field(default=90, ge=30, le=1800)                 # hard limit for one Nuclei run (keeps a normal scan under 3 minutes)
+    nuclei_run_seconds: int = Field(default=100, ge=30, le=1800)                # hard limit for one QUICK Nuclei run (a quick run normally takes about a minute)
+    nuclei_deep_run_seconds: int = Field(default=600, ge=60, le=3600)           # hard limit for a DEEP run (all templates; scheduled deep scans, Phase 5)
+    nuclei_max_quick_cves: int = Field(default=300, ge=0, le=1000)
     nuclei_rate_limit: int = Field(default=25, ge=1, le=50)                     # requests per second (to the one host)
     nuclei_concurrency: int = Field(default=10, ge=1, le=10)
     nuclei_max_output_bytes: int = Field(default=1024 * 1024, ge=65536, le=8 * 1024 * 1024)

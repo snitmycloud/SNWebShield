@@ -26,8 +26,27 @@ def main() -> int:
     parser.add_argument("--vendor")
     parser.add_argument("--version", default="10.5.2")
     parser.add_argument("--commit", default="")
+    parser.add_argument("--reindex", action="store_true", help="directory is an already vendored set: rebuild only the index in MANIFEST.json")
     args = parser.parse_args()
     root = Path(args.directory)
+    if args.reindex:
+        manifest_path = root / "MANIFEST.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        index = {}
+        for name, digest in manifest["templates"].items():
+            if hashlib.sha256((root / name).read_bytes()).hexdigest() != digest:
+                print("REFUSED: a vendored template no longer matches its hash:", name)
+                return 1
+            verdict = nt.validate_file(root / name, root)
+            if not verdict.ok:
+                print("REFUSED: a vendored template no longer passes the validator:", name, verdict.reasons)
+                return 1
+            index[name] = {"id": verdict.template_id, "category": verdict.category, "name": verdict.name, "severity": verdict.severity,
+                           "tags": verdict.tags, "vendor": verdict.vendor, "product": verdict.product}
+        manifest["index"] = index
+        manifest_path.write_text(json.dumps(manifest, indent=1, sort_keys=True), encoding="utf-8")
+        print(f"Re-indexed {len(index)} templates (hashes unchanged).")
+        return 0
     files = sorted(p for p in root.rglob("*") if p.suffix.lower() in (".yaml", ".yml") and p.is_file())
     verdicts = [nt.validate_file(path, root) for path in files]
     scoped = [v for v in verdicts if v.category]
@@ -74,7 +93,8 @@ def main() -> int:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
             manifest[verdict.path] = hashlib.sha256(data).hexdigest()
-            index[verdict.path] = {"id": verdict.template_id, "category": verdict.category, "name": verdict.name, "severity": verdict.severity}
+            index[verdict.path] = {"id": verdict.template_id, "category": verdict.category, "name": verdict.name, "severity": verdict.severity,
+                                   "tags": verdict.tags, "vendor": verdict.vendor, "product": verdict.product}
         for licence in ("LICENSE.md", "LICENSE", "LICENSE.txt"):
             if (root / licence).is_file():
                 (dest / "LICENSE.md").write_bytes((root / licence).read_bytes().replace(b"\r\n", b"\n"))

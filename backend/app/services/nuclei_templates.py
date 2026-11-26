@@ -54,6 +54,9 @@ class Verdict:
     template_id: str | None = None
     severity: str | None = None
     name: str | None = None
+    tags: list = field(default_factory=list)
+    vendor: str | None = None
+    product: str | None = None
     reasons: list = field(default_factory=list)
 
     @property
@@ -121,6 +124,13 @@ def validate(text: str, path: str = "") -> Verdict:
     else:
         verdict.template_id, verdict.severity = template_id, str(info["severity"]).lower()
         verdict.name = info["name"][:200]
+        verdict.tags = sorted(_tags(info))[:30]
+        metadata = info.get("metadata") if isinstance(info.get("metadata"), dict) else {}
+        classification = info.get("classification") if isinstance(info.get("classification"), dict) else {}
+        cpe = str(classification.get("cpe") or "")
+        parts = cpe.split(":")
+        verdict.vendor = str(metadata.get("vendor") or (parts[3] if len(parts) > 4 else "") or "").lower()[:60] or None
+        verdict.product = str(metadata.get("product") or (parts[4] if len(parts) > 4 else "") or "").lower()[:60] or None
     if verdict.category is None:
         reject("out_of_scope")
     tags = _tags(info) if isinstance(info, dict) else set()

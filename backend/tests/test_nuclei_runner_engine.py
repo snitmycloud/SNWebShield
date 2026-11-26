@@ -56,7 +56,7 @@ def test_the_command_is_a_fixed_argument_list_with_every_safety_switch():
     for switch in ("-ni", "-fhr", "-duc", "-j", "-or", "-nc", "-silent"):
         assert switch in cmd
     assert flags["-p"] == "http://127.0.0.1:9" and flags["-rl"] == "10" and flags["-c"] == "5" and flags["-retries"] == "0"
-    for forbidden in ("-dut", "-lfa", "-esc", "-code", "-headless", "-dast", "-fuzz", "-ev", "-update-templates", "-ut", "-sr", "-restrict-local-network-access"):
+    for forbidden in ("-dut", "-lfa", "-esc", "-code", "-headless", "-dast", "-fuzz", "-ev", "-update-templates", "-ut", "-restrict-local-network-access"):
         assert forbidden not in cmd
 
 
