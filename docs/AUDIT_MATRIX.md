@@ -177,6 +177,32 @@ Tests: `test_detect_pipeline.py` (optional step down: completed with the note; c
 
 ---
 
+## Demo build (2026-11-26): manual verification, robustness, report (minimal Phase 4)
+
+| Item | Status | Tests / proof |
+|---|---|---|
+| Test-target limit 10 scans per UTC day (constant in `config.py`, still not changeable from the app) | ✅ | `test_test_targets.py`, `test_scan_now.py` |
+| Real scanme scan with Nuclei on: the proxy log shows ONLY scanme's pinned IP (160 allowed, 0 refused). Nuclei reached its 90 s cap with no findings and the scan took 4 min 38 s, so **Nuclei is OFF for the demo** (optional; default off). Self-test now runs once at worker start and a scan never waits for it | ✅ / ⚠️ | `docs/proof/phase3b/real-scan-proxy-log.jsonl` |
+| Admin-only "Verify manually": typed reason (10-300 characters), 24 hours, label "Manually verified by admin", audit event `manual_verification` (admin, reason, time, owner), a scan in progress stops when it runs out; normal users, analysts and disabled admins get 403; a site verified by DNS/file/meta is never downgraded | ✅ | `test_manual_verification.py` (32) |
+| Verification screen: numbered plain steps, copy buttons (code, file name, folder, address, TXT value, meta tag), "Check again"; file/meta checks follow an `example.com` <-> `www.example.com` redirect, check both and explain (loops, wrong host and non-www redirects are never followed) | ✅ | `test_manual_verification.py`, screenshots 04-06 |
+| CDN/WAF detection (Cloudflare, Akamai, Fastly, CloudFront, Azure Front Door, Sucuri, Imperva, Vercel, Netlify, GitHub Pages, ...): "This site is behind <CDN>. Port results show the CDN, not your server."; versions seen through a CDN are only "possible" | ✅ | `test_robustness_report.py` |
+| Blocking sites (403/429/challenge pages), hanging sites, HTTPS-only, HTTP-only, www/bare redirects, no open ports: plain-language notes, never a crash or a pass; IPv6-only is refused with "not supported yet" and nothing is contacted | ✅ | `test_robustness_report.py` |
+| Scan time for a normal site: real scanme scan **43 seconds** (Nuclei off); vulnerability budget 90 s; partial results appear after every item and progress names the software being checked | ✅ | screenshots 10-11 |
+| Score and grade (spec section 7: 100 minus 25/10/4/1 per confirmed Critical/High/Medium/Low, A 90+, B 75+, C 60+, D 40+, F; weights in settings; needs-checking and Info never count; incomplete scans marked) | ✅ | `test_robustness_report.py`, `frontend/tests/report.test.js` |
+| Report page per website: score, grade, counts, Confirmed / Needs checking with Where, You have, You should have, Risk, Why it matters, How to fix; print stylesheet and "Download PDF" (the browser's Save as PDF); score on the dashboard card; four tabs Monitor, Detect, Vulnerabilities, Report | ✅ | screenshots 12-17, `report-scanme.pdf` |
+| No browser console errors, warnings or failed requests during the walkthrough; a page that fails to draw shows a plain message (error boundary) | ✅ | `docs/proof/demo/console-problems.txt` ("none") |
+| `docs/DEMO_SCRIPT.md`, `scripts/start-demo.ps1`, `scripts/stop-demo.ps1` | ✅ | |
+
+**Not done / not verified**
+- Skipped by instruction: re-scan to confirm a fix, accepted risk, scan comparison, alerts, schedules, payments, uptime checks, score trend.
+- The manual-verification button was exercised by tests and the form was screenshotted, but **not submitted live** (that would start a scan of a site we are not allowed to scan); it is to be shown on the GitHub Pages test site once its domain is known.
+- The PDF button uses the browser's print dialog and is available to every plan (the spec says Pro and above; not gated yet).
+- Real-world CDN behaviour was tested with header fixtures, not against live Cloudflare/Akamai sites.
+- Vulnerability look-ups without an NVD key are slow when several products are found (5 requests per 30 s); results appear as they arrive.
+- Nuclei: see Phase 3B; it is off for the demo.
+
+---
+
 **Status legend.** âœ… Fully implemented and tested Â· ðŸŸ¡ Partially implemented Â· ðŸ§ª Implemented but not tested Â· âŒ Missing Â· ðŸ”§ Broken or requiring improvement
 
 Test paths are relative to `backend/tests/`. Milestone 6 tests are in `test_production_hardening.py` (`H::` below) and `test_e2e_lifecycle.py` (`E2E::`). Module E and F test names below are real function names in `test_vulnerabilities.py` and `test_workbench.py`. Browser journeys are in `frontend/tests/e2e/authorization.spec.js`. All API routes are under `/api/v1`.
