@@ -124,3 +124,20 @@ def test_registry_rejects_duplicates_and_new_engines_plug_in():
     identify.register_builtin()  # registering twice changes nothing
     assert [e.name for e in engines.registered()].count("configuration") == 1
     assert {"configuration", "vulnerabilities", "lifecycle"} <= {e.name for e in engines.registered()}
+
+
+def test_the_merged_finding_keeps_the_most_trusted_sources_identity_whatever_order_engines_finish_in():
+    import itertools
+    builtin = make(kind="exposure", check_id="exposed:index-of:/backup/", title="A folder's contents are listed publicly", location="example.com/backup/",
+                   cve_id=None, severity="medium", sources=["snwebshield"])
+    nuclei = make(kind="exposure", check_id="nuclei:backup-directory-listing", title="Directory listing", location="example.com/backup/",
+                  cve_id=None, severity="medium", sources=["nuclei"])
+    nuclei.details["equivalent_to"] = "exposed:index-of:/backup/"
+    for order in itertools.permutations([builtin, nuclei]):
+        [one] = merge([Finding(**{**x.__dict__}) for x in order])
+        assert one.check_id == "exposed:index-of:/backup/" and one.sources == ["nuclei", "snwebshield"] and one.fingerprint == builtin.fingerprint
+    nvd = make(check_id="cve:CVE-2017-9788", cve_id="CVE-2017-9788", sources=["nvd"])
+    nuc = make(check_id="nuclei:CVE-2017-9788", cve_id="CVE-2017-9788", sources=["nuclei"])
+    for order in itertools.permutations([nvd, nuc]):
+        [one] = merge([Finding(**{**x.__dict__}) for x in order])
+        assert one.check_id == "cve:CVE-2017-9788"

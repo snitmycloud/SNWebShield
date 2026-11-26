@@ -71,6 +71,9 @@ class Finding:
         return data
 
 
+SOURCE_PRIORITY = {"snwebshield": 0, "nvd": 1, "osv": 1, "endoflife.date": 1, "nuclei": 2}
+
+
 def sort_key(finding: Finding):
     return (RANK[finding.severity], finding.group != "findings", -(finding.cvss_score or 0), finding.title)
 
@@ -82,6 +85,9 @@ def merge(findings: list[Finding]) -> list[Finding]:
     finding unions the sources, takes the stronger confidence, and keeps the more severe rating (a CVSS-based one wins).
     """
     merged: dict[tuple, Finding] = {}
+    # The merged finding keeps the identity (check id, title) of its most trusted source, whatever order the engines finished in:
+    # built-in checks first, then the vulnerability databases and end-of-life data, then Nuclei. This keeps fingerprints stable.
+    findings = sorted(findings, key=lambda f: min((SOURCE_PRIORITY.get(s, 1) for s in f.sources), default=1))
     for item in findings:
         # `equivalent_to` lets an engine say "this is the same issue as that other check" (Nuclei template vs built-in check).
         key = (item.location, item.cve_id or item.details.get("equivalent_to") or item.check_id)
