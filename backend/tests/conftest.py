@@ -40,7 +40,7 @@ def no_internet(monkeypatch):
     """No test may reach the internet: scan connections are limited to loopback test servers, and real DNS and
     crt.sh are replaced by errors (tests that need them install their own fakes)."""
     from app.core.config import settings
-    from app.services import detect_dns, detect_subdomains, netio
+    from app.services import detect_dns, detect_subdomains, netio, vuln_sources
 
     real_open = netio.open_connection
 
@@ -55,6 +55,12 @@ def no_internet(monkeypatch):
     def no_crtsh(domain):
         raise OSError("tests must not reach crt.sh")
 
+    def empty_vuln_databases(source, method, path, **kwargs):
+        """Default for tests: databases that know of nothing. Tests of failures or findings install their own fake."""
+        return {"vulnerabilities": [], "totalResults": 0} if source == "nvd" else {}
+
+    vuln_sources.reset_state()
+    monkeypatch.setattr(vuln_sources, "http_json", empty_vuln_databases)
     monkeypatch.setattr(netio, "open_connection", loopback_only)
     monkeypatch.setattr(detect_dns, "lookup", no_dns)
     monkeypatch.setattr(detect_subdomains, "fetch", no_crtsh)

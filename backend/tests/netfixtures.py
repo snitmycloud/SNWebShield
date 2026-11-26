@@ -46,9 +46,16 @@ def free_port() -> int:
         return sock.getsockname()[1]
 
 
-def server_tls() -> ssl.SSLContext:
+def server_tls(minimum=None, maximum=None, ciphers=None) -> ssl.SSLContext:
+    """The test server's TLS settings. Old protocol versions or weak ciphers can be switched on to test the TLS checks."""
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(*cert_paths())
+    if minimum is not None:
+        context.minimum_version = minimum
+    if maximum is not None:
+        context.maximum_version = maximum
+    if ciphers:
+        context.set_ciphers(ciphers)
     return context
 
 
@@ -58,8 +65,10 @@ class BackgroundServer:
     handler(reader, writer, server) is an async function. `server.connections` counts accepted connections and
     `server.closed` counts connections the CLIENT closed while the handler was still waiting."""
 
-    def __init__(self, handler, *, tls: bool = False):
-        self.handler, self.tls = handler, tls
+    def __init__(self, handler, *, tls: bool = False, tls_context=None):
+        """`tls_context`: a function returning the server's SSLContext, for servers that speak only old protocols or ciphers."""
+        self.handler, self.tls_context = handler, tls_context
+        self.tls = tls or tls_context is not None
         self.connections = 0
         self.closed = 0
         self.requests: list[bytes] = []
@@ -81,7 +90,7 @@ class BackgroundServer:
                 with contextlib.suppress(Exception):
                     writer.close()
 
-        server = await asyncio.start_server(wrapped, HOST, 0, ssl=server_tls() if self.tls else None)
+        server = await asyncio.start_server(wrapped, HOST, 0, ssl=(self.tls_context() if self.tls_context else server_tls()) if self.tls else None)
         self.port = server.sockets[0].getsockname()[1]
         self._ready.set()
         try:

@@ -2,6 +2,10 @@
 
   1. ports        2. versions        3. technologies        4. exposed files        5. DNS / email        6. subdomains
 
+then the IDENTIFY engines (Phase 3), each a plug-in with the same interface (see engines.py):
+
+  7. configuration (TLS, headers, cookies, CORS, risky ports)     8. vulnerabilities (NVD / OSV)     9. lifecycle (end of life)
+
 Every step records a state: ok | could_not_check | not_applicable | skipped | stopped. A step that fails or times
 out is "could not check", never "clean". Results found so far are saved when a step finishes AND when it is stopped, so
 a scan that must stop keeps its partial results (the scan itself is then marked incomplete with the reason).
@@ -13,7 +17,8 @@ from dataclasses import dataclass, field
 
 from app.core.config import settings
 from app.data.ports import SERVICE_NAMES, ports_for
-from app.services import detect_dns, detect_exposed, detect_ports, detect_subdomains, detect_tech, detect_versions
+from app.services import (detect_dns, detect_exposed, detect_ports, detect_subdomains, detect_tech, detect_versions, engines,
+                          finding as finding_format, identify)
 from app.services.scan_guard import ScanStopped
 
 STEP_LABELS = {
@@ -28,6 +33,22 @@ STEP_NAMES = {
     "ports": "Open ports", "versions": "Service versions", "technologies": "Technologies",
     "exposed": "Exposed files", "dns": "Email and DNS records", "subdomains": "Subdomain list",
 }
+# OPTIONAL steps depend on an outside service that is not part of the security results. If one cannot check, the scan
+# still ends "completed" with this note. Every other step is CORE: any failure there makes the scan "incomplete".
+OPTIONAL_STEPS = {
+    "subdomains": "Subdomain list unavailable right now (outside service didn't answer). This does not affect your security results.",
+}
+identify.register_builtin()
+
+
+def _engine_names() -> None:
+    """Every registered engine is a step with its own label, so a new engine (Nuclei) needs no change here."""
+    for item in engines.registered():
+        STEP_LABELS.setdefault(item.name, item.label)
+        STEP_NAMES.setdefault(item.name, item.title)
+
+
+_engine_names()
 
 
 @dataclass
@@ -48,14 +69,24 @@ class ScanState:
     probes: list = field(default_factory=list)
     technologies: list = field(default_factory=list)
     observations: dict = field(default_factory=lambda: {"exposed_file": 0, "subdomain": 0})
+    exposed_rows: list = field(default_factory=list)    # exposed-file observations, read by the configuration engine
+    findings: list = field(default_factory=list)        # merged findings of all engines (finding.Finding)
     current: str | None = None
 
     def incomplete_steps(self) -> list[str]:
-        return [name for name, step in self.steps.items() if step["state"] in ("could_not_check", "stopped")]
+        """CORE steps that did not finish. Optional steps never count here (see `optional_notes`)."""
+        return [name for name, step in self.steps.items()
+                if step["state"] in ("could_not_check", "stopped") and name not in OPTIONAL_STEPS]
+
+    def optional_notes(self) -> list[str]:
+        return [OPTIONAL_STEPS[name] for name, step in self.steps.items()
+                if name in OPTIONAL_STEPS and step["state"] == "could_not_check"]
 
     def counts(self) -> dict:
+        found = finding_format.counts(self.findings)
         return {"open_ports": len(self.ports.open), "technologies": len(self.technologies),
-                "exposed_files": self.observations["exposed_file"], "subdomains": self.observations["subdomain"]}
+                "exposed_files": self.observations["exposed_file"], "subdomains": self.observations["subdomain"],
+                "findings": found}
 
 
 # --- Saving ---------------------------------------------------------------------------------------------
@@ -100,6 +131,23 @@ def save_technologies(ctx: ScanContext, techs: list[dict]) -> None:
         for item in techs:
             db.add(ScanTechnology(scan_id=ctx.scan_id, name=item["name"], category=item["category"], version=item["version"],
                                   source=item["source"], evidence=item["evidence"], port=item.get("port")))
+        db.commit()
+
+
+def save_findings(ctx: ScanContext, findings: list) -> None:
+    """Replace the saved findings of this scan with the merged list (called after every engine, so a stop keeps them)."""
+    from app.models.scan import ScanFinding
+    with _sessions(ctx)() as db:
+        db.query(ScanFinding).filter_by(scan_id=ctx.scan_id).delete()
+        for item in findings:
+            data = item.as_dict()
+            db.add(ScanFinding(scan_id=ctx.scan_id, fingerprint=data["fingerprint"], kind=data["kind"], check_id=data["check_id"][:120],
+                               title=data["title"], location=data["location"][:300], port=data["port"], severity=data["severity"],
+                               confidence=data["confidence"], group=data["group"], you_have=data["you_have"],
+                               you_should_have=data["you_should_have"], cve_id=data["cve_id"], cvss_score=data["cvss_score"],
+                               cvss_vector=data["cvss_vector"], affected_range=data["affected_range"], first_fixed=data["first_fixed"],
+                               why=data["why"], how_to_fix=data["how_to_fix"], evidence=data["evidence"], caveat=data["caveat"],
+                               sources=data["sources"], details=data["details"]))
         db.commit()
 
 
@@ -216,6 +264,7 @@ async def run(ctx: ScanContext, state: ScanState, guard) -> None:
         fetch = detect_exposed.make_fetcher(ctx.ip, endpoint[0], endpoint[1], ctx.domain, timeout=settings.scan_http_request_timeout_seconds)
         result = await detect_exposed.check_exposed(fetch, guard=guard)
         save_observations(ctx, "exposed_file", result.observations)
+        state.exposed_rows = list(result.observations)
         state.observations["exposed_file"] = len(result.observations)
         state.steps["exposed"] = ({"state": "could_not_check", "reason": "some_requests_failed"}
                                   if result.failed else {"state": "ok"})
@@ -246,4 +295,19 @@ async def run(ctx: ScanContext, state: ScanState, guard) -> None:
             state.steps["subdomains"] = {"state": "could_not_check", "reason": result.get("reason")}
 
     await stage("subdomains", subdomains_step)
+
+    # 7+. IDENTIFY engines: they use only what the steps above found, and only the one pinned IP.
+    _engine_names()
+    for item in engines.registered():
+        if not ports_ok:
+            state.steps[item.name] = {"state": "skipped", "reason": "ports_not_checked"}
+            continue
+
+        async def engine_step(item=item):
+            result = await engines.run_engine(item, ctx, state, guard)
+            state.steps[item.name] = {"state": result.state, **result.detail}
+            state.findings = finding_format.merge(state.findings + result.findings)
+            save_findings(ctx, state.findings)
+
+        await stage(item.name, engine_step)
     state.current = None

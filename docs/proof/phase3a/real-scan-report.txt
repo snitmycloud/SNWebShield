@@ -1,0 +1,130 @@
+
+SCAN b33ee385 incomplete first ip=45.33.32.156 2026-11-26 06:31:11.064251 -> 2026-11-26 06:31:50.390522
+ steps: {'ports': 'ok', 'versions': 'ok', 'technologies': 'ok', 'exposed': 'ok', 'dns': 'ok', 'subdomains': 'could_not_check', 'configuration': 'ok', 'vulnerabilities': 'ok', 'lifecycle': 'ok'}
+ ports: {'scanned': 1011, 'planned': 1011, 'open': 3, 'closed': 0, 'filtered': 1008, 'errors': 0}
+ configuration: {'findings': 9, 'unchecked': [], 'not_available': []}
+ vulnerabilities: {'items': 2, 'checked': 2, 'failed': [], 'findings': 100}
+ lifecycle: {'items': 2, 'findings': 1, 'data_as_of': '2026-11-26', 'data_older_than_90_days': False}
+ message: We could not finish these checks: subdomain list. Results are incomplete. It does not mean your website is safe.
+  open 22 ssh OpenSSH 6.6.1p1
+  open 80 http Apache 2.4.7
+  open 9929 nping-echo None None
+ findings: 110
+  [critical|possible ] cve:CVE-2008-3844                            OpenSSH 6.6.1p1 has a known vulnerability (CVE-2008-3844)
+  [critical|possible ] cve:CVE-2016-1908                            OpenSSH 6.6.1p1 has a known vulnerability (CVE-2016-1908)
+  [critical|possible ] cve:CVE-2017-3167                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2017-3167)
+  [critical|possible ] cve:CVE-2017-7679                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2017-7679)
+  [critical|possible ] cve:CVE-2017-9788                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2017-9788)
+  [critical|possible ] cve:CVE-2018-1312                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2018-1312)
+  [critical|possible ] cve:CVE-2021-26691                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2021-26691)
+  [critical|possible ] cve:CVE-2021-39275                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2021-39275)
+  [critical|possible ] cve:CVE-2021-40438                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2021-40438)
+  [critical|possible ] cve:CVE-2021-44790                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2021-44790)
+  [critical|possible ] cve:CVE-2022-22720                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2022-22720)
+  [critical|possible ] cve:CVE-2022-22721                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2022-22721)
+  [critical|possible ] cve:CVE-2022-23943                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2022-23943)
+  [critical|possible ] cve:CVE-2022-28615                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2022-28615)
+  [critical|possible ] cve:CVE-2022-31813                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2022-31813)
+  [critical|possible ] cve:CVE-2022-36760                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2022-36760)
+  [critical|possible ] cve:CVE-2023-25690                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2023-25690)
+  [critical|possible ] cve:CVE-2023-38408                           OpenSSH 6.6.1p1 has a known vulnerability (CVE-2023-38408)
+  [critical|possible ] cve:CVE-2024-38474                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2024-38474)
+  [critical|possible ] cve:CVE-2024-38475                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2024-38475)
+  [critical|possible ] cve:CVE-2024-38476                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2024-38476)
+  [critical|possible ] cve:CVE-2026-28780                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2026-28780)
+  [critical|possible ] cve:CVE-2026-29167                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2026-29167)
+  [critical|possible ] cve:CVE-2026-42535                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2026-42535)
+  [critical|possible ] cve:CVE-2026-44631                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2026-44631)
+  [critical|possible ] cve:CVE-2026-56154                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2026-56154)
+  [critical|possible ] cve:CVE-2026-57941                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2026-57941)
+  [critical|possible ] cve:CVE-2026-59797                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2026-59797)
+  [high    |confirmed] eol:distro:ubuntu-14.04                      Your server's operating system (Ubuntu 14.04) no longer receives security update
+  [high    |confirmed] http:no-https                                Your website does not offer a secure (HTTPS) connection
+  [high    |possible ] cve:CVE-2007-4723                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2007-4723)
+  [high    |possible ] cve:CVE-2011-2688                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2011-2688)
+  [high    |possible ] cve:CVE-2013-4365                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2013-4365)
+  [high    |possible ] cve:CVE-2015-5600                            OpenSSH 6.6.1p1 has a known vulnerability (CVE-2015-5600)
+  [high    |possible ] cve:CVE-2015-6564                            OpenSSH 6.6.1p1 has a known vulnerability (CVE-2015-6564)
+  [high    |possible ] cve:CVE-2016-0736                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2016-0736)
+  [high    |possible ] cve:CVE-2016-10009                           OpenSSH 6.6.1p1 has a known vulnerability (CVE-2016-10009)
+  [high    |possible ] cve:CVE-2016-10010                           OpenSSH 6.6.1p1 has a known vulnerability (CVE-2016-10010)
+  [high    |possible ] cve:CVE-2016-10012                           OpenSSH 6.6.1p1 has a known vulnerability (CVE-2016-10012)
+  [high    |possible ] cve:CVE-2016-10708                           OpenSSH 6.6.1p1 has a known vulnerability (CVE-2016-10708)
+  [high    |possible ] cve:CVE-2016-2161                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2016-2161)
+  [high    |possible ] cve:CVE-2016-5387                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2016-5387)
+  [high    |possible ] cve:CVE-2016-8743                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2016-8743)
+  [high    |possible ] cve:CVE-2017-15710                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2017-15710)
+  [high    |possible ] cve:CVE-2017-15715                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2017-15715)
+
+SCAN 346cf917 incomplete manual ip=45.33.32.156 2026-11-26 06:31:59.355476 -> 2026-11-26 06:32:31.087318
+ steps: {'ports': 'ok', 'versions': 'ok', 'technologies': 'ok', 'exposed': 'ok', 'dns': 'ok', 'subdomains': 'could_not_check', 'configuration': 'ok', 'vulnerabilities': 'ok', 'lifecycle': 'ok'}
+ ports: {'scanned': 1011, 'planned': 1011, 'open': 3, 'closed': 0, 'filtered': 1008, 'errors': 0}
+ configuration: {'findings': 9, 'unchecked': [], 'not_available': []}
+ vulnerabilities: {'items': 2, 'checked': 2, 'failed': [], 'findings': 100}
+ lifecycle: {'items': 2, 'findings': 1, 'data_as_of': '2026-11-26', 'data_older_than_90_days': False}
+ message: We could not finish these checks: subdomain list. Results are incomplete. It does not mean your website is safe.
+  open 22 ssh OpenSSH 6.6.1p1
+  open 80 http Apache 2.4.7
+  open 9929 nping-echo None None
+ findings: 110
+  [critical|possible ] cve:CVE-2008-3844                            OpenSSH 6.6.1p1 has a known vulnerability (CVE-2008-3844)
+  [critical|possible ] cve:CVE-2016-1908                            OpenSSH 6.6.1p1 has a known vulnerability (CVE-2016-1908)
+  [critical|possible ] cve:CVE-2017-3167                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2017-3167)
+  [critical|possible ] cve:CVE-2017-7679                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2017-7679)
+  [critical|possible ] cve:CVE-2017-9788                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2017-9788)
+  [critical|possible ] cve:CVE-2018-1312                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2018-1312)
+  [critical|possible ] cve:CVE-2021-26691                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2021-26691)
+  [critical|possible ] cve:CVE-2021-39275                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2021-39275)
+  [critical|possible ] cve:CVE-2021-40438                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2021-40438)
+  [critical|possible ] cve:CVE-2021-44790                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2021-44790)
+  [critical|possible ] cve:CVE-2022-22720                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2022-22720)
+  [critical|possible ] cve:CVE-2022-22721                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2022-22721)
+  [critical|possible ] cve:CVE-2022-23943                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2022-23943)
+  [critical|possible ] cve:CVE-2022-28615                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2022-28615)
+  [critical|possible ] cve:CVE-2022-31813                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2022-31813)
+  [critical|possible ] cve:CVE-2022-36760                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2022-36760)
+  [critical|possible ] cve:CVE-2023-25690                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2023-25690)
+  [critical|possible ] cve:CVE-2023-38408                           OpenSSH 6.6.1p1 has a known vulnerability (CVE-2023-38408)
+  [critical|possible ] cve:CVE-2024-38474                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2024-38474)
+  [critical|possible ] cve:CVE-2024-38475                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2024-38475)
+  [critical|possible ] cve:CVE-2024-38476                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2024-38476)
+  [critical|possible ] cve:CVE-2026-28780                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2026-28780)
+  [critical|possible ] cve:CVE-2026-29167                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2026-29167)
+  [critical|possible ] cve:CVE-2026-42535                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2026-42535)
+  [critical|possible ] cve:CVE-2026-44631                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2026-44631)
+  [critical|possible ] cve:CVE-2026-56154                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2026-56154)
+  [critical|possible ] cve:CVE-2026-57941                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2026-57941)
+  [critical|possible ] cve:CVE-2026-59797                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2026-59797)
+  [high    |confirmed] eol:distro:ubuntu-14.04                      Your server's operating system (Ubuntu 14.04) no longer receives security update
+  [high    |confirmed] http:no-https                                Your website does not offer a secure (HTTPS) connection
+  [high    |possible ] cve:CVE-2007-4723                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2007-4723)
+  [high    |possible ] cve:CVE-2011-2688                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2011-2688)
+  [high    |possible ] cve:CVE-2013-4365                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2013-4365)
+  [high    |possible ] cve:CVE-2015-5600                            OpenSSH 6.6.1p1 has a known vulnerability (CVE-2015-5600)
+  [high    |possible ] cve:CVE-2015-6564                            OpenSSH 6.6.1p1 has a known vulnerability (CVE-2015-6564)
+  [high    |possible ] cve:CVE-2016-0736                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2016-0736)
+  [high    |possible ] cve:CVE-2016-10009                           OpenSSH 6.6.1p1 has a known vulnerability (CVE-2016-10009)
+  [high    |possible ] cve:CVE-2016-10010                           OpenSSH 6.6.1p1 has a known vulnerability (CVE-2016-10010)
+  [high    |possible ] cve:CVE-2016-10012                           OpenSSH 6.6.1p1 has a known vulnerability (CVE-2016-10012)
+  [high    |possible ] cve:CVE-2016-10708                           OpenSSH 6.6.1p1 has a known vulnerability (CVE-2016-10708)
+  [high    |possible ] cve:CVE-2016-2161                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2016-2161)
+  [high    |possible ] cve:CVE-2016-5387                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2016-5387)
+  [high    |possible ] cve:CVE-2016-8743                            Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2016-8743)
+  [high    |possible ] cve:CVE-2017-15710                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2017-15710)
+  [high    |possible ] cve:CVE-2017-15715                           Apache HTTP Server 2.4.7 has a known vulnerability (CVE-2017-15715)
+subdomains step: {'state': 'could_not_check', 'reason': 'crt.sh did not answer in time or is unavailable'}
+confirmed CVEs: 0
+possible CVEs: 100
+('info', 'confirmed', 'disclosure:version', 'scanme.nmap.org:80 server header')
+('high', 'confirmed', 'eol:distro:ubuntu-14.04', 'scanme.nmap.org')
+('medium', 'confirmed', 'exposed:index-of:/images/', 'scanme.nmap.org/images/')
+('low', 'confirmed', 'header:csp-missing', 'scanme.nmap.org:80')
+('info', 'confirmed', 'header:permissions-policy-missing', 'scanme.nmap.org:80')
+('info', 'confirmed', 'header:referrer-policy-missing', 'scanme.nmap.org:80')
+('low', 'confirmed', 'header:xcto-missing', 'scanme.nmap.org:80')
+('low', 'confirmed', 'header:xfo-missing', 'scanme.nmap.org:80')
+('high', 'confirmed', 'http:no-https', 'scanme.nmap.org')
+('info', 'confirmed', 'port:22', 'scanme.nmap.org:22')
+Your server reports OpenSSH 6.6.1p1 as a Ubuntu package. Ubuntu often fixes security problems without changing this version number, so these issues may already be fixed. On the server run `ubuntu-security-status`, or `apt changelog openssh-server | grep CVE-` to see which CVEs your installed package
+{"reasons": ["distro"], "aliases": []} 7.2 9.8
+with 'more not shown': [('cve:CVE-2022-30556', '{"reasons": ["distro"], "aliases": [], "more_not_shown": 88}'), ('cve:CVE-2026-106584', '{"reasons": ["distro"], "aliases": [], "more_not_shown": 4}')]

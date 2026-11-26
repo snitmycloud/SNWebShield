@@ -92,6 +92,15 @@ class Settings(BaseSettings):
     # interface addresses, which are detected automatically.
     server_public_ips: str = ""
 
+    # --- Identification (Phase 3A): vulnerability databases ---
+    # Optional. Works without a key (slower: 5 requests per 30 s). Put the key ONLY in backend/.env; it is never logged.
+    nvd_api_key: SecretStr = SecretStr("")
+    vuln_cache_hours: int = Field(default=24, ge=1, le=168)
+    vuln_http_timeout_seconds: float = Field(default=10.0, ge=1, le=30)
+    vuln_max_response_bytes: int = Field(default=8 * 1024 * 1024, ge=65536, le=32 * 1024 * 1024)
+    scan_identify_budget_seconds: int = Field(default=120, ge=10, le=900)   # all vulnerability look-ups of one scan together
+    scan_tls_probe_timeout_seconds: float = Field(default=2.0, ge=0.5, le=10)
+
     # Sent only when the API itself is served over HTTPS.
     hsts_max_age_seconds: int = Field(default=31536000, ge=0, le=63072000)
 

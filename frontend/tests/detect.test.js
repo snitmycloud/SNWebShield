@@ -45,8 +45,7 @@ test("software and versions: disclosed, not disclosed, or not identified", () =>
 test("steps that did not finish are listed as could not check, never as clean", () => {
   const result = { steps: { ports: { state: "ok" }, versions: { state: "could_not_check" }, dns: { state: "stopped" },
     subdomains: { state: "could_not_check" }, exposed: { state: "not_applicable" } } };
-  assert.deepEqual(stepProblems(result).map(p => [p.key, p.text]), [["versions", "Could not check"], ["dns", "Stopped before it finished"],
-    ["subdomains", "Could not check"]]);
+  assert.deepEqual(stepProblems(result).map(p => [p.key, p.text]), [["versions", "Could not check"], ["dns", "Stopped before it finished"]]);  // the optional subdomain step is not a problem
   assert.deepEqual(stepProblems(null), []);
   assert.equal(stepState(result, "ports"), "ok");
   assert.equal(stepState(result, "technologies"), "missing");
@@ -89,7 +88,7 @@ test("a scan limit is a friendly message, other errors are not", () => {
 test("result banners never call an incomplete or refused scan clean", () => {
   assert.equal(resultBanner({ status: "incomplete", message: "x" }).tone, "warn");
   assert.equal(resultBanner({ status: "refused", message: "x" }).tone, "bad");
-  assert.equal(resultBanner({ status: "completed", message: "y" }).title, "Detection finished");
+  assert.equal(resultBanner({ status: "completed", message: "y" }).title, "Scan finished");
   assert.equal(resultBanner({ status: "running" }), null);
   for (const status of ["completed", "incomplete", "refused"]) assert.doesNotMatch(resultBanner({ status, message: "m" }).title, /safe|clean|secure/i);
   assert.equal(isActiveScan({ status: "running" }), true);

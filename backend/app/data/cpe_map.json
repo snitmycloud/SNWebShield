@@ -1,0 +1,32 @@
+{
+  "_help": "Maps what the scanner detects to the names the vulnerability databases use. Edit this file to add software; no code change is needed. 'names' are lower-case detected product names. 'cpes' are [vendor, product] pairs as NVD spells them (NVD renamed some vendors, so both are queried and merged). 'split_update': NVD writes a version like 6.6.1p1 as version 6.6.1 + update p1. 'package' is the Linux package name used in advice. Entries under 'npm' are looked up in OSV (npm ecosystem).",
+  "products": {
+    "openssh":   {"label": "OpenSSH",   "names": ["openssh"],                      "cpes": [["openbsd", "openssh"]],                                   "split_update": true,  "package": "openssh"},
+    "apache":    {"label": "Apache HTTP Server", "names": ["apache", "apache httpd", "httpd", "apache http server"], "cpes": [["apache", "http_server"]], "package": "apache"},
+    "nginx":     {"label": "nginx",     "names": ["nginx"],                        "cpes": [["f5", "nginx"], ["nginx", "nginx"]],                      "package": "nginx"},
+    "php":       {"label": "PHP",       "names": ["php"],                          "cpes": [["php", "php"]],                                           "package": "php"},
+    "mysql":     {"label": "MySQL",     "names": ["mysql"],                        "cpes": [["oracle", "mysql"], ["mysql", "mysql"]],                  "package": "mysql"},
+    "mariadb":   {"label": "MariaDB",   "names": ["mariadb"],                      "cpes": [["mariadb", "mariadb"]],                                   "package": "mariadb"},
+    "proftpd":   {"label": "ProFTPD",   "names": ["proftpd"],                      "cpes": [["proftpd", "proftpd"]],                                   "package": "proftpd"},
+    "vsftpd":    {"label": "vsftpd",    "names": ["vsftpd"],                       "cpes": [["vsftpd_project", "vsftpd"], ["beasts", "vsftpd"]],       "package": "vsftpd"},
+    "exim":      {"label": "Exim",      "names": ["exim"],                         "cpes": [["exim", "exim"]],                                         "package": "exim"},
+    "postfix":   {"label": "Postfix",   "names": ["postfix"],                      "cpes": [["postfix", "postfix"]],                                   "package": "postfix"},
+    "dovecot":   {"label": "Dovecot",   "names": ["dovecot"],                      "cpes": [["dovecot", "dovecot"]],                                   "package": "dovecot"},
+    "lighttpd":  {"label": "lighttpd",  "names": ["lighttpd"],                     "cpes": [["lighttpd", "lighttpd"]],                                 "package": "lighttpd"},
+    "sendmail":  {"label": "Sendmail",  "names": ["sendmail"],                     "cpes": [["sendmail", "sendmail"]],                                 "package": "sendmail"},
+    "tomcat":    {"label": "Apache Tomcat", "names": ["tomcat", "apache tomcat"],  "cpes": [["apache", "tomcat"]]},
+    "iis":       {"label": "Microsoft IIS", "names": ["iis", "microsoft-iis"],     "cpes": [["microsoft", "internet_information_services"]]},
+    "wordpress": {"label": "WordPress", "names": ["wordpress"],                    "cpes": [["wordpress", "wordpress"]]}
+  },
+  "npm": {
+    "jquery":     {"label": "jQuery",     "names": ["jquery"],               "package": "jquery"},
+    "bootstrap":  {"label": "Bootstrap",  "names": ["bootstrap"],            "package": "bootstrap"},
+    "react":      {"label": "React",      "names": ["react"],                "package": "react"},
+    "angularjs":  {"label": "AngularJS",  "names": [],                       "package": "angular"},
+    "angular":    {"label": "Angular",    "names": [],                       "package": "@angular/core"},
+    "vue":        {"label": "Vue",        "names": ["vue", "vue.js"],        "package": "vue"},
+    "lodash":     {"label": "Lodash",     "names": ["lodash"],               "package": "lodash"},
+    "moment":     {"label": "Moment.js",  "names": ["moment", "moment.js"],  "package": "moment"}
+  },
+  "angular_note": "The detector reports 'Angular' for both. Version 1.x is AngularJS (npm 'angular'); 2 and later is Angular (npm '@angular/core')."
+}

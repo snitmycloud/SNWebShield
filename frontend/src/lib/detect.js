@@ -53,12 +53,17 @@ export function softwareText(item) {
 export const STEP_LABELS = {
   ports: "Open ports", versions: "Service versions", technologies: "Technologies",
   exposed: "Exposed files", dns: "Email and DNS records", subdomains: "Subdomain list",
+  configuration: "Security settings", vulnerabilities: "Known vulnerabilities", lifecycle: "End of life",
 };
 
 // Every step that did not finish, in plain words. A step that failed or timed out is "could not check", never "clean".
+// Optional steps (an outside service that is not part of the security results) never count as a problem here.
+export const OPTIONAL_STEPS = ["subdomains"];
+
 export function stepProblems(result) {
   const steps = result?.steps || {};
   return Object.entries(STEP_LABELS)
+    .filter(([key]) => !OPTIONAL_STEPS.includes(key))
     .filter(([key]) => steps[key] && ["could_not_check", "stopped"].includes(steps[key].state))
     .map(([key, label]) => ({ key, label, text: steps[key].state === "stopped" ? "Stopped before it finished" : "Could not check" }));
 }
@@ -139,7 +144,7 @@ export function isActiveScan(scan) {
 
 export function resultBanner(scan) {
   if (!scan) return null;
-  if (scan.status === "completed") return { tone: "info", title: "Detection finished", text: scan.message };
+  if (scan.status === "completed") return { tone: "info", title: "Scan finished", text: scan.message };
   if (scan.status === "incomplete") return { tone: "warn", title: "Incomplete results", text: scan.message };
   if (scan.status === "refused") return { tone: "bad", title: "Scan did not run", text: scan.message };
   return null;

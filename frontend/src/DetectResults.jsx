@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Info, LoaderCircle } from "lucide-react";
 import { api } from "./lib/api.js";
+import FindingsPanel from "./FindingsPanel.jsx";
 import { describePort, dnsText, exposedText, isActiveScan, resultBanner, sectionNote, softwareText, stepProblems, stepState } from "./lib/detect.js";
 
 // Everything below comes from the scanned server and is shown as escaped text (React escapes it), never as HTML.
@@ -46,6 +47,8 @@ export default function DetectResults({ siteId, scan }) {
       {problems.length > 0 && <ul className="sw-problems">{problems.map(p => <li key={p.key}><b>{p.label}:</b> {p.text}</li>)}</ul>}
     </div>}
     {running && <p className="sw-partial"><LoaderCircle className="spin" size={14} /> Results so far (the scan is still running).</p>}
+
+    <FindingsPanel findings={data.findings || []} result={result} running={running} />
 
     <Section title="Open ports" state={stepState(result, "ports")} hasData={data.ports.length > 0} running={running} empty="No open ports were found among the ports we checked.">
       {data.ports.length > 0 && <div className="table-scroll"><table><thead><tr><th>What it is</th><th>Port</th><th>Software</th><th /></tr></thead><tbody>

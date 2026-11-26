@@ -23,7 +23,7 @@ from app.core.time import utc_now  # noqa: E402
 from app.db.session import SessionLocal  # noqa: E402
 from app.models.admin import AccountToken, Admin  # noqa: E402
 from app.models.jobs import ExecutionEvent  # noqa: E402
-from app.models.scan import Scan, ScanObservation, ScanPort, ScanTechnology  # noqa: E402
+from app.models.scan import Scan, ScanFinding, ScanObservation, ScanPort, ScanTechnology  # noqa: E402
 from app.models.security import AuthEvent, RevokedToken  # noqa: E402
 from app.models.website import Website  # noqa: E402
 from app.services import job_engine as engine  # noqa: E402
@@ -67,7 +67,7 @@ def main(email: str, log_file: str) -> int:
         scan_ids = list(db.scalars(select(Scan.id).where(Scan.website_id.in_(site_ids)))) if site_ids else []
         removed = {}
         if scan_ids:
-            for model, name in ((ScanPort, "scan_ports"), (ScanTechnology, "scan_technologies"), (ScanObservation, "scan_observations")):
+            for model, name in ((ScanPort, "scan_ports"), (ScanTechnology, "scan_technologies"), (ScanObservation, "scan_observations"), (ScanFinding, "scan_findings")):
                 removed[name] = db.execute(delete(model).where(model.scan_id.in_(scan_ids))).rowcount
             removed["scans"] = db.execute(delete(Scan).where(Scan.id.in_(scan_ids))).rowcount
         removed["execution_events"] = db.execute(delete(ExecutionEvent).where(

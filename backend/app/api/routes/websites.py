@@ -11,13 +11,14 @@ from app.core.security import get_current_account, get_current_admin
 from app.core.time import as_utc, utc_now
 from app.db.session import get_db
 from app.models.admin import Admin
-from app.models.scan import Scan, ScanObservation, ScanPort, ScanTechnology
+from app.models.scan import Scan, ScanFinding, ScanObservation, ScanPort, ScanTechnology
 from app.models.website import Website
 from app.schemas.website import RemoveRequest, ScanRequest, VerifyRequest, WebsiteCreate
 from app.services import job_engine as engine
 from app.services import lifecycle, ownership, plans, scans
 from app.services.domains import DomainError, normalize_domain
 
+SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 router = APIRouter(prefix="/websites", tags=["Websites"])
 
 
@@ -224,8 +225,17 @@ def scan_detail(website_id: int, scan_id: str, account: Admin = Depends(get_curr
                               .order_by(ScanTechnology.name)).all()
     observations = db.scalars(select(ScanObservation).where(ScanObservation.scan_id == scan.id)
                               .order_by(ScanObservation.kind, ScanObservation.key)).all()
+    stored = db.scalars(select(ScanFinding).where(ScanFinding.scan_id == scan.id)).all()
+    findings = sorted(({"id": f.id, "fingerprint": f.fingerprint, "kind": f.kind, "check_id": f.check_id, "title": f.title,
+                        "location": f.location, "port": f.port, "severity": f.severity, "confidence": f.confidence, "group": f.group,
+                        "scored": f.confidence == "confirmed" and f.severity != "info", "you_have": f.you_have,
+                        "you_should_have": f.you_should_have, "cve_id": f.cve_id, "cvss_score": f.cvss_score,
+                        "cvss_vector": f.cvss_vector, "affected_range": f.affected_range, "first_fixed": f.first_fixed,
+                        "why": f.why, "how_to_fix": f.how_to_fix, "evidence": f.evidence, "caveat": f.caveat,
+                        "sources": f.sources or [], "details": f.details or {}} for f in stored),
+                      key=lambda f: (SEVERITY_ORDER.get(f["severity"], 9), f["group"] != "findings", -(f["cvss_score"] or 0), f["title"]))
     return {
-        "scan": scans.serial(scan), "domain": website.domain, "test_target": scans.is_test_target(website),
+        "scan": scans.serial(scan), "domain": website.domain, "findings": findings, "test_target": scans.is_test_target(website),
         "ports": [{"port": p.port, "state": p.state, "service": p.service, "product": p.product, "version": p.version,
                    "banner": p.banner, **{k: (p.details or {}).get(k) for k in ("tls", "http", "service_guess", "notes")}}
                   for p in ports],
