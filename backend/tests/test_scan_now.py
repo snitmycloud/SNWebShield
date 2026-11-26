@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.time import utc_now
 from app.data.ports import FULL_PORTS, STANDARD_PORTS, ports_for
 from app.db.session import SessionLocal
@@ -189,17 +190,19 @@ def test_unknown_fields_and_scan_types_are_rejected(client):
 
 # --- Test targets keep their stricter limit -----------------------------------------------------------------------
 
-def test_a_test_target_keeps_its_two_per_day_limit_shared_by_admins_even_on_a_bigger_plan(client):
+def test_a_test_target_keeps_its_per_day_limit_shared_by_admins_even_on_a_bigger_plan(client):
+    limit = settings.test_target_scans_per_day
     _, _, first = account_headers(client, "admin", plan="business")
     _, _, second = account_headers(client, "admin", plan="business")
-    site = client.post(W, headers=first, json={"domain": "scanme.nmap.org"}).json()  # scan 1 of 2 (the first scan)
-    assert site["scan_now"]["remaining"] == 1 and site["scan_now"]["test_target_remaining"] == 1
+    site = client.post(W, headers=first, json={"domain": "scanme.nmap.org"}).json()  # scan 1 (the first scan)
+    assert site["scan_now"]["test_target_remaining"] == limit - 1
     finish_scans()
-    assert press(client, first, site["id"]).status_code == 200                       # scan 2 of 2
-    finish_scans()
+    for _ in range(limit - 1):                                                       # the rest of the day
+        assert press(client, first, site["id"]).status_code == 200
+        finish_scans()
     limited = press(client, first, site["id"])
     assert limited.status_code == 429 and "test target" in limited.json()["detail"]["message"].lower()
-    other = client.post(W, headers=second, json={"domain": "scanme.nmap.org"}).json()  # a second admin shares the same 2
+    other = client.post(W, headers=second, json={"domain": "scanme.nmap.org"}).json()  # a second admin shares the same limit
     assert other["latest_scan"] is None and other["scan_now"]["remaining"] == 0
     assert press(client, second, other["id"]).status_code == 429
 
