@@ -69,7 +69,7 @@ def main() -> int:
         for verdict in scoped:
             if not verdict.ok:
                 continue
-            data = (root / verdict.path).read_bytes()
+            data = (root / verdict.path).read_bytes().replace(b"\r\n", b"\n")   # upstream uses LF; a Windows checkout adds CR
             target = dest / verdict.path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
@@ -77,7 +77,7 @@ def main() -> int:
             index[verdict.path] = {"id": verdict.template_id, "category": verdict.category, "name": verdict.name, "severity": verdict.severity}
         for licence in ("LICENSE.md", "LICENSE", "LICENSE.txt"):
             if (root / licence).is_file():
-                shutil.copyfile(root / licence, dest / "LICENSE.md")
+                (dest / "LICENSE.md").write_bytes((root / licence).read_bytes().replace(b"\r\n", b"\n"))
                 break
         (dest / "MANIFEST.json").write_text(json.dumps({"source": "projectdiscovery/nuclei-templates", "version": args.version,
                                                         "licence": "MIT", "commit": args.commit, "templates": manifest, "index": index}, indent=1, sort_keys=True), encoding="utf-8")
