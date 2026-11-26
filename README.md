@@ -248,6 +248,8 @@ npm run dev        # http://127.0.0.1:5173
 
 Restart the API and the assessment worker after changing `.env` or upgrading. Keep everything on the Windows machine; do not deploy the stack to Azure.
 
+**DNS look-ups and the second resolvers.** SPF, DMARC, DKIM, CAA and MX look-ups retry before a scan says "could not check": attempt 1 uses this machine's resolver, attempt 2 uses the second resolvers `1.1.1.1` and `9.9.9.9` (setting `SCAN_DNS_FALLBACK_RESOLVERS`, plain DNS, never DNS-over-HTTPS; approved by the owner because the domain names being scanned are public), attempt 3 uses this machine's resolver again (`SCAN_DNS_ATTEMPTS` 3, `SCAN_DNS_TIMEOUT_SECONDS` 2.5). Leave `SCAN_DNS_FALLBACK_RESOLVERS` empty to use only this machine's resolvers.
+
 ### 5. Environment variables (names only; put real values in the private `backend/.env`)
 
 | Name | Purpose |
