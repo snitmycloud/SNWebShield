@@ -1,6 +1,6 @@
 import React from "react";
 import { AlertTriangle, ShieldAlert } from "lucide-react";
-import { SEVERITY_LABEL, checksNotFinished, cvssText, emptyText, engineProgress, groupFindings, lifecycleTier, severityCounts, sourceLabel, summaryText } from "./lib/findings.js";
+import { SEVERITY_LABEL, checksNotFinished, cvssText, emptyText, engineProgress, groupFindings, lifecycleTier, panelItems, severityCounts, sourceLabel, summaryText } from "./lib/findings.js";
 
 // Every field here came from our own rules or from public vulnerability databases. It is untrusted text and is shown as
 // escaped plain text (React escapes it), never as HTML.
@@ -34,6 +34,7 @@ function FindingCard({ finding, possible }) {
         <Detail label="First fixed in">{finding.first_fixed}</Detail>
         <Detail label="Source">{(finding.sources || []).map(sourceLabel).join(", ")}</Detail>
       </dl>
+      {panelItems(finding).length > 0 && <ul className="sw-panels" data-testid="panel-list">{panelItems(finding).map(p => <li key={p.key}><b>{p.name}</b> <code>{p.path}</code></li>)}</ul>}
       {finding.cvss_vector && <p className="sw-note">Score details: <code>{finding.cvss_vector}</code></p>}
       {finding.details?.more_not_shown > 0 && <p className="sw-note">{finding.details.more_not_shown} more known issues for this software are not shown.</p>}
     </details>

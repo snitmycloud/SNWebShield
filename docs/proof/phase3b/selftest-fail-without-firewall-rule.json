@@ -1,0 +1,20 @@
+{
+ "note": "Real Nuclei v3.11.1, `python -m app.services.nuclei_selftest` on 2026-11-26 after the administrator ran scripts/nuclei-firewall-dev-undo.ps1 (rule removed). Only the firewall check fails; the engine then stays off.",
+ "self_test": {
+  "ok": false,
+  "failed": ["firewall"],
+  "checks": {
+   "binary": {"ok": true, "detail": "hash ok, version 3.11.1"},
+   "templates": {"ok": true, "detail": "3948 templates"},
+   "firewall": {"ok": false, "detail": "rule_missing"},
+   "proxy": {"ok": true, "detail": "allowed canary reached=True, foreign canary hits=0, refused={'ip_literal_host': 1, 'port_not_allowed': 1}"},
+   "kill": {"ok": true, "detail": "hung request seen=True, process gone=True"}
+  },
+  "at": 1795681938.3541272
+ },
+ "engine_with_NUCLEI_ENABLED_true": [
+  {"attempt": 1, "state": "could_not_check", "detail": {"reason": "selftest_failed", "selftest": ["firewall"]}, "findings": 0},
+  {"attempt": 2, "state": "could_not_check", "detail": {"reason": "selftest_failed", "selftest": ["firewall"]}, "findings": 0}
+ ],
+ "nuclei_runs_against_the_scan_target": []
+}

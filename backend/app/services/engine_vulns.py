@@ -252,8 +252,10 @@ class VulnerabilityEngine(engines.Engine):
         items = identify_items.collect(ctx.domain, state.probes, state.technologies)
         found: list[Finding] = []
         failed, checked, stale = [], 0, 0
-        for item in items:
+        for number, item in enumerate(items, 1):
             guard.check()
+            if getattr(ctx, "progress", None) and item.version:
+                ctx.progress("vulnerabilities", f"Checking {item.display} {item.version} for known vulnerabilities ({number} of {len(items)})…")
             if not item.version:
                 if item.ecosystem == "cpe":
                     found.append(hidden_version_finding(item))
@@ -284,6 +286,12 @@ class VulnerabilityEngine(engines.Engine):
             found += [advisory_finding(item, advisory, stale_at=stale_at) for advisory in ordered[:MAX_PER_ITEM]]
             if len(ordered) > MAX_PER_ITEM:
                 found.append(more_not_shown_finding(item, len(ordered) - MAX_PER_ITEM))
+            publish = getattr(state, "publish", None)
+            if publish is not None:
+                try:
+                    publish(found)   # show what we have so far; the next (slow) look-up does not hold it back
+                except Exception:
+                    pass
         detail = {"items": len(items), "checked": checked, "failed": failed, "findings": len(found)}
         return engines.EngineResult("could_not_check" if failed else "ok", found, detail)
 

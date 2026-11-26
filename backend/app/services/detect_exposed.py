@@ -91,6 +91,8 @@ CHECKS = (
     ("/administrator/", "admin_login", "login-form", _login_form),
     ("/admin/", "admin_login", "login-form", _login_form),
     ("/phpmyadmin/", "admin_login", "login-form", _login_form),
+    ("/adminer.php", "admin_login", "login-form", _login_form),
+    ("/adminer/", "admin_login", "login-form", _login_form),
     ("/user/login", "admin_login", "login-form", _login_form),
     ("/", "directory_listing", "index-of", _dir_listing),
     ("/uploads/", "directory_listing", "index-of", _dir_listing),

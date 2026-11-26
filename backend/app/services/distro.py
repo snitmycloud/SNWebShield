@@ -36,7 +36,8 @@ def detect_family(*texts) -> str | None:
 
 
 def behind_proxy(headers: dict | None) -> bool:
-    return bool(headers) and any(name in headers for name in PROXY_HEADERS)
+    from app.services import cdn
+    return bool(headers) and (any(name in headers for name in PROXY_HEADERS) or cdn.detect_headers(headers) is not None)
 
 
 def caveat(family: str | None, product: str, display: str, version: str, proxy: bool = False) -> str | None:

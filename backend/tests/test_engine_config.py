@@ -1,5 +1,6 @@
 """The built-in configuration checks and the TLS probes (local servers only)."""
 import asyncio
+import json
 import ssl
 import warnings
 from datetime import datetime, timedelta, timezone
@@ -335,3 +336,40 @@ def test_old_protocols_found_are_one_finding_naming_them(monkeypatch):
     found = asyncio.run(ec.ConfigurationEngine().run(ScanContext(scan_id="s", domain=DOMAIN, ip="127.0.0.1"), _state([_tls_probe(443, cert())]), Guard()))
     [legacy] = [f for f in found.findings if f.check_id == "tls:legacy-protocols"]
     assert "TLS 1" in legacy.evidence and legacy.severity == "medium"
+
+
+# --- sensitive login pages: phpMyAdmin / Adminer are their own Medium finding (editable list) ---------------------------------------------------------
+
+def login_row(path):
+    return {"key": path, "status": "exposed", "data": {"kind": "admin_login", "signature": "login-form", "http_status": 200}}
+
+
+@pytest.mark.parametrize("path, label", [("/phpmyadmin/", "Database admin tool"), ("/adminer.php", "Database admin tool"), ("/adminer/", "Database admin tool")])
+def test_phpmyadmin_and_adminer_are_a_medium_finding_of_their_own(path, label):
+    [found] = ec.exposed_findings(DOMAIN, [login_row(path)])
+    assert found.severity == "medium" and found.scored and found.confidence == "confirmed" and found.kind == "exposure"
+    assert found.title == f"{label} login page is reachable from the internet" and found.check_id == f"exposed:login-form:{path}"
+    assert found.location == f"{DOMAIN}{path}" and "VPN" in found.how_to_fix and "File contents were not stored" in found.evidence
+
+
+@pytest.mark.parametrize("path", ["/wp-login.php", "/wp-admin/", "/administrator/", "/admin/", "/user/login"])
+def test_ordinary_login_pages_stay_info(path):
+    [found] = ec.exposed_findings(DOMAIN, [login_row(path)])
+    assert found.severity == "info" and not found.scored and found.title == "An administrator or login page is publicly reachable"
+
+
+def test_the_decision_comes_from_the_editable_list(tmp_path, monkeypatch):
+    from app.services import sensitive_panels as sp
+    custom = tmp_path / "sensitive.json"
+    custom.write_text(json.dumps({"sensitive": [{"label": "My own rule", "match": ["wp-admin"]}]}), encoding="utf-8")
+    monkeypatch.setattr(sp, "SENSITIVE_PATH", custom)
+    [mine] = ec.exposed_findings(DOMAIN, [login_row("/wp-admin/")])
+    [pma] = ec.exposed_findings(DOMAIN, [login_row("/phpmyadmin/")])
+    assert mine.severity == "medium" and mine.title.startswith("My own rule") and pma.severity == "info"
+    custom.write_text("not json", encoding="utf-8")                      # a broken list never crashes a scan: nothing is sensitive
+    assert ec.exposed_findings(DOMAIN, [login_row("/phpmyadmin/")])[0].severity == "info"
+
+
+def test_only_login_pages_are_judged_by_the_list():
+    rows = [{"key": "/.env", "status": "exposed", "data": {"kind": "exposed_file", "signature": "env-file", "http_status": 200}}]
+    assert ec.exposed_findings(DOMAIN, rows)[0].severity == "critical"

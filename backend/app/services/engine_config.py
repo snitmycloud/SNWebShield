@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.data.severity_rules import EXPOSED_RULES, PORT_RULES, RULES
-from app.services import engines, netio, probe_tls
+from app.services import engines, netio, probe_tls, sensitive_panels
 from app.services.detect_versions import USER_AGENT, kept_headers, parse_http_response
 from app.services.finding import Finding
 
@@ -181,6 +181,13 @@ def exposed_findings(domain: str, rows) -> list[Finding]:
         if rule is None:
             continue
         severity, title, why, how = rule
+        label = sensitive_panels.sensitive_label(row["key"].strip("/"), "") if signature == "login-form" else None
+        if label:  # a database admin tool, CI server, router admin ... (editable list): its own Medium finding, not just "a login page"
+            severity = "medium"
+            title = f"{label} login page is reachable from the internet"
+            why = ("Tools like this give wide control, are attacked constantly, and should not be open to everyone.")
+            how = ("Restrict it to trusted addresses or a VPN, require strong logins and two-step verification, keep it updated, "
+                   "or remove it if you do not use it.")
         found.append(Finding(kind="exposure", check_id=f"exposed:{signature}:{row['key']}", title=title,
                              location=f"{domain}{row['key']}", severity=severity, confidence="confirmed", why=why, how_to_fix=how,
                              you_should_have="Only files you meant to publish.",
@@ -197,6 +204,12 @@ class ConfigurationEngine(engines.Engine):
     async def run(self, ctx, state, guard) -> engines.EngineResult:
         now = datetime.now(timezone.utc)
         found = web_findings(ctx.domain, state.probes, now)
+        if getattr(state, "cdn", None):
+            found.append(Finding(kind="disclosure", check_id="cdn:detected", title=f"This site is behind {state.cdn['name']}", location=ctx.domain,
+                                 severity="info", confidence="confirmed", port=state.cdn.get("port"), you_have=state.cdn["name"],
+                                 why="Your visitors reach a CDN or firewall service first, not your own server. That is good for speed and protection, but it changes what a scan can see.",
+                                 how_to_fix="Nothing to fix. Remember that open ports and server versions shown here may belong to the CDN, not to your server.",
+                                 evidence=f"Detected from the {state.cdn['evidence']}.", sources=["snwebshield"]))
         found += port_findings(ctx.domain, state.ports.open)
         found += exposed_findings(ctx.domain, state.exposed_rows)
         unchecked, not_available = [], []

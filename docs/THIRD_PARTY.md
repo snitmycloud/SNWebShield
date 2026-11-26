@@ -18,12 +18,14 @@ We do **not** use Wikipedia text (CC BY-SA) or any other source with share-alike
 
 Backend: only the standard library plus the packages already listed in `backend/requirements.txt` (including `dnspython`, ISC licence, pinned). Phase 3A added **no new package**. Frontend: React, lucide-react (ISC) and Vite (MIT), unchanged.
 
-## Planned for Phase 3B (not in 3A, nothing of it is installed)
+## Used in Phase 3B (Nuclei, off by default)
 
-| Item | Licence | Note |
-|---|---|---|
-| **Nuclei** (ProjectDiscovery) engine | MIT | Will be pinned to an exact version and checked against the official release checksum before use |
-| **nuclei-templates** (ProjectDiscovery) | MIT | A reviewed subset only, vendored with its licence file and validated before every use |
+| Item | Licence | What we use | Notes |
+|---|---|---|---|
+| **Nuclei** (ProjectDiscovery), `projectdiscovery/nuclei` | MIT, Copyright (c) ProjectDiscovery, Inc. | ONE pinned binary, **v3.11.1** (released 2026-08-08), downloaded by `backend/tools/install_nuclei.py` from the fixed GitHub release URL and installed outside the repository | The zip's SHA-256 must equal the pin in `app/data/engines.lock.json` (Windows `bb6cb9ff...ff9d2`, Linux `ea63d4ae...35ab6`, both equal to the release's `checksums.txt`) and the extracted binary's hash is pinned too and re-checked before every run |
+| **nuclei-templates** (ProjectDiscovery), `projectdiscovery/nuclei-templates` | MIT | **3,948 templates** vendored as they are into `backend/app/data/nuclei/templates/` from tag **v10.5.2**, commit `5442582a875f96887bfe403c6de562de460897e7`, with their `LICENSE.md` and a `MANIFEST.json` of SHA-256 hashes. Only templates that passed our validator in the categories exposures (466), exposed-panels (1,545), misconfiguration (814), technologies (839) and CVEs (284) | Templates are never downloaded at scan time and are never modified. The licence text is kept next to them (the MIT notice must travel with copies) |
+
+What is sent: Nuclei only ever talks to the verified website of the scan, through the local egress proxy, at that scan's one pinned IP. Nothing is sent to ProjectDiscovery (no cloud, no update checks, no OAST/interactsh servers).
 
 ## Updating this file
 

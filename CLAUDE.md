@@ -15,6 +15,7 @@
 ## Runtime Constraints
 - Keep the React frontend and FastAPI backend running locally on Windows; do not deploy the full stack to Azure.
 - Scans run in Python inside the existing worker (standard library plus packages already in the project). Do not add Nmap, Docker or VM execution; ask before adding any new package.
+- Single exception: the Nuclei engine may run as ONE pinned, checksum-verified binary (version and SHA-256 in `data/engines.lock.json`), started by the scan worker without a shell, using only the vendored, validated templates, with all its traffic forced through the local egress proxy to the scan's one verified host and pinned IP, killed by the scan guard on stop, and disabled unless its self-test passes. No other external scanner, and no Docker or VM, is allowed.
 - The legacy Azure VM (`azureuser@57.159.27.58`) is not used by new code. Never expose Docker TCP port `2375`, create paid Azure resources, or delete existing VM containers, images, volumes or data without explicit approval.
 
 ## Development & Quality Workflow

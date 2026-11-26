@@ -21,6 +21,12 @@ class ScanRequest(BaseModel):
     scan_type: Literal["standard", "full"] = "standard"
 
 
+class ManualVerifyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # A typed reason is required (for example "Owner present at demo and gave consent"); it is audit-logged.
+    reason: str = Field(min_length=10, max_length=300)
+
+
 class VerifyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     method: Literal["dns", "file", "meta"]

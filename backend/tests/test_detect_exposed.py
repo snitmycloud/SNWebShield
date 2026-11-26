@@ -133,3 +133,18 @@ def test_large_responses_are_cut_at_64kb():
         fetch = ex.make_fetcher(HOST, server.port, False, DOMAIN, timeout=2.0)
         response = asyncio.run(fetch("/.env"))
     assert response is not None and len(response.body) <= ex.READ_LIMIT
+
+
+ADMINER = b"<html><title>Login - Adminer</title><form><input name='auth[username]'><input type='password' name='auth[password]'></form></html>"
+
+
+def test_adminer_is_found_at_its_two_usual_addresses():
+    for path in ("/adminer.php", "/adminer/"):
+        result, _ = run({path: (200, HTML, ADMINER)})
+        assert keys(result)[path] == {"kind": "admin_login", "signature": "login-form", "http_status": 200}, path
+
+
+def test_adminer_is_not_reported_on_a_site_that_answers_the_same_login_everywhere():
+    everywhere = (200, HTML, ADMINER)
+    result, _ = run({}, default=everywhere)
+    assert not [o for o in result.observations if o["key"].startswith("/adminer")]

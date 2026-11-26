@@ -97,7 +97,8 @@ def test_a_whole_scan_finds_ports_versions_technologies_dns_files_and_subdomains
     body = client.get(f"{W}/{site['id']}/scans/{scan_id}", headers=headers).json()
     scan = body["scan"]
     assert scan["status"] == "completed" and scan["resolved_ip"] == "127.0.0.1" and scan["result"]["code"] == "detect_completed"
-    assert all(step["state"] in ("ok",) for step in scan["result"]["steps"].values()), scan["result"]["steps"]
+    assert all(step["state"] == "ok" for name, step in scan["result"]["steps"].items() if name != "nuclei"), scan["result"]["steps"]
+    assert scan["result"]["steps"]["nuclei"] == {"state": "skipped", "reason": "disabled"}   # off by default
     assert scan["result"]["ports"]["open"] == 3 and scan["result"]["ports"]["closed"] == 1
     assert "not a security verdict" in scan["message"] and "3 open port" in scan["message"]
 
@@ -164,7 +165,7 @@ def test_without_a_problem_there_is_no_optional_note(client, monkeypatch):
 
 
 def test_optional_and_core_steps_are_exactly_these():
-    assert set(detect_runner.OPTIONAL_STEPS) == {"subdomains"}
+    assert set(detect_runner.OPTIONAL_STEPS) == {"subdomains", "nuclei"}
     core = {"ports", "versions", "technologies", "exposed", "dns", "configuration", "vulnerabilities", "lifecycle"}
     assert core <= set(detect_runner.STEP_NAMES) and not core & set(detect_runner.OPTIONAL_STEPS)
 

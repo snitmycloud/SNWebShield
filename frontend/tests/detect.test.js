@@ -46,6 +46,7 @@ test("steps that did not finish are listed as could not check, never as clean", 
   const result = { steps: { ports: { state: "ok" }, versions: { state: "could_not_check" }, dns: { state: "stopped" },
     subdomains: { state: "could_not_check" }, exposed: { state: "not_applicable" } } };
   assert.deepEqual(stepProblems(result).map(p => [p.key, p.text]), [["versions", "Could not check"], ["dns", "Stopped before it finished"]]);  // the optional subdomain step is not a problem
+  assert.deepEqual(stepProblems({ steps: { nuclei: { state: "could_not_check" } } }), []);   // optional: not a scan problem
   assert.deepEqual(stepProblems(null), []);
   assert.equal(stepState(result, "ports"), "ok");
   assert.equal(stepState(result, "technologies"), "missing");

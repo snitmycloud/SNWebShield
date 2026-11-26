@@ -5,8 +5,12 @@ import {
   UserCheck, X,
 } from "lucide-react";
 import { api } from "./lib/api.js";
-import { METHODS, checkView, isStaff, passwordHint, planLimit, removalConfirmed, scanView, verificationView } from "./lib/account.js";
-import DetectResults from "./DetectResults.jsx";
+import { METHODS, MANUAL_REASON_MIN, checkView, isStaff, manualReasonOk, passwordHint, planLimit, removalConfirmed, scanView, verificationView } from "./lib/account.js";
+import { DetectSections, ScanBanner, useScanDetail } from "./DetectResults.jsx";
+import FindingsPanel from "./FindingsPanel.jsx";
+import ErrorBoundary from "./ErrorBoundary.jsx";
+import ReportView from "./ReportView.jsx";
+import { certificateView, gradeView, scanDuration, TABS } from "./lib/report.js";
 import { isFriendlyLimit, scanNowText } from "./lib/detect.js";
 import MonitoringPage from "./MonitoringPage.jsx";
 import AssessmentsPage from "./AssessmentsPage.jsx";
@@ -135,6 +139,11 @@ function DashboardView({ account, websites, plan, loading, onOpen, onAdd }) {
             {site.test_target && <Badge tone="info">Test target</Badge>}<ChevronRight size={16} /></div>
           <div className="sw-card-row"><span>Ownership</span><Badge tone={v.tone}>{v.label}</Badge></div>
           <div className="sw-card-row"><span>Last scan</span><Badge tone={s.tone}>{s.label}</Badge></div>
+          <div className="sw-card-row sw-card-score"><span>Security score</span>{(() => { const g = gradeView(site.summary);
+            return g ? <span className={`sw-grade-chip ${g.tone}`} data-testid="card-grade" title={g.note || undefined}><b>{g.grade}</b> {g.score}/100{site.summary.incomplete ? " *" : ""}</span>
+              : <span className="sw-muted">{"\u2014"}</span>; })()}</div>
+          {site.summary && <div className="sw-card-row"><span>Certificate</span><span className={`tone-${certificateView(site.summary.certificate).tone}`}>
+            {site.summary.certificate ? (site.summary.certificate.days_left < 0 ? "Expired" : `${site.summary.certificate.days_left} days left`) : "\u2014"}</span></div>}
           <p className="sw-card-text">{site.verification_status === "verified" ? s.text : v.text}</p>
           <div className="sw-card-foot">{site.latest_scan ? `Scan ${when(site.latest_scan.ended_at || site.latest_scan.requested_at)}` : "No scan yet"}</div>
         </button>;
@@ -163,40 +172,79 @@ function AddWebsite({ plan, count, onAdded, onLimit }) {
   </form>;
 }
 
+function Step({ n, children }) {
+  return <li><span className="sw-step-n">{n}</span><div>{children}</div></li>;
+}
+
+function ManualVerify({ site, onDone }) {
+  const [open, setOpen] = useState(false), [reason, setReason] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const submit = async e => {
+    e.preventDefault(); setBusy(true); setError("");
+    try { const response = await api.verifyManually(site.id, reason.trim()); setOpen(false); setReason(""); onDone(response); }
+    catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+  if (!open) return <button type="button" className="secondary-button sw-manual-open" data-testid="verify-manually-open" onClick={() => setOpen(true)}>
+    <UserCheck size={15} />Verify manually (admin)</button>;
+  return <form className="sw-manual" onSubmit={submit} aria-label="Verify manually">
+    <strong>Verify manually (admin only)</strong>
+    <p>Use this only when the website's owner is present and agrees. It lasts <b>24 hours</b>, is shown as {"\u201c"}Manually verified by admin{"\u201d"}, and is written to the audit log with your name, this reason and the time.</p>
+    <label htmlFor="sw-manual-reason">Reason (required)</label>
+    <textarea id="sw-manual-reason" value={reason} onChange={e => setReason(e.target.value)} maxLength={300} rows={2}
+      placeholder={"For example: Owner present at demo and gave consent"} required />
+    <small>{reason.trim().length < MANUAL_REASON_MIN ? `At least ${MANUAL_REASON_MIN} characters.` : "Ready."}</small>
+    {error && <div className="form-error" role="alert"><ShieldAlert size={15} />{error}</div>}
+    <div className="sw-manual-actions">
+      <button className="primary-button" disabled={busy || !manualReasonOk(reason)}>{busy ? <LoaderCircle className="spin" size={15} /> : <ShieldCheck size={15} />}Verify for 24 hours</button>
+      <button type="button" className="secondary-button" onClick={() => setOpen(false)}>Cancel</button></div>
+  </form>;
+}
+
 function VerifyPanel({ site, onVerified }) {
-  const [method, setMethod] = useState(site.verification_method && site.verification_method !== "parent" ? site.verification_method : "dns");
-  const [busy, setBusy] = useState(false), [result, setResult] = useState(null), [error, setError] = useState("");
+  const [method, setMethod] = useState(site.verification_method && !["parent", "manual"].includes(site.verification_method) ? site.verification_method : "dns");
+  const [busy, setBusy] = useState(false), [result, setResult] = useState(null), [error, setError] = useState(""), [tries, setTries] = useState(0);
   const info = site.instructions || {};
   const verify = async () => {
     setBusy(true); setError(""); setResult(null);
-    try { const response = await api.verifyWebsite(site.id, method); setResult(checkView(response.check)); onVerified(response); }
+    try { const response = await api.verifyWebsite(site.id, method); setResult(checkView(response.check)); setTries(n => n + 1); onVerified(response); }
     catch (err) { setError(err.message); }
     finally { setBusy(false); }
   };
   if (!site.instructions) return null;
+  const www = site.domain?.startsWith("www.") ? site.domain.slice(4) : `www.${site.domain}`;
   return <section className="panel sw-verify" aria-label="Verify ownership">
     <h2>Prove you own {site.domain}</h2>
-    <p>Pick one method. It usually takes about a minute. Your code: <code>{site.verification_code}</code></p>
+    <p>Pick one way. It usually takes about a minute. Then press <b>{tries ? "Check again" : "Check now"}</b>.</p>
+    <div className="sw-kv"><span>Your code</span><CopyValue value={site.verification_code} label="Your verification code" /></div>
     <div className="sw-tabs" role="tablist">{METHODS.map(m => <button key={m.id} role="tab" aria-selected={method === m.id}
       className={method === m.id ? "active" : ""} onClick={() => { setMethod(m.id); setResult(null); }}>{m.label}</button>)}</div>
-    {method === "dns" && <div className="sw-steps">
-      <p>At your DNS provider, add a <b>TXT</b> record:</p>
-      <div className="sw-kv"><span>Name / host</span><CopyValue value={info.dns.host} label="TXT record name" /></div>
-      <div className="sw-kv"><span>Value</span><CopyValue value={info.dns.value} label="TXT record value" /></div>
-      <small>{info.dns.note} If your provider asks for the host relative to your domain, use “@” for the main domain.</small>
-    </div>}
-    {method === "file" && <div className="sw-steps">
-      <p>Create a plain text file at this exact address:</p>
-      <div className="sw-kv"><span>Address</span><CopyValue value={info.file.url} label="Verification file address" /></div>
-      <div className="sw-kv"><span>File content</span><CopyValue value={info.file.content} label="Verification file content" /></div>
-      <small>{info.file.note}</small>
-    </div>}
-    {method === "meta" && <div className="sw-steps">
-      <p>Add this tag inside the <code>&lt;head&gt;</code> of {info.meta.page}:</p>
-      <div className="sw-kv"><span>Tag</span><CopyValue value={info.meta.tag} label="Verification meta tag" /></div>
-      <small>{info.meta.note}</small>
-    </div>}
-    <button className="primary-button" onClick={verify} disabled={busy}>{busy ? <LoaderCircle className="spin" size={15} /> : <ShieldCheck size={15} />}{busy ? "Checking…" : "Verify now"}</button>
+    {method === "dns" && <ol className="sw-ol">
+      <Step n={1}>Sign in where you manage your domain's DNS (your domain registrar or hosting company).</Step>
+      <Step n={2}>Add a <b>TXT</b> record with this name and value:
+        <div className="sw-kv"><span>Name / host</span><CopyValue value={info.dns.host} label="TXT record name" /></div>
+        <div className="sw-kv"><span>Value</span><CopyValue value={info.dns.value} label="TXT record value" /></div>
+        <small>If your provider asks for a name relative to your domain, use {"\u201c"}@{"\u201d"} for the main domain.</small></Step>
+      <Step n={3}>Save it, wait a few minutes (DNS can be slow), then press {tries ? "Check again" : "Check now"}.</Step>
+    </ol>}
+    {method === "file" && <ol className="sw-ol">
+      <Step n={1}>Create a plain text file with exactly this name:
+        <div className="sw-kv"><span>File name</span><CopyValue value={info.file.file_name} label="Verification file name" /></div></Step>
+      <Step n={2}>Put only this code inside it (nothing else):
+        <div className="sw-kv"><span>File content</span><CopyValue value={info.file.content} label="Verification file content" /></div></Step>
+      <Step n={3}>Upload it to the folder <code>{info.file.folder}</code> so it opens at this address:
+        <div className="sw-kv"><span>Address</span><CopyValue value={info.file.url} label="Verification file address" /></div>
+        <small>Your website needs working HTTPS for this method. If it does not, use the DNS method.</small></Step>
+      <Step n={4}>Press {tries ? "Check again" : "Check now"}.</Step>
+    </ol>}
+    {method === "meta" && <ol className="sw-ol">
+      <Step n={1}>Copy this tag:<div className="sw-kv"><span>Tag</span><CopyValue value={info.meta.tag} label="Verification meta tag" /></div></Step>
+      <Step n={2}>Paste it inside the <code>&lt;head&gt;</code> of your home page ({info.meta.page}). If your site caches pages, clear the cache.</Step>
+      <Step n={3}>Press {tries ? "Check again" : "Check now"}.</Step>
+    </ol>}
+    {method !== "dns" && <p className="sw-note">If <b>{site.domain}</b> and <b>{www}</b> send visitors to each other, no problem: we check both and tell you exactly what we found.</p>}
+    <div className="sw-verify-actions">
+      <button className="primary-button" onClick={verify} disabled={busy} data-testid="check-now">{busy ? <LoaderCircle className="spin" size={15} /> : <ShieldCheck size={15} />}{busy ? "Checking\u2026" : tries ? "Check again" : "Check now"}</button>
+      {site.can_verify_manually && <ManualVerify site={site} onDone={response => { onVerified(response); }} />}
+    </div>
     {error && <div className="form-error" role="alert"><ShieldAlert size={15} />{error}</div>}
     {result && <div className={`sw-result ${result.ok ? "good" : "bad"}`} role="status" data-testid="verify-result">
       <strong>{result.ok ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}{result.title}</strong>
@@ -209,6 +257,39 @@ function VerifyPanel({ site, onVerified }) {
       {result.ok && <p>Your first scan has started. You can follow it below.</p>}
     </div>}
   </section>;
+}
+
+function MonitorTab({ site, data }) {
+  const summary = data.summary, grade = gradeView(summary), cert = certificateView(summary?.certificate), scan = data.scan, v = verificationView(site);
+  return <section className="panel sw-monitor" data-testid="monitor-tab">
+    <div className="sw-monitor-grid">
+      <div><span className="sw-label">Security score</span>{grade ? <span className={`sw-grade-chip big ${grade.tone}`} data-testid="monitor-grade"><b>{grade.grade}</b> {grade.label}</span> : <span className="sw-muted">{"\u2014"}</span>}
+        {grade?.note && <small>{grade.note}</small>}</div>
+      <div><span className="sw-label">Last scan</span><strong>{when(scan.ended_at || scan.requested_at)}</strong>
+        <small>{scanView(scan).label}{scanDuration(scan) ? ` \u00b7 took ${scanDuration(scan)}` : ""}</small></div>
+      <div><span className="sw-label">Certificate</span><strong className={`tone-${cert.tone}`}>{cert.text}</strong></div>
+      <div><span className="sw-label">Ownership</span><strong>{v.label}</strong><small>{site.verification_status === "verified" ? "Scans can run." : "Scans are paused."}</small></div>
+      <div><span className="sw-label">Open ports</span><strong>{data.ports.length}</strong></div>
+      <div><span className="sw-label">Findings</span><strong>{summary ? `${summary.confirmed} confirmed, ${summary.needs_checking} to check` : "\u2014"}</strong></div>
+    </div>
+  </section>;
+}
+
+function ScanTabs({ site, scan }) {
+  const [tab, setTab] = useState("monitor");
+  const { data, error } = useScanDetail(site.id, scan);
+  if (error) return <div className="form-error" role="alert"><AlertTriangle size={15} />{error}</div>;
+  if (!data) return scan.status === "queued" ? null : <div className="loading-rows"><div /><div /></div>;
+  const running = ["queued", "running"].includes(data.scan.status);
+  return <>
+    <ScanBanner data={data} running={running} />
+    <div className="sw-tabs sw-site-tabs" role="tablist" aria-label="Website sections">{TABS.map(t =>
+      <button key={t.id} role="tab" aria-selected={tab === t.id} data-testid={`tab-${t.id}`} className={tab === t.id ? "active" : ""} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
+    {tab === "monitor" && <MonitorTab site={site} data={data} />}
+    {tab === "detect" && <DetectSections data={data} running={running} />}
+    {tab === "vulnerabilities" && <FindingsPanel findings={data.findings || []} result={data.scan.result || {}} running={running} />}
+    {tab === "report" && <ReportView site={site} data={data} />}
+  </>;
 }
 
 function ScanPanel({ site, scans, onScanNow, busy, limitNote, onUpgrade }) {
@@ -230,7 +311,7 @@ function ScanPanel({ site, scans, onScanNow, busy, limitNote, onUpgrade }) {
     <div className="sw-scan-now"><Badge tone={view.tone}>{view.label}</Badge>
       {view.active && <LoaderCircle className="spin" size={15} />}
       <span data-testid="scan-status">{view.active || !["completed", "incomplete", "refused"].includes(latest?.status) ? view.text : ""}</span></div>
-    {latest && <DetectResults siteId={site.id} scan={latest} />}
+    {latest && <ScanTabs site={site} scan={latest} />}
     {scans.length > 1 && <ul className="sw-history">{scans.slice(1).map(scan => {
       const v = scanView(scan);
       return <li key={scan.id}><Badge tone={v.tone}>{v.label}</Badge><span>{when(scan.ended_at || scan.requested_at)}</span></li>;
@@ -275,6 +356,7 @@ function WebsiteDetail({ id, onBack, onChanged, onRemoved, onUpgrade }) {
     <Heading eyebrow="WEBSITE" title={site.domain || site.name} text={v.text}
       action={<div className="sw-heading-actions">{site.test_target && <Badge tone="info">Test target</Badge>}
         {!site.test_target && <Badge tone={v.tone}>{v.label}</Badge>}
+        {site.manual_verification && <span className="sw-muted" data-testid="manual-detail" title={site.manual_verification.reason}>Reason: {site.manual_verification.reason}</span>}
         <button className="secondary-button sw-remove-button" onClick={() => setRemoving(true)}>Remove website</button></div>} />
     {removing && <RemoveDialog site={site} onClose={() => setRemoving(false)} onRemoved={onRemoved} />}
     {site.verification_status === "lost" && site.verification_result?.message && <div className="sw-result bad" role="alert">
@@ -429,7 +511,7 @@ export default function Console({ account, onLogout }) {
           <button type="button" className="logout-button" onClick={onLogout}><LogOut size={15} /><span>Sign out</span></button>
         </div>
       </header>
-      <div className="content-area">
+      <div className="content-area"><ErrorBoundary key={`${page}-${openId}`}>
         {error && <div className="alert alert-error" role="alert"><ShieldAlert size={18} /><div><strong>Something went wrong</strong><span>{error}</span></div>
           <button className="alert-action" onClick={load}>Try again</button></div>}
         {notice && <div className="sw-notice" role="status" data-testid="notice"><CheckCircle2 size={16} />{notice}
@@ -450,6 +532,7 @@ export default function Console({ account, onLogout }) {
         {staff && page === "legacy-remediation" && <RemediationPage websites={legacySites} />}
         {staff && page === "legacy-findings" && <FindingsPage clients={clients} websites={legacySites} onOpenAssessment={() => go("legacy-assessments")} />}
         {staff && page === "legacy-lifecycle" && <LifecyclePage websites={legacySites} onNavigate={target => go(`legacy-${target}`)} />}
+        </ErrorBoundary>
         <footer className="content-footer"><span>SNWebShield</span><span><Shield size={13} /> We only scan websites whose ownership you have verified.</span></footer>
       </div>
     </main>

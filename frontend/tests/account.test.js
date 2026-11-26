@@ -51,7 +51,7 @@ test("an approved test target is labelled as one and explains who may scan it", 
   const view = verificationView({ verification_status: "verified", verification_method: "test_target" });
   assert.equal(view.label, "Test target");
   assert.match(view.text, /admin/i);
-  assert.match(view.text, /2 scans per day/);
+  assert.match(view.text, /10 scans per day/);
   assert.equal(verificationView({ verification_status: "verified", verification_method: "dns" }).label, "Verified");
 });
 

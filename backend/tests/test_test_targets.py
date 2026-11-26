@@ -47,14 +47,14 @@ def request(website_id):
 
 def test_the_approved_list_is_only_scanme_nmap_org_and_two_scans_a_day():
     assert settings.approved_test_targets == (TARGET,)
-    assert settings.test_target_scans_per_day == 2
+    assert settings.test_target_scans_per_day == 10
 
 
 def test_the_list_cannot_be_changed_by_environment_or_code_assignment(monkeypatch):
     monkeypatch.setenv("APPROVED_TEST_TARGETS", "evil.example.com,scanme.nmap.org")
     monkeypatch.setenv("TEST_TARGET_SCANS_PER_DAY", "1000")
     fresh = Settings(approved_test_targets=("evil.example.com",), test_target_scans_per_day=99)
-    assert fresh.approved_test_targets == (TARGET,) and fresh.test_target_scans_per_day == 2
+    assert fresh.approved_test_targets == (TARGET,) and fresh.test_target_scans_per_day == 10
     with pytest.raises((AttributeError, ValueError, TypeError)):
         settings.approved_test_targets = ("evil.example.com",)
     assert isinstance(config.APPROVED_TEST_TARGETS, tuple)  # immutable container, not a list
@@ -208,21 +208,23 @@ def test_ordinary_scans_are_not_flagged_as_test_targets(client):
     assert event.detail["test_target"] is False
 
 
-# --- Two scans per day -----------------------------------------------------------------------------
+# --- Ten scans per day -----------------------------------------------------------------------------
 
-def test_at_most_two_test_target_scans_per_day(client):
+def test_at_most_ten_test_target_scans_per_day(client):
+    limit = settings.test_target_scans_per_day
+    assert limit == 10
     _, _, headers = account_headers(client, "admin")
     site = client.post(W, headers=headers, json={"domain": TARGET}).json()  # scan 1 (the first scan)
     finish_active_scans(site["id"])
-    second = request(site["id"])  # scan 2
-    assert second
-    finish_active_scans(site["id"])
+    for _ in range(limit - 1):
+        assert request(site["id"])
+        finish_active_scans(site["id"])
     with SessionLocal() as db, pytest.raises(Exception) as refused:
         scans.request_scan(db, db.get(Website, site["id"]), "manual")
     assert getattr(refused.value, "status_code", None) == 429
-    assert "at most 2 times per day" in refused.value.detail["message"] and refused.value.detail["code"] == "scan_limit"
+    assert f"at most {limit} times per day" in refused.value.detail["message"] and refused.value.detail["code"] == "scan_limit"
     with SessionLocal() as db:
-        assert len(db.scalars(select(Scan).where(Scan.website_id == site["id"])).all()) == 2
+        assert len(db.scalars(select(Scan).where(Scan.website_id == site["id"])).all()) == limit
 
 
 def test_the_limit_is_shared_by_all_admins(client):
@@ -233,6 +235,9 @@ def test_the_limit_is_shared_by_all_admins(client):
     assert one["latest_scan"] and two["latest_scan"]  # scans 1 and 2 of the day
     finish_active_scans(one["id"])
     finish_active_scans(two["id"])
+    for _ in range(settings.test_target_scans_per_day - 2):   # the other admins' scans count against the same daily limit
+        assert request(one["id"])
+        finish_active_scans(one["id"])
     with SessionLocal() as db, pytest.raises(Exception) as refused:
         scans.request_scan(db, db.get(Website, one["id"]), "manual")
     assert getattr(refused.value, "status_code", None) == 429
@@ -242,7 +247,10 @@ def test_removing_and_re_adding_the_website_does_not_reset_the_limit(client):
     _, _, headers = account_headers(client, "admin")
     site = client.post(W, headers=headers, json={"domain": TARGET}).json()   # scan 1, queued
     finish_active_scans(site["id"])
-    request(site["id"])                                                      # scan 2, queued
+    for _ in range(settings.test_target_scans_per_day - 2):                  # use up the day, leaving one scan
+        request(site["id"])
+        finish_active_scans(site["id"])
+    request(site["id"])                                                      # the last scan of the day, queued
     assert client.post(f"{W}/{site['id']}/remove", headers=headers, json={"confirm_domain": TARGET}).status_code == 200
     again = client.post(W, headers=headers, json={"domain": TARGET})         # queued scan was deleted, but the audit remains
     assert again.status_code == 201 and again.json()["latest_scan"] is None
