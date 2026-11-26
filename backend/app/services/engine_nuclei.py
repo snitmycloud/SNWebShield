@@ -290,7 +290,12 @@ class NucleiEngine(engines.Engine):
         if not check["ok"]:
             return engines.EngineResult("could_not_check", [], {"reason": "selftest_failed", "selftest": check["failed"]})
         mode = "deep" if getattr(ctx, "scan_type", "standard") == "deep" else "quick"
-        chosen = select_templates(manifest, mode, detected_tokens(state.technologies, state.probes))
+        only = getattr(state, "only_template", None)   # a recheck of one Nuclei finding runs just that template
+        if only:
+            mode = "recheck"
+            chosen = sorted(path for path, meta in manifest.get("index", {}).items() if meta.get("id") == only)
+        else:
+            chosen = select_templates(manifest, mode, detected_tokens(state.technologies, state.probes))
         if not chosen:
             return engines.EngineResult("ok", [], {"mode": mode, "templates": 0, "reason": "no_matching_templates"})
         log_path = Path(settings.nuclei_log_dir) / f"{ctx.scan_id}.jsonl"
@@ -299,7 +304,7 @@ class NucleiEngine(engines.Engine):
         try:
             started = time.monotonic()
             outcome = await nuclei_runner.run(binary, [TEMPLATES_DIR / path for path in chosen], targets, proxy.url, guard,
-                                              timeout_seconds=settings.nuclei_deep_run_seconds if mode == "deep" else settings.nuclei_run_seconds)
+                                              timeout_seconds=settings.nuclei_deep_run_seconds if mode == "deep" else 90 if mode == "recheck" else settings.nuclei_run_seconds)
             seconds = round(time.monotonic() - started, 1)
         finally:
             await proxy.stop()

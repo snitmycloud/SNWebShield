@@ -19,13 +19,17 @@ def grade_for(score: int) -> str:
     return "F"
 
 
-def summarize(findings, *, incomplete: bool = False) -> dict:
+def summarize(findings, *, incomplete: bool = False, excluded=lambda item: False) -> dict:
     """`findings`: objects or dicts with severity, confidence and group. Returns score, grade and the counts."""
     def field(item, name):
         return item.get(name) if isinstance(item, dict) else getattr(item, name)
     counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
     needs_checking = 0
+    set_aside = 0   # fixed or accepted: still listed, not counted
     for item in findings:
+        if excluded(item):
+            set_aside += 1
+            continue
         severity, confidence = field(item, "severity"), field(item, "confidence")
         if confidence != "confirmed":
             needs_checking += 1
@@ -34,5 +38,5 @@ def summarize(findings, *, incomplete: bool = False) -> dict:
     penalty = sum(weights()[level] * counts[level] for level in weights())
     score = max(0, 100 - penalty)
     return {"score": score, "grade": grade_for(score), "counts": counts, "needs_checking": needs_checking,
-            "confirmed": sum(counts[k] for k in ("critical", "high", "medium", "low")), "incomplete": bool(incomplete),
+            "confirmed": sum(counts[k] for k in ("critical", "high", "medium", "low")), "incomplete": bool(incomplete), "set_aside": set_aside,
             "weights": weights()}

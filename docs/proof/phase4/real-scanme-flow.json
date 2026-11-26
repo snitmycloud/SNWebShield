@@ -1,0 +1,84 @@
+{
+  "website": "scanme.nmap.org",
+  "steps": [
+    {
+      "step": "scan_not_started_daily_limit",
+      "http": 429,
+      "code": "scan_limit"
+    },
+    {
+      "step": "existing_scans",
+      "count": 6
+    },
+    {
+      "step": "scan_used",
+      "status": "completed",
+      "score": 73,
+      "grade": "C",
+      "counts": {
+        "critical": 0,
+        "high": 2,
+        "medium": 1,
+        "low": 3,
+        "info": 7
+      },
+      "changes": {
+        "new": 1,
+        "fixed": 0,
+        "unchanged": 112,
+        "could_not_confirm": 0
+      }
+    },
+    {
+      "step": "comparison_of_two_real_scans",
+      "previous": {
+        "scan_id": "011b7e86-50f8-48d8-b835-573192076cfc",
+        "scanned_at": "2026-11-26T18:07:40.338351+00:00",
+        "status": "completed"
+      },
+      "counts": {
+        "new": 1,
+        "fixed": 0,
+        "unchanged": 112,
+        "could_not_confirm": 0
+      },
+      "new": [
+        "HTTP Missing Security Headers"
+      ],
+      "fixed": [],
+      "could_not_confirm": []
+    },
+    {
+      "step": "chosen_finding",
+      "title": "Your server's operating system (Ubuntu 14.04) no longer receives security updates",
+      "severity": "high",
+      "check_id": "eol:distro:ubuntu-14.04",
+      "score_before": 73
+    },
+    {
+      "step": "accepted_risk",
+      "http": 200,
+      "state": "accepted",
+      "score_after": 83,
+      "accepted": 1,
+      "until": "2027-02-24T20:04:15.123948+00:00"
+    },
+    {
+      "step": "accepting_stopped",
+      "http": 200,
+      "score_back": 73
+    },
+    {
+      "step": "recheck_requested",
+      "http": 200
+    },
+    {
+      "step": "recheck_finished",
+      "status": "completed",
+      "message": "We re-checked this finding and it is still there.",
+      "outcome": "still_open",
+      "finding_state_after": "open",
+      "score_after": 73
+    }
+  ]
+}

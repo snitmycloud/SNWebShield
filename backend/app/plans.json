@@ -16,7 +16,8 @@
         "email"
       ],
       "history_days": 30,
-      "pdf_report": true
+      "pdf_report": true,
+      "rechecks_per_day": 20
     },
     "pro": {
       "label": "Pro",
@@ -34,7 +35,8 @@
         "email"
       ],
       "history_days": 365,
-      "pdf_report": true
+      "pdf_report": true,
+      "rechecks_per_day": 50
     },
     "business": {
       "label": "Business",
@@ -54,7 +56,8 @@
         "webhook"
       ],
       "history_days": 730,
-      "pdf_report": true
+      "pdf_report": true,
+      "rechecks_per_day": 200
     }
   }
 }

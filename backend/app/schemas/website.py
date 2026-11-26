@@ -15,6 +15,11 @@ class RemoveRequest(BaseModel):
     confirm_domain: str = Field(min_length=1, max_length=2048)
 
 
+class AcceptRiskRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=2000)
+    days: Literal[30, 90, 180, 365] = 90
+
+
 class ScanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # "full" (all 65,535 ports) is gated to Pro and above in plans.json; there is no UI for it yet.

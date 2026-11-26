@@ -1,5 +1,6 @@
 import React from "react";
 import { AlertTriangle, ShieldAlert } from "lucide-react";
+import FindingActions from "./FindingActions.jsx";
 import { SEVERITY_LABEL, checksNotFinished, cvssText, emptyText, engineProgress, groupFindings, lifecycleTier, panelItems, severityCounts, sourceLabel, summaryText } from "./lib/findings.js";
 
 // Every field here came from our own rules or from public vulnerability databases. It is untrusted text and is shown as
@@ -11,7 +12,7 @@ function Detail({ label, children }) {
   return children ? <div className="sw-fd-row"><dt>{label}</dt><dd>{children}</dd></div> : null;
 }
 
-function FindingCard({ finding, possible }) {
+function FindingCard({ finding, possible, site, onChanged }) {
   const tier = lifecycleTier(finding);
   return <li className={`sw-finding sev-${finding.severity}${possible ? " possible" : ""}`} data-testid="finding">
     <details>
@@ -22,6 +23,7 @@ function FindingCard({ finding, possible }) {
       </summary>
       {possible && finding.caveat && <p className="sw-caveat" role="note"><AlertTriangle size={14} />{finding.caveat}</p>}
       {!possible && finding.caveat && <p className="sw-caveat" role="note">{finding.caveat}</p>}
+      {site && <FindingActions site={site} finding={finding} onChanged={onChanged} />}
       <dl className="sw-fd">
         {tier && <Detail label="Status">{tier}</Detail>}
         <Detail label="What you have">{finding.you_have}</Detail>
@@ -41,8 +43,8 @@ function FindingCard({ finding, possible }) {
   </li>;
 }
 
-export default function FindingsPanel({ findings, result, running }) {
-  const { confirmed, needsChecking, info } = groupFindings(findings);
+export default function FindingsPanel({ findings, result, running, site, onChanged }) {
+  const { confirmed, needsChecking, info, accepted, fixed } = groupFindings(findings);
   const counts = severityCounts(findings);
   const problems = checksNotFinished(result);
   const progress = engineProgress(result, running);
@@ -63,17 +65,28 @@ export default function FindingsPanel({ findings, result, running }) {
         {p.details.length > 0 && <ul>{p.details.map(d => <li key={d}>{d}</li>)}</ul>}</li>)}</ul>
     </div>}
 
-    {confirmed.length > 0 && <ul className="sw-flist">{confirmed.map(f => <FindingCard key={f.fingerprint} finding={f} />)}</ul>}
+    {confirmed.length > 0 && <ul className="sw-flist">{confirmed.map(f => <FindingCard key={f.fingerprint} finding={f} site={site} onChanged={onChanged} />)}</ul>}
     {nothing && !progress.notChecked && <p className="sw-none" data-testid="no-findings">{emptyText(result, running)}</p>}
 
     {needsChecking.length > 0 && <div className="sw-needs" data-testid="needs-checking">
       <h4>Needs checking ({needsChecking.length})</h4>
       <p className="sw-note">We could not be sure these apply to your server, for example because your system may have fixed them without changing the version number. They are not counted in your findings until confirmed. Each one says how to check.</p>
-      <ul className="sw-flist">{needsChecking.slice(0, SHOWN_FIRST).map(f => <FindingCard key={f.fingerprint} finding={f} possible />)}</ul>
+      <ul className="sw-flist">{needsChecking.slice(0, SHOWN_FIRST).map(f => <FindingCard key={f.fingerprint} finding={f} possible site={site} onChanged={onChanged} />)}</ul>
       {needsChecking.length > SHOWN_FIRST && <details className="sw-more" data-testid="needs-checking-more">
         <summary>Show the other {needsChecking.length - SHOWN_FIRST} (lower scores)</summary>
         <ul className="sw-flist">{needsChecking.slice(SHOWN_FIRST).map(f => <FindingCard key={f.fingerprint} finding={f} possible />)}</ul>
       </details>}
+    </div>}
+
+    {accepted.length > 0 && <div className="sw-accepted" data-testid="accepted-section">
+      <h4>Accepted risks ({accepted.length})</h4>
+      <p className="sw-note">You chose to accept these for now. They are not counted in your score, and each one comes back as Open when its time is up.</p>
+      <ul className="sw-flist">{accepted.map(f => <FindingCard key={f.fingerprint} finding={f} site={site} onChanged={onChanged} />)}</ul>
+    </div>}
+
+    {fixed.length > 0 && <div className="sw-fixed" data-testid="fixed-section">
+      <h4>Fixed ({fixed.length})</h4>
+      <ul className="sw-flist">{fixed.map(f => <FindingCard key={f.fingerprint} finding={f} site={site} onChanged={onChanged} />)}</ul>
     </div>}
 
     {info.length > 0 && <details className="sw-goodtoknow">

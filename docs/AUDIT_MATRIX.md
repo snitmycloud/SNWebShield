@@ -177,6 +177,23 @@ Tests: `test_detect_pipeline.py` (optional step down: completed with the note; c
 
 ---
 
+## Self-service Phase 4: findings lifecycle (branch `feat/phase4-findings-lifecycle`, 2026-11-27)
+
+| Spec item (Phase 4, as approved) | Status | Tests / proof |
+|---|---|---|
+| Finding states Open / Fixed (by recheck or full scan) / Accepted, per website, by fingerprint | Done | `test_findings_lifecycle.py`; migration 0020 |
+| Re-scan to confirm fix: one finding, owner only, verified website, one pinned IP, 120 s limit, never replaces the latest scan | Done | `test_recheck_still_open_then_fixed_by_recheck`, `test_recheck_that_cannot_finish_is_never_fixed`, `test_recheck_boundaries_owner_verification_and_other_users`, `test_recheck_to_a_private_address_is_refused_and_not_fixed` |
+| Recheck allowance separate from scans (Free 20, Pro 50, Business 200; test target 20/day) | Done | `test_recheck_allowance_is_separate_and_checked`, `test_test_target_rechecks_have_their_own_daily_limit`, `test_plans_have_recheck_allowances` |
+| Accepted risk: owner only, reason, 30/90/180/365 days, not scored, Review soon at 7 days, expires to Open, audit-logged, re-accept | Done | `test_accepting_a_risk_raises_the_score...`, `test_only_the_owner_can_accept...`, `test_an_accepted_risk_expires_shows_review_soon...` |
+| Comparison new / fixed / unchanged; Fixed only if its step finished OK, else "could not confirm"; baseline = previous full scan | Done | `test_comparison_and_fixed_by_full_scan_and_reopened`, `test_a_finding_whose_step_did_not_finish_is_could_not_confirm_never_fixed` |
+| "Changes since last scan" on Report and Vulnerabilities; status badges and buttons | Done | `frontend/tests/compare.test.js`; production build |
+| Audit events `recheck_requested`, `finding_fixed`, `finding_reopened`, `risk_accepted`, `risk_unaccepted`, `risk_acceptance_expired` | Done | the tests above |
+| Real scanme flow | Done | `docs/proof/phase4/real-scanme-flow.json` |
+
+**Test totals (Phase 4 branch).** Backend full run: 1131 passed, 0 failed (36m35s; 12 new in `test_findings_lifecycle.py`). Frontend `npm test`: 113 passed (4 new in `compare.test.js`). `npm run build`: succeeded.
+
+**Not done / limits (Phase 4).** The real-scanme proof used the newest existing scan because the Pro account's 5 manual scans for the day were used up (the limit was respected, not bypassed). Re-checks of the grouped "login pages" and "more known issues" lines are not offered. Notifications about an expiring acceptance (email) are not built: the screen shows "Review soon". Older scans keep their original score; fixed and accepted findings are set aside only on the website's latest scan.
+
 ## Demo build (2026-11-26): manual verification, robustness, report (minimal Phase 4)
 
 | Item | Status | Tests / proof |

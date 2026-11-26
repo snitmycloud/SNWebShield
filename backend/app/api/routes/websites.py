@@ -15,9 +15,9 @@ from app.db.session import get_db
 from app.models.admin import Admin
 from app.models.scan import Scan, ScanFinding, ScanObservation, ScanPort, ScanTechnology
 from app.models.website import Website
-from app.schemas.website import ManualVerifyRequest, RemoveRequest, ScanRequest, VerifyRequest, WebsiteCreate
+from app.schemas.website import AcceptRiskRequest, ManualVerifyRequest, RemoveRequest, ScanRequest, VerifyRequest, WebsiteCreate
 from app.services import job_engine as engine
-from app.services import lifecycle, ownership, plans, scans, scoring
+from app.services import comparison, finding_states, lifecycle, ownership, plans, scans, scoring
 from app.services.domains import DomainError, normalize_domain
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
@@ -32,11 +32,23 @@ def scan_summary(db: Session, scan: Scan | None) -> dict | None:
     """Score, grade, counts by severity, certificate expiry, CDN and notes of one finished (or stopped) scan."""
     if scan is None or scan.status not in ("completed", "incomplete"):
         return None
-    rows = db.execute(select(ScanFinding.severity, ScanFinding.confidence, ScanFinding.group)
+    rows = db.execute(select(ScanFinding.severity, ScanFinding.confidence, ScanFinding.group, ScanFinding.fingerprint)
                       .where(ScanFinding.scan_id == scan.id)).all()
     result = scan.result or {}
-    summary = scoring.summarize([{"severity": r[0], "confidence": r[1], "group": r[2]} for r in rows],
-                                incomplete=scan.status == "incomplete")
+    # Fixed and accepted findings stay listed but are not counted - only on the website's latest scan (older scans stay as they were).
+    states = {}
+    if scan.scan_type != "recheck" and (latest := scans.latest_scan(db, scan.website_id)) is not None and latest.id == scan.id:
+        states = finding_states.states_for(db, scan.website_id)
+    now = utc_now()
+
+    def set_aside(item):
+        state = states.get(item["fingerprint"])
+        return bool(state and (state.status == "fixed" or finding_states.accepted_active(state, now)))
+    summary = scoring.summarize([{"severity": r[0], "confidence": r[1], "group": r[2], "fingerprint": r[3]} for r in rows],
+                                incomplete=scan.status == "incomplete", excluded=set_aside)
+    summary["accepted"] = sum(1 for r in rows if finding_states.accepted_active(states.get(r[3]), now))
+    summary["fixed"] = sum(1 for r in rows if (states.get(r[3]) is not None and states[r[3]].status == "fixed"))
+    summary["changes"] = comparison.compare(db, scan)["counts"] if scan.status in ("completed", "incomplete") else None
     certificate = None
     for port in db.scalars(select(ScanPort).where(ScanPort.scan_id == scan.id)):
         cert = ((port.details or {}).get("tls") or {}).get("certificate") or {}
@@ -54,6 +66,8 @@ def scan_summary(db: Session, scan: Scan | None) -> dict | None:
 
 def read_website(db: Session, website: Website, *, with_instructions=False, account: Admin | None = None) -> dict:
     if ownership.expire_manual(website):   # a manual verification lasts 24 hours, then scans pause
+        db.commit()
+    if finding_states.expire_due(db, website_id=website.id):   # accepted risks that ran out go back to Open
         db.commit()
     latest = scans.latest_scan(db, website.id)
     data = {
@@ -293,9 +307,17 @@ def scan_detail(website_id: int, scan_id: str, account: Admin = Depends(get_curr
     observations = db.scalars(select(ScanObservation).where(ScanObservation.scan_id == scan.id)
                               .order_by(ScanObservation.kind, ScanObservation.key)).all()
     stored = db.scalars(select(ScanFinding).where(ScanFinding.scan_id == scan.id)).all()
+    if finding_states.expire_due(db, website_id=website.id):
+        db.commit()
+    latest = scans.latest_scan(db, website.id)
+    is_latest = latest is not None and latest.id == scan.id
+    states = finding_states.states_for(db, website.id) if is_latest else {}
+    now = utc_now()
     findings = sorted(({"id": f.id, "fingerprint": f.fingerprint, "kind": f.kind, "check_id": f.check_id, "title": f.title,
                         "location": f.location, "port": f.port, "severity": f.severity, "confidence": f.confidence, "group": f.group,
-                        "scored": f.confidence == "confirmed" and f.severity != "info", "you_have": f.you_have,
+                        "scored": f.confidence == "confirmed" and f.severity != "info" and (f.fingerprint not in states or finding_states.view(states[f.fingerprint], now)["status"] == "open"),
+                        "state": finding_states.view(states.get(f.fingerprint), now) if is_latest else {"status": "open"},
+                        "recheckable": is_latest and finding_states.recheckable(f.check_id), "you_have": f.you_have,
                         "you_should_have": f.you_should_have, "cve_id": f.cve_id, "cvss_score": f.cvss_score,
                         "cvss_vector": f.cvss_vector, "affected_range": f.affected_range, "first_fixed": f.first_fixed,
                         "why": f.why, "how_to_fix": f.how_to_fix, "evidence": f.evidence, "caveat": f.caveat,
@@ -318,8 +340,56 @@ def scan_detail(website_id: int, scan_id: str, account: Admin = Depends(get_curr
 def website_scans(website_id: int, limit: int = Query(default=20, ge=1, le=100),
                   account: Admin = Depends(get_current_account), db: Session = Depends(get_db)):
     website = _visible(db, account, website_id)
-    rows = db.scalars(select(Scan).where(Scan.website_id == website.id).order_by(Scan.requested_at.desc()).limit(limit))
+    rows = db.scalars(select(Scan).where(Scan.website_id == website.id, Scan.scan_type != "recheck").order_by(Scan.requested_at.desc()).limit(limit))
     return [scans.serial(row) for row in rows]
+
+
+@router.get("/{website_id}/scans/{scan_id}/comparison")
+def scan_comparison(website_id: int, scan_id: str, account: Admin = Depends(get_current_account), db: Session = Depends(get_db)):
+    """What is new, fixed and unchanged compared with the scan before this one."""
+    website = _visible(db, account, website_id)
+    scan = db.get(Scan, scan_id)
+    if scan is None or scan.website_id != website.id:
+        raise HTTPException(404, "Scan not found")
+    return comparison.compare(db, scan)
+
+
+def _state_error(error: finding_states.StateError):
+    status_code = 403 if error.code == "not_owner" else 404 if error.code == "finding_not_found" else 422 if error.code in ("bad_reason", "bad_days") else 409
+    return HTTPException(status_code, {"code": error.code, "message": error.message})
+
+
+@router.post("/{website_id}/findings/{fingerprint}/accept")
+def accept_risk(website_id: int, fingerprint: str, payload: AcceptRiskRequest, account: Admin = Depends(get_current_account),
+                db: Session = Depends(get_db)):
+    """Accept a risk with a typed reason for 30, 90, 180 or 365 days. Owner only (staff and analysts cannot)."""
+    website = _owned(db, account, website_id)
+    try:
+        state = finding_states.accept(db, website, account, fingerprint, payload.reason, payload.days)
+    except finding_states.StateError as error:
+        raise _state_error(error) from error
+    db.commit()
+    return finding_states.view(state)
+
+
+@router.delete("/{website_id}/findings/{fingerprint}/accept")
+def stop_accepting_risk(website_id: int, fingerprint: str, account: Admin = Depends(get_current_account), db: Session = Depends(get_db)):
+    website = _owned(db, account, website_id)
+    try:
+        state = finding_states.unaccept(db, website, account, fingerprint)
+    except finding_states.StateError as error:
+        raise _state_error(error) from error
+    db.commit()
+    return finding_states.view(state)
+
+
+@router.post("/{website_id}/findings/{fingerprint}/recheck")
+def recheck_finding(website_id: int, fingerprint: str, account: Admin = Depends(get_current_account), db: Session = Depends(get_db)):
+    """Re-scan to confirm a fix: queues a short scan of this one finding. Owner only; uses the separate re-check allowance."""
+    website = _owned(db, account, website_id)
+    scan, _ = scans.request_recheck(db, website, account, fingerprint)
+    db.commit()
+    return {"scan": scans.serial(scan)}
 
 
 @router.get("/{website_id}/lifecycle")

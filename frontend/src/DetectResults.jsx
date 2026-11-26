@@ -6,7 +6,7 @@ import { describePort, dnsText, exposedText, isActiveScan, resultBanner, section
 // Everything below comes from the scanned server and is shown as escaped text (React escapes it), never as HTML.
 
 // Loads one scan's results and keeps them fresh while the scan runs (partial results appear as they arrive).
-export function useScanDetail(siteId, scan) {
+export function useScanDetail(siteId, scan, version = 0) {
   const [data, setData] = useState(null), [error, setError] = useState("");
   const alive = useRef(true);
   const scanId = scan?.id, status = scan?.status, endedAt = scan?.ended_at;
@@ -17,7 +17,7 @@ export function useScanDetail(siteId, scan) {
     load();
     const timer = isActiveScan({ status }) ? setInterval(load, 2500) : null;
     return () => { alive.current = false; if (timer) clearInterval(timer); };
-  }, [siteId, scanId, status, endedAt]);
+  }, [siteId, scanId, status, endedAt, version]);
   return { data, error };
 }
 

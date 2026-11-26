@@ -1,6 +1,7 @@
 import React from "react";
 import { AlertTriangle, Download, Info } from "lucide-react";
-import { SEVERITY_LABEL, cvssText, lifecycleTier, sourceLabel, checksNotFinished } from "./lib/findings.js";
+import ChangesPanel from "./ChangesPanel.jsx";
+import { SEVERITY_LABEL, cvssText, lifecycleTier, sourceLabel, checksNotFinished, stateText } from "./lib/findings.js";
 import { REPORT_DISCLAIMER, certificateView, gradeView, pdfAllowed, reportFields, reportGroups, scanDuration, severityRows } from "./lib/report.js";
 
 // The website report. Everything from a scan is untrusted text and is shown escaped (React escapes it).
@@ -13,6 +14,7 @@ function FindingBlock({ finding, possible }) {
     {finding.caveat && <p className="sw-caveat"><AlertTriangle size={14} />{finding.caveat}</p>}
     <dl className="sw-fd">
       {tier && <div className="sw-fd-row"><dt>Status</dt><dd>{tier}</dd></div>}
+      {finding.state && finding.state.status !== "open" && <div className="sw-fd-row"><dt>State</dt><dd>{stateText(finding)}{finding.state.accepted?.reason ? ` — ${finding.state.accepted.reason}` : ""}</dd></div>}
       {reportFields(finding).map(row => <div className="sw-fd-row" key={row.label}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}
       {finding.cvss_score != null && <div className="sw-fd-row"><dt>Score details</dt><dd>{cvssText(finding)}</dd></div>}
       <div className="sw-fd-row"><dt>Source</dt><dd>{(finding.sources || []).map(sourceLabel).join(", ")}</dd></div>
@@ -20,10 +22,10 @@ function FindingBlock({ finding, possible }) {
   </article>;
 }
 
-export default function ReportView({ site, data, plan }) {
+export default function ReportView({ site, data, plan, scan }) {
   if (!data) return <div className="loading-rows"><div /><div /></div>;
   const summary = data.summary, grade = gradeView(summary);
-  const { confirmed, needsChecking } = reportGroups(data.findings || []);
+  const { confirmed, needsChecking, accepted, fixed } = reportGroups(data.findings || []);
   const result = data.scan.result || {};
   const unfinished = checksNotFinished(result);
   const when = data.scan.ended_at ? new Date(data.scan.ended_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "";
@@ -40,6 +42,8 @@ export default function ReportView({ site, data, plan }) {
       <h2>{site.domain}</h2>
       <p>Scanned {when}{scanDuration(data.scan) ? ` (took ${scanDuration(data.scan)})` : ""}. {data.scan.status === "incomplete" ? "Some checks did not finish." : ""}</p>
     </header>
+
+    <ChangesPanel site={site} scan={scan || data.scan} data={data} compact />
 
     <div className="sw-report-summary">
       {grade ? <div className={`sw-grade ${grade.tone}`} data-testid="report-grade"><span className="sw-grade-letter">{grade.grade}</span>
@@ -61,6 +65,12 @@ export default function ReportView({ site, data, plan }) {
     <h3 className="sw-report-h">Confirmed findings ({confirmed.length})</h3>
     {confirmed.length === 0 ? <p className="sw-none" data-testid="report-none">No confirmed findings from these checks. This does not prove that your website has no weaknesses.</p>
       : confirmed.map(f => <FindingBlock key={f.fingerprint} finding={f} />)}
+
+    {accepted.length > 0 && <><h3 className="sw-report-h">Accepted risks ({accepted.length})</h3>
+      <p className="sw-note">The owner accepted these for a set time. They are not counted in the score.</p>
+      {accepted.map(f => <FindingBlock key={f.fingerprint} finding={f} />)}</>}
+    {fixed.length > 0 && <><h3 className="sw-report-h">Fixed ({fixed.length})</h3>
+      {fixed.map(f => <FindingBlock key={f.fingerprint} finding={f} />)}</>}
 
     <h3 className="sw-report-h">Needs checking ({needsChecking.length})</h3>
     <p className="sw-note">We could not be sure these apply to your server, for example because your system may have fixed them without changing the version number. They are not counted in the score. Each one says how to check.</p>
