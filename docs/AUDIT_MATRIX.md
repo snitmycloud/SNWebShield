@@ -165,7 +165,7 @@ Tests: `test_detect_pipeline.py` (optional step down: completed with the note; c
 | Duplicates between built-in checks, NVD and Nuclei appear once with both sources | ✅ | `test_nuclei_runner_engine.py`, `test_identify_pipeline.py` |
 | Self-test with the REAL binary: proxy containment and kill-on-stop | ✅ passed (2026-11-26, loopback canaries) | `python -m app.services.nuclei_selftest` |
 | Self-test with the firewall rule present: **all 5 checks pass** with the REAL binary (binary hash and version, 3,948 templates re-validated, firewall rule active, proxy containment, kill on stop) | ✅ 2026-11-26 after the administrator created the rule | `docs/proof/phase3b/selftest-pass-with-firewall-rule.json` |
-| Self-test with the rule REMOVED fails and the engine stays off | ⏳ pending the administrator's undo script (unit-tested meanwhile) | `test_nuclei_selftest_install.py` |
+| Self-test with the rule REMOVED fails on the firewall check and the engine stays off (with NUCLEI_ENABLED on: `could_not_check`, `selftest_failed`, 0 findings, no run against the scan target, twice in a row) | ✅ 2026-11-26 after the administrator ran the undo script | `docs/proof/phase3b/selftest-fail-without-firewall-rule.json`, `test_nuclei_selftest_install.py` |
 | Real scanme scan with built-in + Nuclei findings merged, and its proxy log | ⏳ after 05:30 on 2026-11-27 (daily limit) | |
 | Full backend run, frontend tests and build for 3B | ⏳ at the end of 3B | |
 
