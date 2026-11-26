@@ -13,7 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # It is a constant in code, not a setting that can be read from .env or changed from the app. Only `admin`
 # accounts can use it, at most TEST_TARGET_SCANS_PER_DAY scans per target per UTC day, and every scan is audited.
 APPROVED_TEST_TARGETS = ("scanme.nmap.org",)  # published by the Nmap project for test scans
-TEST_TARGET_SCANS_PER_DAY = 2
+TEST_TARGET_SCANS_PER_DAY = 10
 
 
 class Settings(BaseSettings):
@@ -98,18 +98,28 @@ class Settings(BaseSettings):
     vuln_cache_hours: int = Field(default=24, ge=1, le=168)
     vuln_http_timeout_seconds: float = Field(default=10.0, ge=1, le=30)
     vuln_max_response_bytes: int = Field(default=8 * 1024 * 1024, ge=65536, le=32 * 1024 * 1024)
-    scan_identify_budget_seconds: int = Field(default=120, ge=10, le=900)   # all vulnerability look-ups of one scan together
+    scan_identify_budget_seconds: int = Field(default=90, ge=10, le=900)   # all vulnerability look-ups of one scan together
     scan_tls_probe_timeout_seconds: float = Field(default=2.0, ge=0.5, le=10)
+
+    # --- Score and grade (spec section 7): start at 100, subtract per open confirmed finding ---
+    score_weight_critical: int = Field(default=25, ge=0, le=100)
+    score_weight_high: int = Field(default=10, ge=0, le=100)
+    score_weight_medium: int = Field(default=4, ge=0, le=100)
+    score_weight_low: int = Field(default=1, ge=0, le=100)
+    grade_a_min: int = Field(default=90, ge=0, le=100)
+    grade_b_min: int = Field(default=75, ge=0, le=100)
+    grade_c_min: int = Field(default=60, ge=0, le=100)
+    grade_d_min: int = Field(default=40, ge=0, le=100)
 
     # --- Nuclei engine (Phase 3B). OFF by default; it also needs its self-test to pass at run time. ---
     nuclei_enabled: bool = False
     nuclei_dir: Path = Path.home() / "SNWebShield-Private" / "engines"          # where the pinned binary is installed (outside the repo)
     nuclei_log_dir: Path = Path.home() / "SNWebShield-Private" / "nuclei-logs"  # one proxy log per scan
-    nuclei_run_seconds: int = Field(default=300, ge=30, le=1800)                # hard limit for one Nuclei run
-    nuclei_rate_limit: int = Field(default=10, ge=1, le=50)                     # requests per second (to the one host)
-    nuclei_concurrency: int = Field(default=5, ge=1, le=10)
+    nuclei_run_seconds: int = Field(default=90, ge=30, le=1800)                 # hard limit for one Nuclei run (keeps a normal scan under 3 minutes)
+    nuclei_rate_limit: int = Field(default=25, ge=1, le=50)                     # requests per second (to the one host)
+    nuclei_concurrency: int = Field(default=10, ge=1, le=10)
     nuclei_max_output_bytes: int = Field(default=1024 * 1024, ge=65536, le=8 * 1024 * 1024)
-    nuclei_selftest_valid_minutes: int = Field(default=60, ge=1, le=1440)
+    nuclei_selftest_valid_minutes: int = Field(default=240, ge=1, le=1440)   # the cheap parts (binary hash, templates, firewall rule) are re-checked on EVERY scan
 
     # Sent only when the API itself is served over HTTPS.
     hsts_max_age_seconds: int = Field(default=31536000, ge=0, le=63072000)

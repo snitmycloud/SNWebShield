@@ -232,3 +232,13 @@ def test_an_unpinned_binary_hash_needs_an_explicit_record_step(installer):
     lock["nuclei"]["platforms"][nuclei_lock.platform_key()]["binary_sha256"] = None
     lock_file.write_text(json.dumps(lock), encoding="utf-8")
     assert tool.main() == 1 and not (tmp_path / "engines").exists()
+
+
+def test_a_scan_never_waits_for_a_self_test_that_is_already_running(counting):
+    calls, _, _ = counting
+    assert st._running.acquire(blocking=False)
+    try:
+        result = asyncio.run(st.ensure())
+    finally:
+        st._running.release()
+    assert result["ok"] is False and result["failed"] == ["selftest_running"] and calls == []

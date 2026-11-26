@@ -1,6 +1,8 @@
 """Websites: add, list, verify ownership. Customers see only their own; staff can see all (read-only)."""
 import secrets
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -13,9 +15,9 @@ from app.db.session import get_db
 from app.models.admin import Admin
 from app.models.scan import Scan, ScanFinding, ScanObservation, ScanPort, ScanTechnology
 from app.models.website import Website
-from app.schemas.website import RemoveRequest, ScanRequest, VerifyRequest, WebsiteCreate
+from app.schemas.website import ManualVerifyRequest, RemoveRequest, ScanRequest, VerifyRequest, WebsiteCreate
 from app.services import job_engine as engine
-from app.services import lifecycle, ownership, plans, scans
+from app.services import lifecycle, ownership, plans, scans, scoring
 from app.services.domains import DomainError, normalize_domain
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
@@ -26,7 +28,33 @@ def _iso(value):
     return as_utc(value).isoformat() if value else None
 
 
+def scan_summary(db: Session, scan: Scan | None) -> dict | None:
+    """Score, grade, counts by severity, certificate expiry, CDN and notes of one finished (or stopped) scan."""
+    if scan is None or scan.status not in ("completed", "incomplete"):
+        return None
+    rows = db.execute(select(ScanFinding.severity, ScanFinding.confidence, ScanFinding.group)
+                      .where(ScanFinding.scan_id == scan.id)).all()
+    result = scan.result or {}
+    summary = scoring.summarize([{"severity": r[0], "confidence": r[1], "group": r[2]} for r in rows],
+                                incomplete=scan.status == "incomplete")
+    certificate = None
+    for port in db.scalars(select(ScanPort).where(ScanPort.scan_id == scan.id)):
+        cert = ((port.details or {}).get("tls") or {}).get("certificate") or {}
+        try:
+            expires = as_utc(datetime.fromisoformat(cert.get("not_after")))
+        except (TypeError, ValueError):
+            continue
+        days = (expires - utc_now()).days
+        if certificate is None or days < certificate["days_left"]:
+            certificate = {"port": port.port, "expires_at": expires.isoformat(), "days_left": days, "subject": cert.get("subject_cn")}
+    summary.update(scan_id=scan.id, scanned_at=_iso(scan.ended_at or scan.requested_at), certificate=certificate,
+                   cdn=result.get("cdn"), notes=result.get("notes") or [])
+    return summary
+
+
 def read_website(db: Session, website: Website, *, with_instructions=False, account: Admin | None = None) -> dict:
+    if ownership.expire_manual(website):   # a manual verification lasts 24 hours, then scans pause
+        db.commit()
     latest = scans.latest_scan(db, website.id)
     data = {
         "id": website.id, "domain": website.domain, "name": website.name, "url": website.url,
@@ -36,7 +64,16 @@ def read_website(db: Session, website: Website, *, with_instructions=False, acco
         "verification_result": website.verification_result, "created_at": _iso(website.created_at),
         "removed_at": _iso(website.removed_at), "test_target": scans.is_test_target(website),
         "scans_paused": website.verification_status == "lost",
+        "manual_verification": ({"label": ownership.MANUAL_LABEL, "reason": (website.verification_result or {}).get("reason"),
+                                 "granted_by": (website.verification_result or {}).get("granted_by"),
+                                 "granted_at": (website.verification_result or {}).get("granted_at"),
+                                 "expires_at": (website.verification_result or {}).get("expires_at")}
+                                if website.verification_method == "manual" and website.verification_status == "verified" else None),
+        "can_verify_manually": bool(account is not None and account.role == "admin" and website.owner_id is not None
+                                    and website.removed_at is None and website.verification_method != "test_target"
+                                    and website.verification_status != "verified"),
         "latest_scan": scans.serial(latest) if latest else None,
+        "summary": scan_summary(db, latest),
     }
     if (account is not None and account.id == website.owner_id and website.removed_at is None
             and website.verification_status == "verified"):
@@ -172,6 +209,36 @@ def verify_website(website_id: int, payload: VerifyRequest, account: Admin = Dep
             "scan": scans.serial(scan) if scan else None}
 
 
+@router.post("/{website_id}/verify-manual")
+def verify_manually(website_id: int, payload: ManualVerifyRequest, account: Admin = Depends(get_current_account),
+                    db: Session = Depends(get_db)):
+    """ADMIN ONLY (demo backup): mark a website verified by hand for 24 hours. Needs a typed reason and is audit-logged.
+
+    Normal users get 403 whatever they send. A website that is already verified by DNS, file or meta is never downgraded.
+    """
+    if account.role != "admin" or not account.is_active:
+        raise HTTPException(403, "Only an administrator can verify a website manually.")
+    website = db.get(Website, website_id)
+    if website is None or website.removed_at is not None or website.owner_id is None or not website.domain:
+        raise HTTPException(404, "Website not found")
+    if website.verification_method == "test_target":
+        raise HTTPException(409, "This is an approved test target; it needs no verification.")
+    ownership.expire_manual(website)
+    if website.verification_status == "verified" and website.verification_method != "manual":
+        raise HTTPException(409, "This website is already verified.")
+    result = ownership.grant_manual(website, account, payload.reason)
+    engine.event(db, "manual_verification", resource_id=website.id, actor_id=account.id, detail={
+        "admin_id": account.id, "admin": account.email, "domain": website.domain, "owner_id": website.owner_id, "reason": result["reason"],
+        "granted_at": result["granted_at"], "expires_at": result["expires_at"]})
+    scan = None
+    if scans.latest_scan(db, website.id) is None:
+        scan = scans.request_scan(db, website, "first")
+    db.commit()
+    db.refresh(website)
+    return {"website": read_website(db, website, with_instructions=website.owner_id == account.id, account=account), "check": result,
+            "scan": scans.serial(scan) if scan else None}
+
+
 @router.post("/{website_id}/remove")
 def remove_website(website_id: int, payload: RemoveRequest, account: Admin = Depends(get_current_account),
                    db: Session = Depends(get_db)):
@@ -235,7 +302,7 @@ def scan_detail(website_id: int, scan_id: str, account: Admin = Depends(get_curr
                         "sources": f.sources or [], "details": f.details or {}} for f in stored),
                       key=lambda f: (SEVERITY_ORDER.get(f["severity"], 9), f["group"] != "findings", -(f["cvss_score"] or 0), f["title"]))
     return {
-        "scan": scans.serial(scan), "domain": website.domain, "findings": findings, "test_target": scans.is_test_target(website),
+        "scan": scans.serial(scan), "domain": website.domain, "findings": findings, "summary": scan_summary(db, scan), "test_target": scans.is_test_target(website),
         "ports": [{"port": p.port, "state": p.state, "service": p.service, "product": p.product, "version": p.version,
                    "banner": p.banner, **{k: (p.details or {}).get(k) for k in ("tls", "http", "service_guess", "notes")}}
                   for p in ports],

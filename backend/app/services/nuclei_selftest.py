@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -248,14 +249,25 @@ def _finish(checks, failed) -> dict:
     return result
 
 
+_running = threading.Lock()
+
+
 async def ensure(guard=None) -> dict:
-    """The cached passing result if it is recent, else a fresh run. A failed result is never reused as a pass."""
+    """The cached passing result if it is recent, else a fresh run. A failed result is never reused as a pass.
+
+    Only one self-test runs at a time (the worker warms it up at start-up). A scan that finds one already running does NOT wait
+    for it: Nuclei simply stays off for that scan, so the scan is never held up."""
     age = time.time() - (_cache.get("at") or 0)
     if _cache.get("ok") and age < settings.nuclei_selftest_valid_minutes * 60:
         rule_ok, _ = firewall_rule_state(nuclei_lock.binary_path())  # the cheap, changeable part is re-read every scan
         if rule_ok:
             return _cache
-    return await run_all(guard)
+    if not _running.acquire(blocking=False):
+        return {"ok": False, "failed": ["selftest_running"], "checks": {}, "at": time.time()}
+    try:
+        return await run_all(guard)
+    finally:
+        _running.release()
 
 
 def reset() -> None:

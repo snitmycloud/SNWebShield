@@ -12,7 +12,7 @@ most 256 KB is read. Responses are untrusted data: they are compared, cut short 
 characters before being shown back.
 """
 from dataclasses import asdict, dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 from html.parser import HTMLParser
 import http.client
 import socket
@@ -68,12 +68,20 @@ def meta_tag(token: str) -> str:
     return f'<meta name="{META_NAME}" content="{token}">'
 
 
+def counterpart(domain: str) -> str | None:
+    """example.com <-> www.example.com. Only this one pair is ever treated as 'the same site' for a redirect."""
+    if not domain or domain.count(".") < 1:
+        return None
+    return domain[4:] if domain.startswith("www.") else f"www.{domain}"
+
+
 def instructions(website: Website) -> dict:
     token, domain = website.verification_token, website.domain
     return {
         "dns": {"record_type": "TXT", "host": domain, "value": txt_value(token),
                 "note": "Add this TXT record at your DNS provider. Changes can take a few minutes to appear."},
-        "file": {"url": f"https://{domain}{file_path(token)}", "content": token,
+        "file": {"url": f"https://{domain}{file_path(token)}", "content": token, "file_name": f"snwebshield-{token}.txt",
+                 "folder": "/.well-known/",
                  "note": "Upload a plain text file at exactly this address containing only the code. Needs working HTTPS."},
         "meta": {"page": f"https://{domain}/", "tag": meta_tag(token),
                  "note": "Put this tag inside the <head> of your homepage. Needs working HTTPS."},
@@ -200,7 +208,45 @@ def _redirected(method: str, expected: str, fetched: Fetched, domain: str) -> Ch
                        f"Add the website exactly as it redirects (for example the www version), or use the DNS TXT method.")
 
 
+def _redirect_host(result: CheckResult) -> str:
+    text = (result.found or [""])[0].split("Redirected to ", 1)[-1]
+    return (urlsplit(text).hostname or "").lower().rstrip(".")
+
+
+def _follow_counterpart(single, method: str, domain: str, token: str, fetch) -> CheckResult:
+    """Run a web check. If the site only redirects to its www/bare counterpart, check both and explain what happened.
+
+    Only the exact pair example.com <-> www.example.com is considered, and the counterpart is fetched with the same hardened,
+    public-address-only, same-host-only fetcher. Any other redirect keeps the old advice (add the site as it redirects).
+    """
+    first = single(domain, token, fetch)
+    if first.state != "redirected":
+        return first
+    other = counterpart(domain)
+    if not other or _redirect_host(first) != other:
+        return first
+    second = single(other, token, fetch)
+    if second.ok:
+        return CheckResult(method, "verified", first.expected, second.found,
+                           f"{domain} redirects to {other}, and the code was found there. Ownership confirmed.")
+    if second.state == "redirected" and _redirect_host(second) == domain:
+        return CheckResult(method, "redirected", first.expected, [f"{domain} redirects to {other}, which redirects back to {domain}"],
+                           f"{domain} and {other} redirect to each other, so neither one shows the page we need to read.",
+                           "Put the file (or tag) on the version that does NOT redirect, or use the DNS TXT method.")
+    return CheckResult(method, second.state, first.expected, second.found,
+                       f"{domain} redirects to {other}. We checked both addresses. " + second.message,
+                       second.hint or f"Put the code on https://{other}, or use the DNS TXT method.")
+
+
 def check_file(domain: str, token: str, fetch=fetch_https) -> CheckResult:
+    return _follow_counterpart(_check_file_at, "file", domain, token, fetch)
+
+
+def check_meta(domain: str, token: str, fetch=fetch_https) -> CheckResult:
+    return _follow_counterpart(_check_meta_at, "meta", domain, token, fetch)
+
+
+def _check_file_at(domain: str, token: str, fetch=fetch_https) -> CheckResult:
     expected = token
     try:
         fetched = fetch(domain, file_path(token))
@@ -234,7 +280,7 @@ class _MetaFinder(HTMLParser):
                 self.values.append(values.get("content", ""))
 
 
-def check_meta(domain: str, token: str, fetch=fetch_https) -> CheckResult:
+def _check_meta_at(domain: str, token: str, fetch=fetch_https) -> CheckResult:
     expected = meta_tag(token)
     try:
         fetched = fetch(domain, "/")
@@ -299,6 +345,53 @@ def record(website: Website, result: CheckResult, now=None) -> None:
         website.verification_checked_at = now
 
 
+# --- Manual verification by an administrator (demo backup) --------------------------------------------------------
+
+MANUAL_HOURS = 24
+MANUAL_LABEL = "Manually verified by admin"
+
+
+def manual_expires_at(website: Website) -> datetime | None:
+    try:
+        return as_utc(datetime.fromisoformat((website.verification_result or {}).get("expires_at")))
+    except (TypeError, ValueError):
+        return None
+
+
+def manual_expired(website: Website, now=None) -> bool:
+    """A manual verification past its 24 hours, or one with no readable expiry (fail closed)."""
+    if website.verification_method != "manual" or website.verification_status != "verified":
+        return False
+    expires = manual_expires_at(website)
+    return expires is None or expires <= (now or utc_now())
+
+
+def expire_manual(website: Website, now=None) -> bool:
+    """Turn an expired manual verification into `lost` (scans pause). Returns True if it changed."""
+    now = now or utc_now()
+    if not manual_expired(website, now):
+        return False
+    website.verification_status = "lost"
+    website.verification_result = {**(website.verification_result or {}), "ok": False, "state": "not_found",
+                                    "message": "The administrator's manual verification has expired (it lasts 24 hours).",
+                                    "hint": "Verify this website with DNS, a file or a meta tag to keep scanning it.", "checked_at": now.isoformat()}
+    return True
+
+
+def grant_manual(website: Website, admin: Admin, reason: str, now=None) -> dict:
+    """Mark the website verified by an administrator for 24 hours. The caller has already checked the role and writes the audit event."""
+    now = now or utc_now()
+    expires = now + timedelta(hours=MANUAL_HOURS)
+    website.verification_status, website.verification_method = "verified", "manual"
+    website.verified_at = website.verification_checked_at = now
+    website.verification_result = {
+        "ok": True, "method": "manual", "state": "verified", "expected": "", "found": [], "label": MANUAL_LABEL,
+        "message": f"{MANUAL_LABEL} until {expires.strftime('%d %b %Y, %H:%M')} UTC.", "hint": "",
+        "granted_by_id": admin.id, "granted_by": admin.full_name or admin.email, "reason": reason.strip(), "granted_at": now.isoformat(),
+        "expires_at": expires.isoformat(), "checked_at": now.isoformat()}
+    return website.verification_result
+
+
 def mark_covered(website: Website, parent: Website, now=None) -> None:
     now = now or utc_now()
     result = CheckResult("parent", "verified", parent.domain, [parent.domain],
@@ -315,6 +408,11 @@ def ensure_verified(db, website: Website, now=None) -> tuple[bool, str]:
     now = now or utc_now()
     if website.verification_status != "verified":
         return False, "not_verified"
+    if website.verification_method == "manual":
+        owner = db.get(Admin, website.owner_id) if website.owner_id else None
+        if expire_manual(website, now) or owner is None or not owner.is_active:
+            return False, "verification_lost"
+        return True, "manual"
     if website.verification_method == "test_target":
         # No DNS proof exists for a test target: it is allowed only while the domain is on the fixed approved list
         # and its owner is a currently active admin account.

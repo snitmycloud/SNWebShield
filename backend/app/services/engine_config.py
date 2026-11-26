@@ -204,6 +204,12 @@ class ConfigurationEngine(engines.Engine):
     async def run(self, ctx, state, guard) -> engines.EngineResult:
         now = datetime.now(timezone.utc)
         found = web_findings(ctx.domain, state.probes, now)
+        if getattr(state, "cdn", None):
+            found.append(Finding(kind="disclosure", check_id="cdn:detected", title=f"This site is behind {state.cdn['name']}", location=ctx.domain,
+                                 severity="info", confidence="confirmed", port=state.cdn.get("port"), you_have=state.cdn["name"],
+                                 why="Your visitors reach a CDN or firewall service first, not your own server. That is good for speed and protection, but it changes what a scan can see.",
+                                 how_to_fix="Nothing to fix. Remember that open ports and server versions shown here may belong to the CDN, not to your server.",
+                                 evidence=f"Detected from the {state.cdn['evidence']}.", sources=["snwebshield"]))
         found += port_findings(ctx.domain, state.ports.open)
         found += exposed_findings(ctx.domain, state.exposed_rows)
         unchecked, not_available = [], []

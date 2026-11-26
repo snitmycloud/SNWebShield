@@ -50,6 +50,8 @@ MESSAGES = {
     "dns_lookup_failed": "We could not find this domain's address in DNS, so the scan could not run.",
     "private_or_reserved_address": "This domain points to a private or reserved network address. "
                                    "SNWebShield only scans public addresses.",
+    "ipv6_only": "This website only has an IPv6 address, which SNWebShield does not support yet, so it was not scanned. "
+                 "It is not a problem with your website's security.",
     "cloud_metadata_address": "This domain points to a cloud internal address. SNWebShield will not scan it.",
     "server_own_address": "This domain points to SNWebShield's own server, which is never scanned.",
     "time_limit": "The scan reached its time limit before finishing. Results found so far are kept and are incomplete.",
@@ -134,6 +136,7 @@ def _enforce_test_target_quota(db, website: Website, now) -> None:
 
 def request_scan(db, website: Website, trigger: str, scan_type: str = "standard") -> Scan:
     """Queue a scan. Requires verified ownership; returns the already active scan instead of a second one."""
+    ownership.expire_manual(website)   # a manual verification that ran out no longer counts
     if website.removed_at is not None or website.verification_status != "verified" or not website.owner_id:
         raise HTTPException(409, MESSAGES["not_verified"])
     existing = active_scan(db, website.id)
@@ -357,7 +360,7 @@ async def _drive(ctx, state, guard, detect) -> None:
 
 def _conclude(db, scan_id, token, website_id, state, guard, meta) -> str:
     from app.services.detect_runner import OPTIONAL_STEPS, STEP_NAMES
-    extra = {"steps": state.steps, "ports": state.ports.summary(), "counts": state.counts(), **meta}
+    extra = {"steps": state.steps, "ports": state.ports.summary(), "counts": state.counts(), "cdn": state.cdn, "notes": state.notes, **meta}
     stop = guard.stop
     if stop is not None:
         engine.event(db, "scan_worker_stopped", resource_id=website_id, detail={
@@ -440,6 +443,9 @@ def execute(scan_id: str, token: str, *, resolve=ip_policy.resolve_public, verif
             except ip_policy.Blocked as blocked:
                 _finish(db, scan_id, token, "refused", blocked.code)
                 return "refused"
+            if ":" in addresses[0]:   # only IPv6 addresses: not supported yet (clear message, nothing is contacted)
+                _finish(db, scan_id, token, "refused", "ipv6_only")
+                return "refused"
             # Resolved once; every later step of this scan may contact only this address.
             db.execute(update(Scan).where(Scan.id == scan_id, Scan.claim_token == token)
                        .values(resolved_ip=addresses[0]).execution_options(synchronize_session=False))
@@ -480,7 +486,18 @@ class Worker:
 
     def __init__(self):
         self.pool = ThreadPoolExecutor(max_workers=settings.scan_max_concurrent, thread_name_prefix="scan")
+        if settings.nuclei_enabled:   # run the Nuclei self-test once at start-up, so the first scan does not pay for it
+            import threading
+            threading.Thread(target=self._warm_nuclei, daemon=True, name="nuclei-selftest").start()
         self.running = set()
+
+    @staticmethod
+    def _warm_nuclei():
+        try:
+            from app.services import nuclei_selftest
+            asyncio.run(nuclei_selftest.ensure())
+        except Exception:
+            pass   # a failed or crashed self-test simply leaves the engine off
 
     def tick(self):
         from app.db.session import SessionLocal

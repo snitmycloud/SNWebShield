@@ -78,6 +78,9 @@ class ScanGuard:
             return ScanStopped("owner_disabled")
         if website.verification_status != "verified":
             return ScanStopped("verification_lost")
+        from app.services import ownership
+        if ownership.manual_expired(website):
+            return ScanStopped("verification_lost")
         if website.verification_method == "test_target" and (
                 website.domain not in settings.approved_test_targets or owner.role != "admin"):
             return ScanStopped("verification_lost")

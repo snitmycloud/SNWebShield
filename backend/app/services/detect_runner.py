@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from app.core.config import settings
 from app.data.ports import SERVICE_NAMES, ports_for
-from app.services import (detect_dns, detect_exposed, detect_ports, detect_subdomains, detect_tech, detect_versions, engines,
+from app.services import (cdn as cdn_module, scan_notes, detect_dns, detect_exposed, detect_ports, detect_subdomains, detect_tech, detect_versions, engines,
                           finding as finding_format, identify)
 from app.services.scan_guard import ScanStopped
 
@@ -37,7 +37,7 @@ STEP_NAMES = {
 # still ends "completed" with this note. Every other step is CORE: any failure there makes the scan "incomplete".
 OPTIONAL_STEPS = {
     "subdomains": "Subdomain list unavailable right now (outside service didn't answer). This does not affect your security results.",
-    "nuclei": "The extra template checks (Nuclei) could not run this time. Your built-in security results are not affected.",
+    "nuclei": "The extra template checks (Nuclei) did not finish this time. Your built-in security results are not affected.",
 }
 identify.register_builtin()
 
@@ -72,6 +72,9 @@ class ScanState:
     observations: dict = field(default_factory=lambda: {"exposed_file": 0, "subdomain": 0})
     exposed_rows: list = field(default_factory=list)    # exposed-file observations, read by the configuration engine
     findings: list = field(default_factory=list)        # merged findings of all engines (finding.Finding)
+    cdn: dict | None = None                             # {"name", "evidence"} when the site is behind a CDN / WAF
+    notes: list = field(default_factory=list)           # plain-language limitations of this scan (scan_notes.py)
+    publish: object = None                              # set by the runner: engines call it to show partial findings at once
     current: str | None = None
 
     def incomplete_steps(self) -> list[str]:
@@ -227,6 +230,9 @@ async def run(ctx: ScanContext, state: ScanState, guard) -> None:
         if state.steps.get("versions", {}).get("state") != "ok" and state.probes:
             state.steps["versions"]["probed"] = len(state.probes)
 
+    state.cdn = cdn_module.detect(state.probes)
+    state.notes = scan_notes.build(ctx.domain, ports_ok=ports_ok, open_ports=state.ports.open, probes=state.probes, cdn=state.cdn)
+
     # 3. technologies (from the pages already fetched, plus a few known files)
     pages = [p.web for p in state.probes if p.web]
 
@@ -304,7 +310,12 @@ async def run(ctx: ScanContext, state: ScanState, guard) -> None:
             state.steps[item.name] = {"state": "skipped", "reason": "ports_not_checked"}
             continue
 
+        def publish(items, engine_name=item.name):
+            """Partial results: shown on the page as soon as an engine has them, before it finishes (a slow database never blocks)."""
+            save_findings(ctx, finding_format.merge(state.findings + list(items)))
+
         async def engine_step(item=item):
+            state.publish = publish
             result = await engines.run_engine(item, ctx, state, guard)
             state.steps[item.name] = {"state": result.state, **result.detail}
             state.findings = finding_format.merge(state.findings + result.findings)

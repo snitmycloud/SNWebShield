@@ -20,10 +20,28 @@ export const METHODS = [
   { id: "meta", label: "Homepage meta tag", short: "Meta tag", needsHttps: true },
 ];
 
-export function verificationView(website) {
+// "23 hours left" / "45 minutes left" / "expired" for a manual verification.
+export function manualTimeLeft(expiresAt, now = Date.now()) {
+  const ms = new Date(expiresAt).getTime() - now;
+  if (!Number.isFinite(ms) || ms <= 0) return "expired";
+  const minutes = Math.round(ms / 60000);
+  return minutes >= 90 ? `${Math.round(minutes / 60)} hours left` : `${minutes} minute${minutes === 1 ? "" : "s"} left`;
+}
+
+export const MANUAL_REASON_MIN = 10;
+export function manualReasonOk(reason) {
+  return String(reason || "").trim().length >= MANUAL_REASON_MIN && String(reason).trim().length <= 300;
+}
+
+export function verificationView(website, now = Date.now()) {
   const status = website?.verification_status;
+  if (status === "verified" && website.verification_method === "manual") {
+    const left = website.manual_verification?.expires_at ? manualTimeLeft(website.manual_verification.expires_at, now) : "";
+    return { label: "Manually verified by admin", tone: "info",
+      text: `An administrator verified this website by hand${left ? ` (${left})` : ""}. This lasts 24 hours; after that, verify with DNS, a file or a meta tag to keep scanning.` };
+  }
   if (status === "verified" && website.verification_method === "test_target") {
-    return { label: "Test target", tone: "info", text: "An approved SNWebShield test target. Only admin accounts can scan it, at most 2 scans per day." };
+    return { label: "Test target", tone: "info", text: "An approved SNWebShield test target. Only admin accounts can scan it, at most 10 scans per day." };
   }
   if (status === "verified") {
     const how = website.verification_method === "parent"
