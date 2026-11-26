@@ -1,13 +1,171 @@
 {
-  "_help": "EDIT ME. Login or admin pages that Nuclei finds are grouped into ONE Info finding per website. A page whose template id or name contains any text listed under 'match' (case-insensitive) is SENSITIVE: it becomes its own Medium finding instead. Add or remove entries freely; no code change is needed. Keep the match texts specific, because they are substring matches.",
+  "_help": "EDIT ME. Login or admin pages that Nuclei finds are grouped into ONE Info finding per website. A page whose template id or name contains any text listed under 'match' (case-insensitive) is SENSITIVE: it becomes its own Medium finding instead. Add or remove entries freely; no code change is needed. Keep the match texts specific, because they are substring matches. Meeting, collaboration, email and voice apps (for example Cisco Webex or Unified CM) are not sensitive and stay in the Info group.",
   "sensitive": [
-    {"label": "Database admin tool", "match": ["phpmyadmin", "adminer", "pgadmin", "mongo-express", "mongoexpress", "redis-commander", "redisinsight", "dbeaver", "sqlbuddy", "phppgadmin", "couchdb-fauxton", "clickhouse", "cloudbeaver"]},
-    {"label": "CI/CD and build server", "match": ["jenkins", "teamcity", "gocd", "bamboo", "argo-cd", "argocd", "drone-", "gitlab-runner", "travis"]},
-    {"label": "Monitoring and log dashboard", "match": ["grafana", "kibana", "prometheus", "zabbix", "nagios", "netdata", "splunk", "graylog", "opensearch-dashboards", "elasticsearch", "elastic-"]},
-    {"label": "Container or cluster dashboard", "match": ["docker", "kubernetes", "k8s", "kubelet", "portainer", "rancher", "traefik", "openshift", "nomad", "consul", "etcd", "kubeflow", "k3s"]},
-    {"label": "Router, firewall or network device admin", "match": ["pfsense", "opnsense", "fortigate", "fortinet", "sonicwall", "mikrotik", "routeros", "tp-link", "tplink", "d-link", "dlink", "netgear", "ubiquiti", "unifi", "cisco", "juniper", "palo-alto", "paloalto", "sophos", "watchguard", "zyxel", "huawei", "draytek", "asus-router", "router", "firewall", "vpn-gateway", "checkpoint", "barracuda"]},
-    {"label": "Hosting control panel", "match": ["cpanel", "whm", "plesk", "directadmin", "webmin", "virtualmin", "cyberpanel", "vestacp", "ispconfig", "cloudpanel"]},
-    {"label": "Message queue, secrets or storage admin", "match": ["rabbitmq", "activemq", "hashicorp-vault", "vault-panel", "vaultwarden", "bitwarden", "minio", "ceph", "airflow", "superset", "metabase", "jupyter", "sonarqube", "nexus", "artifactory", "harbor"]},
-    {"label": "Server management interface", "match": ["idrac", "ilo-", "ipmi", "vmware-vcenter", "vcenter", "esxi", "proxmox", "xenserver", "cockpit", "synology", "qnap"]}
+    {
+      "label": "Database admin tool",
+      "match": [
+        "phpmyadmin",
+        "adminer",
+        "pgadmin",
+        "mongo-express",
+        "mongoexpress",
+        "redis-commander",
+        "redisinsight",
+        "dbeaver",
+        "sqlbuddy",
+        "phppgadmin",
+        "couchdb-fauxton",
+        "clickhouse",
+        "cloudbeaver"
+      ]
+    },
+    {
+      "label": "CI/CD and build server",
+      "match": [
+        "jenkins",
+        "teamcity",
+        "gocd",
+        "bamboo",
+        "argo-cd",
+        "argocd",
+        "drone-",
+        "gitlab-runner",
+        "travis"
+      ]
+    },
+    {
+      "label": "Monitoring and log dashboard",
+      "match": [
+        "grafana",
+        "kibana",
+        "prometheus",
+        "zabbix",
+        "nagios",
+        "netdata",
+        "splunk",
+        "graylog",
+        "opensearch-dashboards",
+        "elasticsearch",
+        "elastic-"
+      ]
+    },
+    {
+      "label": "Container or cluster dashboard",
+      "match": [
+        "docker",
+        "kubernetes",
+        "k8s",
+        "kubelet",
+        "portainer",
+        "rancher",
+        "traefik",
+        "openshift",
+        "nomad",
+        "consul",
+        "etcd",
+        "kubeflow",
+        "k3s"
+      ]
+    },
+    {
+      "label": "Router, firewall or network device admin",
+      "match": [
+        "pfsense",
+        "opnsense",
+        "netgate",
+        "fortigate",
+        "fortios",
+        "fortimanager",
+        "fortianalyzer",
+        "fortiweb",
+        "fortiddos",
+        "fortiwlm",
+        "fortinac",
+        "fortinet-panel",
+        "sonicwall-management",
+        "sonicwall-security",
+        "sonicwall-sma",
+        "sonicwall-sslvpn",
+        "sonic-wall-application",
+        "sophos-fw",
+        "sophos-utm",
+        "sophos-web-appliance",
+        "mikrotik",
+        "routeros",
+        "ubiquiti",
+        "unifi-",
+        "cisco-asa",
+        "cisco-firepower",
+        "cisco-sd-wan",
+        "cisco-vmanage",
+        "cisco-ise",
+        "identity-services-engine",
+        "cisco-ace-4710",
+        "cisco-edge-340",
+        "juniper",
+        "watchguard",
+        "checkpoint",
+        "barracuda-panel",
+        "zyxel",
+        "zywall",
+        "router",
+        "firewall",
+        "ddwrt",
+        "dd-wrt",
+        "vpn-gateway"
+      ]
+    },
+    {
+      "label": "Hosting control panel",
+      "match": [
+        "cpanel",
+        "whm",
+        "plesk",
+        "directadmin",
+        "webmin",
+        "virtualmin",
+        "cyberpanel",
+        "vestacp",
+        "ispconfig",
+        "cloudpanel"
+      ]
+    },
+    {
+      "label": "Message queue, secrets or storage admin",
+      "match": [
+        "rabbitmq",
+        "activemq",
+        "hashicorp-vault",
+        "vault-panel",
+        "vaultwarden",
+        "bitwarden",
+        "minio",
+        "ceph",
+        "airflow",
+        "superset",
+        "metabase",
+        "jupyter",
+        "sonarqube",
+        "nexus",
+        "artifactory",
+        "harbor"
+      ]
+    },
+    {
+      "label": "Server management interface",
+      "match": [
+        "idrac",
+        "ilo-",
+        "ipmi",
+        "vmware-vcenter",
+        "vcenter",
+        "esxi",
+        "proxmox",
+        "xenserver",
+        "cockpit",
+        "synology",
+        "qnap"
+      ]
+    }
   ]
 }

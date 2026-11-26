@@ -160,14 +160,17 @@ Tests: `test_detect_pipeline.py` (optional step down: completed with the note; c
 | Runner: no shell, minimal environment, private working folder, kill of the whole process tree on stop / timeout / output cap | ✅ | `test_nuclei_runner_engine.py` |
 | Technologies from templates go to the Technologies list (never findings), merged with built-in detection | ✅ | `test_nuclei_mapping.py`, `test_identify_pipeline.py` |
 | Login/admin pages: ONE Info finding per website with the list inside; Medium only for sensitive panels (editable `sensitive_panels.json`) | ✅ | `test_nuclei_mapping.py`, `frontend/tests/findings.test.js` |
+| Built-in login-page check: `/phpmyadmin/`, `/adminer.php` and `/adminer/` are their own Medium finding ("Database admin tool login page is reachable from the internet"), decided by the same editable `sensitive_panels.json`; other login pages stay Info | ✅ | `test_engine_config.py`, `test_detect_exposed.py`, `test_identify_pipeline.py` |
+| Sensitive list trimmed to real network-device admin pages (pfSense, OPNsense, FortiGate, SonicWall, Sophos, MikroTik, Cisco ASA, ...); meeting, collaboration, email and voice apps (Cisco Webex, Unified CM, Finesse, FortiMail, ...) stay Info. Of the 1,545 vendored panel templates: 146 sensitive (router/firewall group 100 -> 70), 1,399 ordinary | ✅ | `test_nuclei_mapping.py` |
 | Duplicates between built-in checks, NVD and Nuclei appear once with both sources | ✅ | `test_nuclei_runner_engine.py`, `test_identify_pipeline.py` |
 | Self-test with the REAL binary: proxy containment and kill-on-stop | ✅ passed (2026-11-26, loopback canaries) | `python -m app.services.nuclei_selftest` |
-| Self-test firewall check (rule present = passes; rule removed = fails and the engine stays off) | ⏳ needs the administrator to run `scripts\nuclei-firewall-dev.ps1` | |
+| Self-test with the firewall rule present: **all 5 checks pass** with the REAL binary (binary hash and version, 3,948 templates re-validated, firewall rule active, proxy containment, kill on stop) | ✅ 2026-11-26 after the administrator created the rule | `docs/proof/phase3b/selftest-pass-with-firewall-rule.json` |
+| Self-test with the rule REMOVED fails and the engine stays off | ⏳ pending the administrator's undo script (unit-tested meanwhile) | `test_nuclei_selftest_install.py` |
 | Real scanme scan with built-in + Nuclei findings merged, and its proxy log | ⏳ after 05:30 on 2026-11-27 (daily limit) | |
 | Full backend run, frontend tests and build for 3B | ⏳ at the end of 3B | |
 
 **Known limits so far**
-- The validator is strict, so some useful templates are not included, for example `phpmyadmin-panel` (it uses a payload list of paths) and `adminer-panel` (more than 8 requests). Built-in checks still list ordinary login pages. Relaxing a rule is a reviewed change plus a re-vendor.
+- The validator is strict, so some useful templates are not included, for example `phpmyadmin-panel` (payload list of paths) and `adminer-panel` (more than 8 requests). By owner decision the validator is NOT relaxed; the built-in login-page check covers phpMyAdmin and Adminer instead (Medium).
 - Only the verified host on ports 80 and 443 is scanned by Nuclei (the proxy allows nothing else).
 - Technology versions found by Nuclei are shown in the Technologies list but are not fed back into the NVD/OSV matching of the same scan.
 - Linux: the firewall check looks for the `snwebshield-nuclei-egress` rule comment; this is written but **not verified** on a Linux host.

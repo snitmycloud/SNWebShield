@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from app.core.config import settings
-from app.services import detect_tech, egress_proxy, engines, netio, nuclei_lock, nuclei_runner, nuclei_selftest
+from app.services import detect_tech, egress_proxy, engines, netio, nuclei_lock, nuclei_runner, nuclei_selftest, sensitive_panels
 from app.services.finding import Finding
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "data" / "nuclei" / "templates"
@@ -109,27 +109,11 @@ def to_finding(raw: dict, domain: str, equivalents: dict) -> Finding | None:
     return finding
 
 
-SENSITIVE_PATH = Path(__file__).resolve().parent.parent / "data" / "nuclei" / "sensitive_panels.json"
+load_sensitive = sensitive_panels.load_sensitive      # kept here for callers and tests that already use these names
+sensitive_label = sensitive_panels.sensitive_label
 _TECH_SUFFIX = re.compile(r"\s*\b(?:version\s+)?(?:detect(?:ion|ed)?|fingerprint(?:ing)?|technology|panel|exposure)\s*$", re.I)
 _VERSION = re.compile(r"^v?(\d[\w.\-+]{0,30})$")
 MAX_PANELS = 100
-
-
-def load_sensitive() -> list[tuple[str, list[str]]]:
-    """[(label, [lowercase match texts])] from the editable file; a broken file means 'nothing is sensitive', never a crash."""
-    try:
-        rows = json.loads(SENSITIVE_PATH.read_text(encoding="utf-8")).get("sensitive", [])
-        return [(str(r["label"]), [str(m).lower() for m in r["match"] if str(m).strip()]) for r in rows if isinstance(r, dict)]
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        return []
-
-
-def sensitive_label(template_id: str, name: str, rules) -> str | None:
-    text = f"{template_id} {name}".lower()
-    for label, needles in rules:
-        if any(needle in text for needle in needles):
-            return label
-    return None
 
 
 def technology_name(name: str) -> str:
@@ -185,14 +169,14 @@ def panel_findings(panels: list[dict], domain: str) -> list[Finding]:
                 why=f"This looks like a {panel['sensitive'].lower()}. Tools like this give wide control, are attacked constantly, and should not be open to everyone.",
                 how_to_fix="Restrict it to trusted addresses or a VPN, require strong logins and two-step verification, keep it updated, or remove it if you do not use it.",
                 evidence=f"Matched by the Nuclei check \u201c{panel['template']}\u201d at {panel['path'][:120]}.", sources=["nuclei"],
-                details={"template": panel["template"], "sensitive": panel["sensitive"]}))
+                details={"template": panel["template"], "sensitive": panel["sensitive"], "equivalent_to": f"exposed:login-form:{panel['path']}"}))
     return found
 
 
 def process_results(raw_results: list, domain: str, index: dict, equivalents: dict, existing_technologies: list) -> dict:
     """Sort Nuclei results by the category of their template (from the verified manifest): technologies -> Technologies list,
     exposed-panels -> one grouped finding (+ Medium for sensitive ones), everything else -> ordinary findings."""
-    rules = load_sensitive()
+    rules = sensitive_panels.load_sensitive()
     existing = {t["name"].lower(): t["name"] for t in existing_technologies}
     findings, technologies, panels, dropped, seen_panels = [], [], [], 0, set()
     for raw in raw_results[:500]:
@@ -220,7 +204,7 @@ def process_results(raw_results: list, domain: str, index: dict, equivalents: di
             seen_panels.add((template_id, path))
             info = raw.get("info") if isinstance(raw.get("info"), dict) else {}
             name = netio.clean_text(info.get("name") or template_id, 120)
-            panels.append({"template": template_id, "name": name, "path": path, "sensitive": sensitive_label(template_id, name, rules)})
+            panels.append({"template": template_id, "name": name, "path": path, "sensitive": sensitive_panels.sensitive_label(template_id, name, rules)})
         else:
             finding = to_finding(raw, domain, equivalents)
             if finding is None:

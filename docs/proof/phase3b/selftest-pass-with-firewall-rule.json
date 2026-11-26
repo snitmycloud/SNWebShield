@@ -1,0 +1,13 @@
+{
+ "note": "Real Nuclei v3.11.1, run by `python -m app.services.nuclei_selftest` on 2026-11-26 after the administrator created the firewall rule SNWebShield-Nuclei-dev-block. Canaries listen on loopback only.",
+ "ok": true,
+ "failed": [],
+ "checks": {
+  "binary": {"ok": true, "detail": "hash ok, version 3.11.1"},
+  "templates": {"ok": true, "detail": "3948 templates"},
+  "firewall": {"ok": true, "detail": "active"},
+  "proxy": {"ok": true, "detail": "allowed canary reached=True, foreign canary hits=0, refused={'ip_literal_host': 1, 'port_not_allowed': 1}"},
+  "kill": {"ok": true, "detail": "hung request seen=True, process gone=True"}
+ },
+ "at": 1795681166.0822196
+}

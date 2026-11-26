@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.services import detect_tech, engine_nuclei as en
+from app.services import detect_tech, engine_nuclei as en, sensitive_panels as sp
 
 DOMAIN = "example.com"
 
@@ -171,7 +171,7 @@ def test_the_committed_list_covers_everything_the_owner_named():
 def test_the_list_is_editable_without_a_code_change(tmp_path, monkeypatch):
     custom = tmp_path / "sensitive.json"
     custom.write_text(json.dumps({"sensitive": [{"label": "My own rule", "match": ["wordpress-login"]}]}), encoding="utf-8")
-    monkeypatch.setattr(en, "SENSITIVE_PATH", custom)
+    monkeypatch.setattr(sp, "SENSITIVE_PATH", custom)
     out = process([panel("wordpress-login", "WordPress Login", "/wp-login.php")], ordinary_index())
     assert [f.severity for f in out["findings"]] == ["medium"] and out["findings"][0].details["sensitive"] == "My own rule"
     custom.write_text(json.dumps({"sensitive": []}), encoding="utf-8")
@@ -182,13 +182,13 @@ def test_the_list_is_editable_without_a_code_change(tmp_path, monkeypatch):
 def test_a_broken_list_means_nothing_is_sensitive_and_nothing_crashes(tmp_path, monkeypatch, content):
     broken = tmp_path / "sensitive.json"
     broken.write_text(content, encoding="utf-8")
-    monkeypatch.setattr(en, "SENSITIVE_PATH", broken)
+    monkeypatch.setattr(sp, "SENSITIVE_PATH", broken)
     assert en.load_sensitive() == []
     assert process([panel("jenkins-login", "Jenkins", "/")], idx(("jenkins-login", "exposed-panels")))["findings"][0].severity == "info"
 
 
 def test_a_missing_list_file_is_harmless(tmp_path, monkeypatch):
-    monkeypatch.setattr(en, "SENSITIVE_PATH", tmp_path / "missing.json")
+    monkeypatch.setattr(sp, "SENSITIVE_PATH", tmp_path / "missing.json")
     assert en.load_sensitive() == []
 
 
@@ -227,3 +227,49 @@ def test_every_vendored_template_still_passes_the_validator_and_matches_its_mani
 def test_login_pages_are_not_in_the_equivalents_map_because_they_are_grouped():
     assert "wordpress-login" not in en.load_equivalents()
     assert set(en.load_equivalents()) == {"apache-server-status", "ds-store-file", "backup-directory-listing"}
+
+
+# --- the trimmed network-device group -------------------------------------------------------------------------------------------------------------------------
+
+def label_of(template_id):
+    meta = next(v for v in en.verify_templates()["index"].values() if v["id"] == template_id)
+    return sp.sensitive_label(meta["id"], meta["name"] or "")
+
+
+@pytest.mark.parametrize("template", ["pfsense-login", "opnsense-panel", "fortinet-fortigate-panel", "fortinet-fortios-management-panel", "sonicwall-management-panel",
+                                      "sophos-fw-version-detect", "sophos-utm-panel", "mikrotik-routeros", "cisco-asa-panel", "cisco-firepower-panel",
+                                      "ubiquiti-edgerouter-panel", "unifi-panel", "juniper-panel", "watchguard-panel", "zyxel-firewall-panel", "asus-router-panel"])
+def test_real_network_device_admin_pages_are_sensitive(template):
+    assert label_of(template) == "Router, firewall or network device admin"
+
+
+@pytest.mark.parametrize("template", ["cisco-webex-meetings-panel", "cisco-cm-panel", "cisco-finesse-login", "cisco-unity-panel", "cisco-esa-panel", "cisco-expressway-panel",
+                                      "cisco-telepresence-mcu-panel", "fortimail-login", "sophos-mobile-panel", "barracuda-message-panel", "mitel-nupoint-panel",
+                                      "paloalto-expedition-panel"])
+def test_meeting_collaboration_email_and_voice_apps_are_not_sensitive_and_go_in_the_info_group(template):
+    assert label_of(template) is None
+    out = process([panel(template, "Some App", "/")], idx((template, "exposed-panels")))
+    assert [f.severity for f in out["findings"]] == ["info"] and out["findings"][0].check_id == "nuclei-panels"
+
+
+def test_unified_is_not_mistaken_for_unifi():
+    assert sp.sensitive_label("cisco-unified-thing", "Cisco Unified CM Console") is None
+    assert sp.sensitive_label("unifi-panel", "UniFi Network Login Panel") == "Router, firewall or network device admin"
+
+
+def test_the_trimmed_counts_for_the_vendored_panel_templates():
+    from collections import Counter
+    rules = sp.load_sensitive()
+    counts = Counter(sp.sensitive_label(v["id"], v["name"] or "", rules) or "ordinary" for v in en.verify_templates()["index"].values() if v["category"] == "exposed-panels")
+    assert counts["Router, firewall or network device admin"] == 70 and sum(n for k, n in counts.items() if k != "ordinary") == 146 and counts["ordinary"] == 1399
+
+
+def test_a_nuclei_sensitive_panel_and_the_built_in_login_check_merge_when_they_find_the_same_page():
+    from app.services.finding import merge
+    from app.services import engine_config as ec
+    nuclei = process([panel("jenkins-login", "Jenkins Login", "/jenkins/")], idx(("jenkins-login", "exposed-panels")))["findings"][0]
+    assert nuclei.details["equivalent_to"] == "exposed:login-form:/jenkins/"
+    builtin = ec.exposed_findings(DOMAIN, [{"key": "/jenkins/", "status": "exposed", "data": {"kind": "admin_login", "signature": "login-form", "http_status": 200}}])[0]
+    builtin.location = nuclei.location        # both say "example.com/jenkins/"
+    merged = merge([builtin, nuclei])
+    assert len(merged) == 1 and merged[0].sources == ["nuclei", "snwebshield"]

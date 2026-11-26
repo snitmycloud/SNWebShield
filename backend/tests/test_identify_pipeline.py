@@ -203,3 +203,15 @@ def test_a_whole_scan_with_nuclei_merges_duplicates_into_one_finding_with_both_s
     wordpress = [t for t in body["technologies"] if t["name"] == "WordPress"]
     assert wordpress and wordpress[0]["version"] == "6.4.2" and wordpress[0]["source"] == "nuclei"
     assert not any("evil.example.org" in f["location"] for f in body["findings"])
+
+
+def test_a_scan_reports_phpmyadmin_as_its_own_medium_finding_and_other_login_pages_as_info(client, monkeypatch):
+    fake_databases(monkeypatch)
+    site = {**WEB, "/phpmyadmin/": (200, {"Content-Type": "text/html"}, b"<html><title>phpMyAdmin</title></html>"),
+            "/admin/": (200, {"Content-Type": "text/html"}, b"<html><form><input type='password' name='p'></form></html>")}
+    with BackgroundServer(http_handler(site)) as web:
+        _, body, _ = scan_and_read(client, monkeypatch, [web.port])
+    by_id = {f["check_id"]: f for f in body["findings"]}
+    pma = by_id["exposed:login-form:/phpmyadmin/"]
+    assert pma["severity"] == "medium" and pma["scored"] and pma["group"] == "findings" and "Database admin tool" in pma["title"]
+    assert by_id["exposed:login-form:/admin/"]["severity"] == "info" and by_id["exposed:login-form:/admin/"]["scored"] is False
