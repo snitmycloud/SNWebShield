@@ -224,6 +224,8 @@ class ConfigurationEngine(engines.Engine):
             found += cert_found
             if not cert_found:
                 trust = await probe_tls.trust(ctx.ip, probe.port, ctx.domain, timeout=timeout)
+                if trust["state"] == "could_not_check":
+                    trust = await probe_tls.trust(ctx.ip, probe.port, ctx.domain, timeout=timeout)
                 if trust["state"] == "untrusted":
                     found.append(build("tls:untrusted", where, port=probe.port, evidence=f"Reason: {trust['reason']}"))
                 elif trust["state"] == "could_not_check":
@@ -232,6 +234,8 @@ class ConfigurationEngine(engines.Engine):
             for version in ("TLSv1", "TLSv1.1"):
                 guard.check()
                 answer = await probe_tls.protocol_supported(ctx.ip, probe.port, ctx.domain, version, timeout=timeout)
+                if answer == probe_tls.UNKNOWN:   # no answer at all: ask once more before "could not check"
+                    answer = await probe_tls.protocol_supported(ctx.ip, probe.port, ctx.domain, version, timeout=timeout)
                 if answer == probe_tls.ACCEPTED:
                     legacy.append(version.replace("TLSv", "TLS "))
                 elif answer == probe_tls.UNKNOWN:
@@ -242,6 +246,8 @@ class ConfigurationEngine(engines.Engine):
                 found.append(build("tls:legacy-protocols", where, port=probe.port, evidence=f"Accepted: {', '.join(legacy)}"))
             guard.check()
             answer = await probe_tls.weak_cipher_accepted(ctx.ip, probe.port, ctx.domain, timeout=timeout)
+            if answer == probe_tls.UNKNOWN:
+                answer = await probe_tls.weak_cipher_accepted(ctx.ip, probe.port, ctx.domain, timeout=timeout)
             if answer == probe_tls.ACCEPTED:
                 found.append(build("tls:weak-ciphers", where, port=probe.port, evidence="A weak cipher (RC4, 3DES, export or anonymous) was accepted."))
             elif answer == probe_tls.UNKNOWN:
@@ -253,7 +259,12 @@ class ConfigurationEngine(engines.Engine):
         pick = next((p for p in web if p.port == 443), None) or (web[0] if web else None)
         if pick is not None:
             guard.check()
-            result = await cors_probe(ctx.ip, pick.port, pick.web.tls, ctx.domain, settings.scan_http_request_timeout_seconds)
+            result = None
+            for _ in range(2):   # a busy or rate-limiting site can drop one connection; ask once more before "could not check"
+                result = await cors_probe(ctx.ip, pick.port, pick.web.tls, ctx.domain, settings.scan_http_request_timeout_seconds)
+                if result is not None:
+                    break
+                guard.check()
             if result is None:
                 unchecked.append(f"cross-site access (CORS) on port {pick.port}")
             else:

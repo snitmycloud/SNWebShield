@@ -13,7 +13,8 @@ Everything runs on this computer. Screenshots of every step are in `docs/proof/d
    ```
 
    It starts the API (port 8000), the scan worker and the web app (port 5173), skips what is already running, and prints
-   `API OK` and `Web app OK`. The extra Nuclei checks stay **off** (they are optional; nothing in the demo depends on them).
+   `API OK` and `Web app OK`. The optional extra checks (Nuclei) are on by default and add about 1.5 minutes to a scan; they run only after
+   their self-test passes. For a faster demo run `$env:NUCLEI_ENABLED = 'false'` in that window before the script. Nothing in the demo depends on them.
    To stop everything afterwards: `powershell -ExecutionPolicy Bypass -File scripts\stop-demo.ps1`.
 2. Open **http://127.0.0.1:5173** in Chrome.
 3. Demo accounts (made for the demo, not real people). The passwords are in the private file
@@ -83,4 +84,4 @@ Everything runs on this computer. Screenshots of every step are in `docs/proof/d
 - We never contact private or internal addresses; one address is pinned per scan.
 - A check that fails or times out is reported as **could not check**, never as clean.
 - No passwords, keys or file contents are stored; cookie values are never kept.
-- The optional extra checks (Nuclei) are off by default and run only behind a firewall rule and a self-test.
+- The optional extra checks (Nuclei) run only behind a firewall rule and a self-test, and only against the verified website.

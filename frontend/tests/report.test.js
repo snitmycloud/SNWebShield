@@ -89,3 +89,13 @@ test("a manually verified website is labelled 'Manually verified by admin' and s
   assert.equal(verificationView({ verification_status: "verified", verification_method: "dns" }).label, "Verified");
   assert.match(verificationView({ verification_status: "verified", verification_method: "test_target" }).text, /at most 10 scans per day/);
 });
+
+import { pdfAllowed } from "../src/lib/report.js";
+
+test("the PDF button follows the plan setting pdf_report and an unknown plan never gets it", () => {
+  assert.equal(pdfAllowed({ pdf_report: true }), true);
+  assert.equal(pdfAllowed({ pdf_report: false }), false);
+  assert.equal(pdfAllowed({}), false);
+  assert.equal(pdfAllowed(null), false);
+  assert.equal(pdfAllowed({ pdf_report: "yes" }), false);
+});

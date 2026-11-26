@@ -242,3 +242,27 @@ def test_the_proxy_listens_on_loopback_only_and_stops_cleanly():
             await asyncio.open_connection(HOST, proxy.port)
         return bound
     assert asyncio.run(main()) == "127.0.0.1"
+
+
+def test_stopping_the_proxy_does_not_wait_for_a_hung_connection():
+    """A tunnel that is open but silent must not hold stop() up (it once blocked the Nuclei self-test for about two minutes)."""
+    import time
+
+    async def hang(reader, writer, server):
+        await asyncio.sleep(60)
+
+    async def main(origin_port):
+        proxy = ep.EgressProxy(host=DOMAIN, ip="127.0.0.1", scan_id="s", allow_ip=lambda ip: True, port_map={443: origin_port})
+        await proxy.start()
+        reader, writer = await asyncio.open_connection(HOST, proxy.port)
+        writer.write(connect(DOMAIN, 443))
+        await writer.drain()
+        await asyncio.wait_for(reader.read(100), 5)          # the tunnel is open and now silent
+        started = time.monotonic()
+        await proxy.stop()
+        took = time.monotonic() - started
+        writer.close()
+        return took
+    with BackgroundServer(hang) as origin:
+        took = asyncio.run(main(origin.port))
+    assert took < 3.0

@@ -63,6 +63,11 @@ export function scanDuration(scan) {
   return seconds < 90 ? `${seconds} seconds` : `${Math.round(seconds / 60)} minutes`;
 }
 
+// The plan setting `pdf_report` (plans.json). Only an explicit true shows the button, so an unknown plan never gets it.
+export function pdfAllowed(plan) {
+  return plan?.pdf_report === true;
+}
+
 export const REPORT_DISCLAIMER = "This report lists what automated checks found. It is not a security verdict, and a good score does not prove that a website has no weaknesses.";
 export const TABS = [
   { id: "monitor", label: "Monitor" },

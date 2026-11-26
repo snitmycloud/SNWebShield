@@ -56,7 +56,7 @@ def test_the_command_is_a_fixed_argument_list_with_every_safety_switch():
     for switch in ("-ni", "-fhr", "-duc", "-j", "-or", "-nc", "-silent"):
         assert switch in cmd
     assert flags["-p"] == "http://127.0.0.1:9" and flags["-rl"] == "10" and flags["-c"] == "5" and flags["-retries"] == "0"
-    for forbidden in ("-dut", "-lfa", "-esc", "-code", "-headless", "-dast", "-fuzz", "-ev", "-update-templates", "-ut", "-sr", "-restrict-local-network-access"):
+    for forbidden in ("-dut", "-lfa", "-esc", "-code", "-headless", "-dast", "-fuzz", "-ev", "-update-templates", "-ut", "-restrict-local-network-access"):
         assert forbidden not in cmd
 
 
@@ -326,8 +326,10 @@ async def fake_run(binary, templates, targets, proxy_url, guard=None, **kw):
 fake_run.results = []
 
 
-def test_it_is_off_by_default():
-    assert settings.nuclei_enabled is False
+def test_it_is_on_by_default_in_development_but_the_test_suite_runs_with_it_off():
+    from app.core.config import Settings
+    assert Settings.model_fields["nuclei_enabled"].default is True       # the development default
+    assert settings.nuclei_enabled is False                               # tests/conftest.py switches it off (NUCLEI_ENABLED=false)
 
 
 def test_disabled_means_skipped_and_nothing_runs(monkeypatch):
@@ -345,14 +347,16 @@ def test_targets_are_the_verified_host_on_standard_ports_only():
     assert en.web_targets("example.com", [web_probe(80, True)]) == []   # a TLS answer on 80 is not a plain-HTTP target
 
 
-@pytest.mark.parametrize("problem, code", [
-    (nuclei_lock.LockError("binary_hash_mismatch"), "binary_hash_mismatch"), (nuclei_lock.LockError("binary_not_installed"), "binary_not_installed"),
+@pytest.mark.parametrize("problem, state, code", [
+    (nuclei_lock.LockError("binary_hash_mismatch"), "could_not_check", "binary_hash_mismatch"),   # a tampered binary is a warning
+    (nuclei_lock.LockError("binary_not_pinned"), "could_not_check", "binary_not_pinned"),
+    (nuclei_lock.LockError("binary_not_installed"), "skipped", "not_installed"),                   # simply not installed here: off, no note
 ])
-def test_a_binary_problem_keeps_the_engine_off_and_never_runs_anything(monkeypatch, problem, code):
+def test_a_binary_problem_keeps_the_engine_off_and_never_runs_anything(monkeypatch, problem, state, code):
     async def boom(*a, **k):
         raise AssertionError("must not run")
     out = engine_run(monkeypatch, [web_probe(443, True)], binary=problem, runner=boom)
-    assert out.state == "could_not_check" and out.detail["reason"] == code
+    assert out.state == state and out.detail["reason"] == code
 
 
 def test_a_changed_template_set_keeps_the_engine_off(monkeypatch):
@@ -431,3 +435,17 @@ def test_nuclei_is_an_optional_step_so_it_never_makes_a_scan_incomplete():
     assert state.incomplete_steps() == [] and state.optional_notes() == [detect_runner.OPTIONAL_STEPS["nuclei"]]
     state.steps["nuclei"] = {"state": "skipped", "reason": "disabled"}
     assert state.optional_notes() == []
+
+
+def test_a_self_test_that_is_still_starting_skips_nuclei_quietly(monkeypatch):
+    async def boom(*a, **k):
+        raise AssertionError("must not run")
+    out = engine_run(monkeypatch, [web_probe(443, True)], selftest={"ok": False, "failed": ["selftest_running"], "at": 1.0}, runner=boom)
+    assert out.state == "skipped" and out.detail == {"reason": "selftest_starting"}
+
+
+def test_the_self_test_template_check_is_the_manifest_hash_check_and_fast(monkeypatch):
+    import time
+    started = time.monotonic()
+    assert nuclei_selftest.nuclei_templates_ok() == 3948
+    assert time.monotonic() - started < 10

@@ -39,12 +39,20 @@ class RunResult:
 
 
 def build_command(binary: Path, templates: Path, targets: list[str], proxy_url: str, *, rate: int, concurrency: int,
-                  timeout: int = 10) -> list[str]:
+                  timeout: int = 5, resolvers: Path | None = None) -> list[str]:
+    """`templates` is a template folder, or a text file listing template paths (Nuclei accepts both for -t).
+
+    `resolvers`: a file naming ONLY the loopback address. Nuclei does its own DNS look-ups, and with its direct network access
+    blocked by the firewall each one waited ~5 s (measured: 2 requests/s). A loopback resolver fails at once and `-sr` makes it fall
+    back to the operating system's resolver (a name look-up, never a connection to the target), which gave about 22 requests/s.
+    """
     command = [str(binary), "-t", str(templates)]
     for target in targets:
         command += ["-u", target]
     command += ["-etags", BANNED_TAGS_ARG, "-ept", EXCLUDED_TYPES_ARG, "-ni", "-fhr", "-rl", str(rate), "-c", str(concurrency),
                 "-timeout", str(timeout), "-retries", "0", "-p", proxy_url, "-j", "-or", "-nc", "-duc", "-silent"]
+    if resolvers is not None:
+        command += ["-r", str(resolvers), "-sr"]
     return command
 
 
@@ -81,7 +89,18 @@ def kill_tree(process: asyncio.subprocess.Process) -> None:
         pass
 
 
-async def run(binary: Path, templates: Path, targets: list[str], proxy_url: str, guard=None, *, timeout_seconds: int | None = None,
+def prepare_files(workdir: Path, templates) -> tuple[Path, Path]:
+    """Write the loopback-only resolver file, and (for a chosen subset) the template list file, inside the private working folder."""
+    resolvers = workdir / "resolvers.txt"
+    resolvers.write_text("127.0.0.1\n", encoding="utf-8")
+    if isinstance(templates, (list, tuple, set)):
+        listing = workdir / "templates.txt"
+        listing.write_text("\n".join(str(Path(p)) for p in templates) + "\n", encoding="utf-8")
+        templates = listing
+    return resolvers, templates
+
+
+async def run(binary: Path, templates, targets: list[str], proxy_url: str, guard=None, *, timeout_seconds: int | None = None,
               rate: int | None = None, concurrency: int | None = None, extra_args: list[str] | None = None,
               workdir_parent: Path | None = None, command: list[str] | None = None, on_start=None) -> RunResult:
     limit = timeout_seconds or settings.nuclei_run_seconds
@@ -89,8 +108,9 @@ async def run(binary: Path, templates: Path, targets: list[str], proxy_url: str,
     for sub in ("AppData", "Local", "config", "cache"):
         (workdir / sub).mkdir(exist_ok=True)
     result = RunResult()
+    resolvers, templates = prepare_files(workdir, templates)
     cmd = command or build_command(binary, templates, targets, proxy_url, rate=rate or settings.nuclei_rate_limit,
-                                   concurrency=concurrency or settings.nuclei_concurrency)
+                                   concurrency=concurrency or settings.nuclei_concurrency, resolvers=resolvers)
     if extra_args:
         cmd = cmd + extra_args
     kwargs = {}

@@ -203,6 +203,29 @@ Tests: `test_detect_pipeline.py` (optional step down: completed with the note; c
 
 ---
 
+## Nuclei speed (branch `feat/nuclei-speed`, 2026-11-27)
+
+| Item | Status | Tests / proof |
+|---|---|---|
+| Why only 160 requests in 4 min 38 s: **measured, not guessed.** The egress proxy handles 50 parallel connections in 0.05 s (not the cause); a slow response is not the cause (`-timeout 2` changed nothing); throughput was exactly concurrency / 5 s. Cause: Nuclei's own DNS look-ups are blocked by the firewall rule (the second safety layer) and each waited about 5 s. Fix: a loopback-only resolver file plus `-sr` (system resolver fallback): 2.0 -> **21.9 requests per second** (11 times). Per-request timeout 10 -> 5 s, retries 0 | ✅ | `docs/proof/nuclei-speed/measurements.md`, `test_nuclei_quick.py` |
+| **Quick** set for normal scans: all exposures (466) and misconfiguration (814) templates, the 146 sensitive panels, and CVE templates whose tags/product match software we detected (highest severity first, capped at 300) = 1,426 + CVEs; run limit 100 s | ✅ | `test_nuclei_quick.py` |
+| **Deep** set: all 3,948 templates, 600 s limit; selected only when the scan type is `deep` (scheduled deep scans, Phase 5, Pro and above). Not reachable from the app yet | ✅ (code and tests) | `test_nuclei_quick.py` |
+| Real scanme scan with Quick: Nuclei step **99.4 s**, 1,435 templates, **1,778 requests**, whole scan 146 s; proxy log: 1,778 allowed to `scanme.nmap.org:80` at **45.33.32.156 only**, 2 refused (ports 9001 and 4040); Nuclei contributed "HTTP Missing Security Headers" (Info) | ✅ | `docs/proof/nuclei-speed/` |
+| **Repository bug found and fixed:** 4 vendored templates under `http/exposures/backups/` were silently excluded by `.gitignore` (`backups/`), so `main` at `5936e74` was missing them (a fresh clone would have kept the engine off, fail-closed). They were re-fetched from the pinned tag, accepted only because their SHA-256 equals the manifest, the folder is now un-ignored, and a test checks every manifest template is tracked and not ignored | ✅ | `test_nuclei_quick.py::test_every_vendored_template_is_tracked_by_git_not_ignored` |
+| Plan setting `pdf_report` in `plans.json` (true for every plan for now; the Download PDF button follows it; limits to be decided in Phase 7) | ✅ | `test_pdf_plan_setting.py`, `frontend/tests/report.test.js` |
+| **Parallel Nuclei:** an engine marked `parallel` starts first and runs alongside the vulnerability (NVD/OSV) and end-of-life steps; its results are merged when it finishes; a stop cancels it and keeps what the others found; Quick limit raised to **180 s** | ✅ | `test_parallel_engines.py` (7) |
+| **DNS reliability:** SPF/DMARC/DKIM/CAA/MX look-ups make up to 3 attempts of 2.5 s (this machine's resolver, then a SECOND resolver set `1.1.1.1,9.9.9.9` (plain DNS, setting `SCAN_DNS_FALLBACK_RESOLVERS`, empty = off), then this machine's again); a clean "no such record" is never retried; DKIM stops after 3 failures in a row and then says "could not check", never "missing". Only after that does the step, and the scan, become incomplete | ✅ | `test_detect_dns_subdomains.py` (+13) |
+| One retry for single-request web probes (CORS, TLS protocol, weak cipher, certificate trust) before "could not check" | ✅ | `test_engine_config.py` |
+| **Fresh-clone check** `scripts\fresh-clone-check.ps1`: no uncommitted changes, nothing needed hidden by `.gitignore`, fresh `git clone`, new venv + `pip install`, Nuclei manifest check (all templates present, hashes equal, both platforms pinned, all tracked), backend tests, `npm ci`, `npm test`, `npm run build`; exit code 0 only if all pass. Run it before every release (`-Fast -SkipFrontend` takes about 12 minutes) | ✅ | script; first quick run caught a stale test |
+| **Nuclei ON by default in development** (`NUCLEI_ENABLED=true`; the test suite forces `false`). It still runs only while its self-test passes; a missing binary means a quiet "skipped" (no note); a self-test still starting at worker start-up means skipped for that scan | ✅ | `test_nuclei_runner_engine.py` |
+| Real scanme scan with the final settings: **completed in 150 s (2 min 30 s)**; Nuclei 105 s, 1,778 requests, proxy log shows only 45.33.32.156 | ✅ | `docs/proof/nuclei-speed/parallel-scan-*` |
+| Two shutdown bugs found by timing the self-test (132 s, now 16 s): `EgressProxy.stop()` and the canary server waited for a hung connection before cancelling it | ✅ | `test_egress_proxy.py`, `test_nuclei_selftest_install.py` |
+| The self-test no longer re-parses all 3,948 templates (the manifest hash check proves none changed; a test re-validates them all) | ✅ | |
+
+**Not done / not verified:** the Quick run finishes just inside its 100 s limit on scanme (about 18 requests per second); a slower site is cut off at 100 s and reported as "did not finish" (optional step, other results unaffected). On Linux the resolver fallback goes through the system resolver of the Nuclei user, which the Linux firewall rule may also block (unverified). The Quick set does not include ordinary login-page templates or technology detection (the built-in checks cover those); both are in Deep.
+
+---
+
 **Status legend.** âœ… Fully implemented and tested Â· ðŸŸ¡ Partially implemented Â· ðŸ§ª Implemented but not tested Â· âŒ Missing Â· ðŸ”§ Broken or requiring improvement
 
 Test paths are relative to `backend/tests/`. Milestone 6 tests are in `test_production_hardening.py` (`H::` below) and `test_e2e_lifecycle.py` (`E2E::`). Module E and F test names below are real function names in `test_vulnerabilities.py` and `test_workbench.py`. Browser journeys are in `frontend/tests/e2e/authorization.spec.js`. All API routes are under `/api/v1`.
