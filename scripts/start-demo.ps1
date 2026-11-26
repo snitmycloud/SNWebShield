@@ -4,7 +4,8 @@
   the API (port 8000), the scan worker, and the web app (port 5173).
 
 .DESCRIPTION
-  * Nuclei (the optional extra template checks) is left OFF for the demo: NUCLEI_ENABLED is not set.
+  * Nuclei (the optional extra template checks) is ON by default in development and only runs while its self-test passes.
+    It adds about 1.5 minutes to a scan. For a faster demo run   $env:NUCLEI_ENABLED = 'false'   before this script.
   * Nothing is deployed anywhere; everything runs on this computer.
   * Run from any folder:  powershell -ExecutionPolicy Bypass -File scripts\start-demo.ps1
   * To stop everything: close the three windows (or run  scripts\stop-demo.ps1).
@@ -14,7 +15,6 @@ $backend = Join-Path $root "backend"
 $frontend = Join-Path $root "frontend"
 $python = Join-Path $backend ".venv\Scripts\python.exe"
 if (-not (Test-Path $python)) { Write-Error "Backend virtual environment not found at $python"; exit 1 }
-Remove-Item Env:\NUCLEI_ENABLED -ErrorAction SilentlyContinue   # demo: Nuclei off
 
 $procs = @(Get-CimInstance Win32_Process | ForEach-Object CommandLine)
 function Test-Running($pattern) { [bool]($procs | Where-Object { $_ -match $pattern }) }

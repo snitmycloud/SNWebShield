@@ -27,3 +27,10 @@ Measured with the real Nuclei v3.11.1 and the egress proxy, against a **fast loc
 * Proxy log: 1,778 allowed (all `scanme.nmap.org:80`, **IP 45.33.32.156 only**) and 2 refused (`port_not_allowed`, ports 9001 and 4040: templates for other ports, correctly blocked).
 * Findings from Nuclei: "HTTP Missing Security Headers" (Info). It overlaps the built-in header checks, which stay as they are.
 * The scan ended "incomplete" because the DNS step could not check DMARC once (a resolver hiccup 17 s long; a direct look-up a minute later took 0.3 s). That is unrelated to Nuclei.
+
+## Parallel Nuclei, Nuclei on by default (2026-11-27)
+
+* Nuclei Quick now starts together with the vulnerability and end-of-life steps (limit 180 s). On scanme the NVD cache was warm, so those steps took 6 s and Nuclei set the pace: Nuclei **105 s**, **1,778 requests**, whole scan **150 s (2 min 30 s)**, status **completed**.
+* Proxy log (`parallel-scan-proxy-log.jsonl`): 1,778 allowed, all `scanme.nmap.org:80` at **45.33.32.156**; 2 refused (`port_not_allowed`).
+* Nuclei's start-up self-test took 132 s because two shutdowns waited for a hung test connection (`EgressProxy.stop()` and the canary server); fixed, now 16 s.
+* The scan ended "completed" because every core step finished: the DNS step passed, and the configuration step's single CORS request is now retried once. The subdomain list (optional) could not be fetched, which does not matter.

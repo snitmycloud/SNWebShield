@@ -242,3 +242,21 @@ def test_a_scan_never_waits_for_a_self_test_that_is_already_running(counting):
     finally:
         st._running.release()
     assert result["ok"] is False and result["failed"] == ["selftest_running"] and calls == []
+
+
+def test_stopping_a_canary_does_not_wait_for_its_hung_connection():
+    import time
+
+    async def scenario():
+        canary = st.Canary("hang")
+        await canary.start()
+        reader, writer = await asyncio.open_connection("127.0.0.1", canary.port)
+        writer.write(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+        await writer.drain()
+        await asyncio.sleep(0.3)                                  # the request is in and the canary is hanging on it
+        started = time.monotonic()
+        await canary.stop()
+        writer.close()
+        return time.monotonic() - started, canary.hits
+    took, hits = asyncio.run(scenario())
+    assert hits == 1 and took < 3.0                               # it used to take the full 120 s of the hang

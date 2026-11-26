@@ -74,10 +74,14 @@ class EgressProxy:
     async def stop(self) -> None:
         if self._server is not None:
             self._server.close()
-            await self._server.wait_closed()
-        for task in list(self._tasks):
+        for task in list(self._tasks):   # cancel open connections FIRST: wait_closed() waits for them (it once blocked ~2 minutes)
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
+        if self._server is not None:
+            try:
+                await asyncio.wait_for(self._server.wait_closed(), 5)
+            except asyncio.TimeoutError:
+                pass
         if self._log_file is not None:
             self._log_file.close()
             self._log_file = None

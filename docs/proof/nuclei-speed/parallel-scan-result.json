@@ -1,0 +1,123 @@
+{
+ "scan_id": "f773bdb2-a55a-406d-97da-a8e6942f0098",
+ "total_seconds": 150,
+ "steps": {
+  "ports": {
+   "state": "ok",
+   "scanned": 1011,
+   "planned": 1011,
+   "open": 3,
+   "closed": 0,
+   "filtered": 1008,
+   "errors": 0
+  },
+  "versions": {
+   "state": "ok",
+   "probed": 3
+  },
+  "technologies": {
+   "state": "ok",
+   "found": 2,
+   "rules_skipped": 0
+  },
+  "exposed": {
+   "state": "ok",
+   "checked": 21,
+   "failed": 0,
+   "exposed": 1
+  },
+  "dns": {
+   "state": "ok"
+  },
+  "subdomains": {
+   "state": "could_not_check",
+   "reason": "crt.sh did not answer in time or is unavailable"
+  },
+  "configuration": {
+   "state": "ok",
+   "findings": 9,
+   "unchecked": [],
+   "not_available": []
+  },
+  "vulnerabilities": {
+   "state": "ok",
+   "items": 2,
+   "checked": 2,
+   "failed": [],
+   "findings": 102
+  },
+  "lifecycle": {
+   "state": "ok",
+   "items": 2,
+   "findings": 1,
+   "data_as_of": "2026-11-26",
+   "data_older_than_90_days": false
+  },
+  "nuclei": {
+   "state": "ok",
+   "mode": "quick",
+   "templates": 1435,
+   "templates_available": 3948,
+   "seconds": 105.3,
+   "requests": 1778,
+   "targets": [
+    "http://scanme.nmap.org"
+   ],
+   "findings": 10,
+   "dropped_results": 0,
+   "technologies_added": 0,
+   "panels": 0,
+   "sensitive_panels": 0,
+   "proxy": {
+    "allowed": 1778,
+    "refused": 2,
+    "refused_reasons": {
+     "port_not_allowed": 2
+    },
+    "ips_contacted": [
+     "45.33.32.156"
+    ],
+    "hosts_allowed": [
+     "scanme.nmap.org"
+    ],
+    "bytes": 1010466
+   },
+   "proxy_log": "C:\\Users\\nalav\\SNWebShield-Private\\nuclei-logs\\f773bdb2-a55a-406d-97da-a8e6942f0098.jsonl",
+   "exit_code": 0,
+   "selftest_at": 1795717262.4648595
+  }
+ },
+ "findings_nuclei": [
+  {
+   "id": 799,
+   "fingerprint": "5c375eca3179e21fb15718ae37177f635cc2e71853bcb247c0b65ff98b9009b5",
+   "kind": "exposure",
+   "check_id": "nuclei:http-missing-security-headers",
+   "title": "HTTP Missing Security Headers",
+   "location": "scanme.nmap.org:80",
+   "port": 80,
+   "severity": "info",
+   "confidence": "confirmed",
+   "group": "findings",
+   "scored": false,
+   "you_have": null,
+   "you_should_have": null,
+   "cve_id": null,
+   "cvss_score": null,
+   "cvss_vector": null,
+   "affected_range": null,
+   "first_fixed": null,
+   "why": "This template searches for missing HTTP security headers. The impact of these missing headers can vary.\n",
+   "how_to_fix": "Remove or restrict what the check found, or change the setting it points to, then run the scan again.",
+   "evidence": "Matched by the Nuclei check \u201chttp-missing-security-headers\u201d at /.",
+   "caveat": null,
+   "sources": [
+    "nuclei"
+   ],
+   "details": {
+    "template": "http-missing-security-headers",
+    "tier": "info"
+   }
+  }
+ ]
+}

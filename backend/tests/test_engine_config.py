@@ -373,3 +373,50 @@ def test_the_decision_comes_from_the_editable_list(tmp_path, monkeypatch):
 def test_only_login_pages_are_judged_by_the_list():
     rows = [{"key": "/.env", "status": "exposed", "data": {"kind": "exposed_file", "signature": "env-file", "http_status": 200}}]
     assert ec.exposed_findings(DOMAIN, rows)[0].severity == "critical"
+
+
+# --- one retry before "could not check" (busy or rate-limiting sites drop a connection now and then) ------------------------------------------------------
+
+def test_a_probe_that_fails_once_and_then_answers_is_not_could_not_check(monkeypatch):
+    calls = {"cors": 0, "proto": 0}
+
+    async def trust(*a, **k):
+        return {"state": "trusted", "reason": None, "code": 0}
+
+    async def proto(ip, port, domain, version, **k):
+        calls["proto"] += 1
+        return probe_tls.UNKNOWN if calls["proto"] % 2 == 1 else probe_tls.REFUSED       # every first try fails
+
+    async def weak(*a, **k):
+        return probe_tls.REFUSED
+
+    async def cors(*a, **k):
+        calls["cors"] += 1
+        return None if calls["cors"] == 1 else {"origin": None, "credentials": None}
+    monkeypatch.setattr(probe_tls, "trust", trust)
+    monkeypatch.setattr(probe_tls, "protocol_supported", proto)
+    monkeypatch.setattr(probe_tls, "weak_cipher_accepted", weak)
+    monkeypatch.setattr(ec, "cors_probe", cors)
+    state = ScanState()
+    state.probes = [_tls_probe(443, cert())]
+    result = asyncio.run(ec.ConfigurationEngine().run(ScanContext(scan_id="s", domain=DOMAIN, ip="127.0.0.1"), state, Guard()))
+    assert result.state == "ok" and result.detail["unchecked"] == [] and calls["cors"] == 2 and calls["proto"] == 4
+
+
+def test_a_probe_that_keeps_failing_is_still_could_not_check(monkeypatch):
+    async def trust(*a, **k):
+        return {"state": "trusted", "reason": None, "code": 0}
+
+    async def never(*a, **k):
+        return None
+
+    async def unknown(*a, **k):
+        return probe_tls.UNKNOWN
+    monkeypatch.setattr(probe_tls, "trust", trust)
+    monkeypatch.setattr(probe_tls, "protocol_supported", unknown)
+    monkeypatch.setattr(probe_tls, "weak_cipher_accepted", unknown)
+    monkeypatch.setattr(ec, "cors_probe", never)
+    state = ScanState()
+    state.probes = [_tls_probe(443, cert())]
+    result = asyncio.run(ec.ConfigurationEngine().run(ScanContext(scan_id="s", domain=DOMAIN, ip="127.0.0.1"), state, Guard()))
+    assert result.state == "could_not_check" and len(result.detail["unchecked"]) >= 3

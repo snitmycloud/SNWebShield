@@ -285,6 +285,8 @@ class NucleiEngine(engines.Engine):
         except TemplateSetError as error:
             return engines.EngineResult("could_not_check", [], {"reason": error.code})
         check = await nuclei_selftest.ensure(guard)
+        if check["failed"] == ["selftest_running"]:   # the worker's start-up self-test has not finished yet: skip this scan, no warning
+            return engines.EngineResult("skipped", [], {"reason": "selftest_starting"})
         if not check["ok"]:
             return engines.EngineResult("could_not_check", [], {"reason": "selftest_failed", "selftest": check["failed"]})
         mode = "deep" if getattr(ctx, "scan_type", "standard") == "deep" else "quick"

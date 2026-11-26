@@ -69,12 +69,14 @@ class Canary:
 
     def __init__(self, mode="ok", body=b"SELFTEST-OK LEAKED"):
         self.mode, self.body, self.hits, self.port, self._server = mode, body, 0, 0, None
+        self._tasks: set = set()
 
     async def start(self):
         self._server = await asyncio.start_server(self._handle, "127.0.0.1", 0)
         self.port = self._server.sockets[0].getsockname()[1]
 
     async def _handle(self, reader, writer):
+        self._tasks.add(asyncio.current_task())
         try:
             await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 10)
             self.hits += 1
@@ -94,7 +96,13 @@ class Canary:
     async def stop(self):
         if self._server:
             self._server.close()
-            await self._server.wait_closed()
+            for task in list(self._tasks):   # a hung connection must not hold the shutdown up (wait_closed() waits for it)
+                task.cancel()
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+            try:
+                await asyncio.wait_for(self._server.wait_closed(), 3)
+            except asyncio.TimeoutError:
+                pass
 
 
 def pid_alive(pid: int) -> bool:
@@ -145,8 +153,12 @@ async def run_all(guard=None) -> dict:
     checks: dict = {}
     failed: list[str] = []
 
+    clock = [time.monotonic()]
+
     def record(name, ok, detail=""):
-        checks[name] = {"ok": bool(ok), "detail": detail}
+        now = time.monotonic()
+        checks[name] = {"ok": bool(ok), "detail": detail, "seconds": round(now - clock[0], 1)}   # since the previous check ended
+        clock[0] = now
         if not ok:
             failed.append(name)
 
@@ -232,14 +244,10 @@ async def run_all(guard=None) -> dict:
 
 
 def nuclei_templates_ok() -> int:
+    """The vendored set equals its manifest byte for byte (every SHA-256). Re-validating every template here took ~40 s of
+    every self-test; it is unnecessary because a changed byte already fails the hash, and a test re-validates all of them."""
     from app.services import engine_nuclei
-    manifest = engine_nuclei.verify_templates()
-    root = engine_nuclei.TEMPLATES_DIR
-    for name in manifest["templates"]:
-        verdict = nuclei_templates.validate_file(root / name, root)
-        if not verdict.ok:
-            raise ValueError(f"{name}: {verdict.reasons}")
-    return len(manifest["templates"])
+    return len(engine_nuclei.verify_templates()["templates"])
 
 
 def _finish(checks, failed) -> dict:
