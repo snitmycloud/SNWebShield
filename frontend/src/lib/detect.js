@@ -57,9 +57,13 @@ export const STEP_LABELS = {
 };
 
 // Every step that did not finish, in plain words. A step that failed or timed out is "could not check", never "clean".
+// Optional steps (an outside service that is not part of the security results) never count as a problem here.
+export const OPTIONAL_STEPS = ["subdomains"];
+
 export function stepProblems(result) {
   const steps = result?.steps || {};
   return Object.entries(STEP_LABELS)
+    .filter(([key]) => !OPTIONAL_STEPS.includes(key))
     .filter(([key]) => steps[key] && ["could_not_check", "stopped"].includes(steps[key].state))
     .map(([key, label]) => ({ key, label, text: steps[key].state === "stopped" ? "Stopped before it finished" : "Could not check" }));
 }

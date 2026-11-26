@@ -356,7 +356,7 @@ async def _drive(ctx, state, guard, detect) -> None:
 
 
 def _conclude(db, scan_id, token, website_id, state, guard, meta) -> str:
-    from app.services.detect_runner import STEP_NAMES
+    from app.services.detect_runner import OPTIONAL_STEPS, STEP_NAMES
     extra = {"steps": state.steps, "ports": state.ports.summary(), "counts": state.counts(), **meta}
     stop = guard.stop
     if stop is not None:
@@ -382,7 +382,10 @@ def _conclude(db, scan_id, token, website_id, state, guard, meta) -> str:
                      f"technolog{'y' if counts['technologies'] == 1 else 'ies'}, {counts['exposed_files']} exposed file(s) "
                      f"or page(s) found. Findings: {found['critical']} critical, {found['high']} high, {found['medium']} medium, "
                      f"{found['low']} low; {found['needs_checking']} item(s) need your check. "
-                     "This lists what we found; it is not a security verdict."), **extra)
+                     "This lists what we found; it is not a security verdict."
+                     + "".join(f" {note}" for note in state.optional_notes())),
+            **{**extra, "optional_unavailable": [n for n, st in state.steps.items()
+                                                 if n in OPTIONAL_STEPS and st["state"] == "could_not_check"]})
     return "completed"
 
 

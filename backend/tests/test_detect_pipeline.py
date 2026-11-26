@@ -120,19 +120,77 @@ def test_a_whole_scan_finds_ports_versions_technologies_dns_files_and_subdomains
     assert "refs/heads" not in json.dumps(body)  # exposed file contents are never stored
 
 
-def test_a_step_that_cannot_finish_makes_the_scan_incomplete_never_clean(client, monkeypatch):
-    fake_dns(monkeypatch)
-    fake_crtsh(monkeypatch, ok=False)  # crt.sh is down
+def test_a_core_step_that_cannot_finish_makes_the_scan_incomplete_never_clean(client, monkeypatch):
+    fake_dns(monkeypatch, fail=True)  # DNS is a core step
+    fake_crtsh(monkeypatch)
     with BackgroundServer(http_handler({"/": (200, HTML, b"<html></html>")})) as web:
         _, _, headers = account_headers(client)
         site, scan_id, status = run_scan(client, headers, [web.port], monkeypatch)
     assert status == "incomplete"
     body = client.get(f"{W}/{site['id']}/scans/{scan_id}", headers=headers).json()
     assert body["scan"]["status"] == "incomplete" and body["scan"]["result"]["code"] == "some_checks_incomplete"
-    assert body["scan"]["result"]["steps"]["subdomains"]["state"] == "could_not_check"
+    assert body["scan"]["result"]["steps"]["dns"]["state"] == "could_not_check"
     assert body["scan"]["result"]["steps"]["ports"]["state"] == "ok"
-    assert "subdomain list" in body["scan"]["message"] and "does not mean your website is safe" in body["scan"]["message"]
+    assert "email and dns records" in body["scan"]["message"] and "does not mean your website is safe" in body["scan"]["message"]
     assert [p["port"] for p in body["ports"]] == [web.port]  # what was found is kept
+
+
+def test_the_subdomain_list_is_optional_a_scan_still_completes_with_a_clear_note(client, monkeypatch):
+    fake_dns(monkeypatch)
+    fake_crtsh(monkeypatch, ok=False)  # crt.sh is down
+    with BackgroundServer(http_handler({"/": (200, HTML, b"<html></html>")})) as web:
+        _, _, headers = account_headers(client)
+        site, scan_id, status = run_scan(client, headers, [web.port], monkeypatch)
+    assert status == "completed"
+    body = client.get(f"{W}/{site['id']}/scans/{scan_id}", headers=headers).json()
+    scan = body["scan"]
+    assert scan["status"] == "completed" and scan["result"]["code"] == "detect_completed"
+    assert scan["result"]["steps"]["subdomains"]["state"] == "could_not_check"      # still recorded honestly
+    assert scan["result"]["optional_unavailable"] == ["subdomains"]
+    assert ("Subdomain list unavailable right now (outside service didn't answer). "
+            "This does not affect your security results.") in scan["message"]
+    assert "not a security verdict" in scan["message"]
+    assert [p["port"] for p in body["ports"]] == [web.port] and body["subdomains"] == []
+
+
+def test_without_a_problem_there_is_no_optional_note(client, monkeypatch):
+    fake_dns(monkeypatch)
+    fake_crtsh(monkeypatch)
+    with BackgroundServer(http_handler({"/": (200, HTML, b"<html></html>")})) as web:
+        _, _, headers = account_headers(client)
+        site, scan_id, status = run_scan(client, headers, [web.port], monkeypatch)
+    scan = client.get(f"{W}/{site['id']}/scans/{scan_id}", headers=headers).json()["scan"]
+    assert status == "completed" and "unavailable" not in scan["message"] and scan["result"]["optional_unavailable"] == []
+
+
+def test_optional_and_core_steps_are_exactly_these():
+    assert set(detect_runner.OPTIONAL_STEPS) == {"subdomains"}
+    core = {"ports", "versions", "technologies", "exposed", "dns", "configuration", "vulnerabilities", "lifecycle"}
+    assert core <= set(detect_runner.STEP_NAMES) and not core & set(detect_runner.OPTIONAL_STEPS)
+
+
+def test_a_core_failure_together_with_an_optional_one_is_still_incomplete(client, monkeypatch):
+    fake_dns(monkeypatch, fail=True)
+    fake_crtsh(monkeypatch, ok=False)
+    with BackgroundServer(http_handler({"/": (200, HTML, b"<html></html>")})) as web:
+        _, _, headers = account_headers(client)
+        site, scan_id, status = run_scan(client, headers, [web.port], monkeypatch)
+    scan = client.get(f"{W}/{site['id']}/scans/{scan_id}", headers=headers).json()["scan"]
+    assert status == "incomplete" and "subdomain" not in scan["message"].lower() and "email and dns records" in scan["message"]
+
+
+def test_a_failing_vulnerability_database_is_core_so_the_scan_is_incomplete(client, monkeypatch):
+    from app.services import vuln_sources
+    fake_dns(monkeypatch)
+    fake_crtsh(monkeypatch)
+
+    def down(source, method, path, **kwargs):
+        raise vuln_sources.SourceError("timeout")
+    monkeypatch.setattr(vuln_sources, "http_json", down)
+    with BackgroundServer(banner_handler(b"SSH-2.0-OpenSSH_8.2p1 Ubuntu\r\n")) as ssh:
+        _, _, headers = account_headers(client)
+        _, _, status = run_scan(client, headers, [ssh.port], monkeypatch)
+    assert status == "incomplete"
 
 
 def test_dns_failures_are_could_not_check_not_missing(client, monkeypatch):

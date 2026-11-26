@@ -33,6 +33,11 @@ STEP_NAMES = {
     "ports": "Open ports", "versions": "Service versions", "technologies": "Technologies",
     "exposed": "Exposed files", "dns": "Email and DNS records", "subdomains": "Subdomain list",
 }
+# OPTIONAL steps depend on an outside service that is not part of the security results. If one cannot check, the scan
+# still ends "completed" with this note. Every other step is CORE: any failure there makes the scan "incomplete".
+OPTIONAL_STEPS = {
+    "subdomains": "Subdomain list unavailable right now (outside service didn't answer). This does not affect your security results.",
+}
 identify.register_builtin()
 
 
@@ -69,7 +74,13 @@ class ScanState:
     current: str | None = None
 
     def incomplete_steps(self) -> list[str]:
-        return [name for name, step in self.steps.items() if step["state"] in ("could_not_check", "stopped")]
+        """CORE steps that did not finish. Optional steps never count here (see `optional_notes`)."""
+        return [name for name, step in self.steps.items()
+                if step["state"] in ("could_not_check", "stopped") and name not in OPTIONAL_STEPS]
+
+    def optional_notes(self) -> list[str]:
+        return [OPTIONAL_STEPS[name] for name, step in self.steps.items()
+                if name in OPTIONAL_STEPS and step["state"] == "could_not_check"]
 
     def counts(self) -> dict:
         found = finding_format.counts(self.findings)
