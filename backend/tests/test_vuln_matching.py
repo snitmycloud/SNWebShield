@@ -226,3 +226,9 @@ def test_no_disclosed_version_gives_an_info_finding_that_says_we_cannot_check():
     found = ev.hidden_version_finding(item(version=None))
     assert found.severity == "info" and not found.scored and "cannot check" in found.title
     assert "safe" not in found.title.lower()
+
+
+def test_the_cut_off_at_fifty_is_stated_in_one_info_line_never_silent():
+    found = ev.more_not_shown_finding(item(), 88)
+    assert found.severity == "info" and not found.scored and "88 more known issues" in found.title and found.details["not_shown"] == 88
+    assert found.check_id == "cve-more:openssh"

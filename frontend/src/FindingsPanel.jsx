@@ -5,6 +5,8 @@ import { SEVERITY_LABEL, checksNotFinished, cvssText, emptyText, engineProgress,
 // Every field here came from our own rules or from public vulnerability databases. It is untrusted text and is shown as
 // escaped plain text (React escapes it), never as HTML.
 
+const SHOWN_FIRST = 10; // the highest-scored ones; the rest sit behind one click so the page stays readable
+
 function Detail({ label, children }) {
   return children ? <div className="sw-fd-row"><dt>{label}</dt><dd>{children}</dd></div> : null;
 }
@@ -66,7 +68,11 @@ export default function FindingsPanel({ findings, result, running }) {
     {needsChecking.length > 0 && <div className="sw-needs" data-testid="needs-checking">
       <h4>Needs checking ({needsChecking.length})</h4>
       <p className="sw-note">We could not be sure these apply to your server, for example because your system may have fixed them without changing the version number. They are not counted in your findings until confirmed. Each one says how to check.</p>
-      <ul className="sw-flist">{needsChecking.map(f => <FindingCard key={f.fingerprint} finding={f} possible />)}</ul>
+      <ul className="sw-flist">{needsChecking.slice(0, SHOWN_FIRST).map(f => <FindingCard key={f.fingerprint} finding={f} possible />)}</ul>
+      {needsChecking.length > SHOWN_FIRST && <details className="sw-more" data-testid="needs-checking-more">
+        <summary>Show the other {needsChecking.length - SHOWN_FIRST} (lower scores)</summary>
+        <ul className="sw-flist">{needsChecking.slice(SHOWN_FIRST).map(f => <FindingCard key={f.fingerprint} finding={f} possible />)}</ul>
+      </details>}
     </div>}
 
     {info.length > 0 && <details className="sw-goodtoknow">

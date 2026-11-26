@@ -207,6 +207,14 @@ def hidden_version_finding(item: identify_items.Item) -> Finding:
                    sources=["snwebshield"])
 
 
+def more_not_shown_finding(item: identify_items.Item, count: int) -> Finding:
+    """One Info line saying how many lower-scored issues were left out, so the cut-off is never silent."""
+    return Finding(kind="vulnerability", check_id=f"cve-more:{item.key}", title=f"{count} more known issues for {item.display} {item.version} are not listed",
+                   location=item.location, severity="info", confidence="confirmed", port=item.port, you_have=f"{item.display} {item.version}",
+                   why=f"We list the {MAX_PER_ITEM} highest-scored issues for each piece of software. {count} lower-scored ones are not shown.",
+                   how_to_fix=f"Updating {item.display} to a current supported version removes all of them.", sources=["nvd"], details={"not_shown": count})
+
+
 # --- Look-ups ------------------------------------------------------------------------------------------------------------
 
 def cpe_for(vendor: str, product: str, version: str, split_update: bool) -> str:
@@ -275,7 +283,7 @@ class VulnerabilityEngine(engines.Engine):
             ordered = sorted(advisories.values(), key=lambda a: -(a.get("score") or 0))
             found += [advisory_finding(item, advisory, stale_at=stale_at) for advisory in ordered[:MAX_PER_ITEM]]
             if len(ordered) > MAX_PER_ITEM:
-                found[-1].details["more_not_shown"] = len(ordered) - MAX_PER_ITEM
+                found.append(more_not_shown_finding(item, len(ordered) - MAX_PER_ITEM))
         detail = {"items": len(items), "checked": checked, "failed": failed, "findings": len(found)}
         return engines.EngineResult("could_not_check" if failed else "ok", found, detail)
 
