@@ -25,6 +25,7 @@ def main() -> int:
     parser.add_argument("--json")
     parser.add_argument("--vendor")
     parser.add_argument("--version", default="10.5.2")
+    parser.add_argument("--commit", default="")
     args = parser.parse_args()
     root = Path(args.directory)
     files = sorted(p for p in root.rglob("*") if p.suffix.lower() in (".yaml", ".yml") and p.is_file())
@@ -64,7 +65,7 @@ def main() -> int:
     if args.vendor:
         dest = Path(args.vendor)
         dest.mkdir(parents=True, exist_ok=True)
-        manifest = {}
+        manifest, index = {}, {}
         for verdict in scoped:
             if not verdict.ok:
                 continue
@@ -73,12 +74,13 @@ def main() -> int:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
             manifest[verdict.path] = hashlib.sha256(data).hexdigest()
+            index[verdict.path] = {"id": verdict.template_id, "category": verdict.category, "name": verdict.name, "severity": verdict.severity}
         for licence in ("LICENSE.md", "LICENSE", "LICENSE.txt"):
             if (root / licence).is_file():
                 shutil.copyfile(root / licence, dest / "LICENSE.md")
                 break
         (dest / "MANIFEST.json").write_text(json.dumps({"source": "projectdiscovery/nuclei-templates", "version": args.version,
-                                                        "licence": "MIT", "templates": manifest}, indent=1, sort_keys=True), encoding="utf-8")
+                                                        "licence": "MIT", "commit": args.commit, "templates": manifest, "index": index}, indent=1, sort_keys=True), encoding="utf-8")
         print(f"Vendored {len(manifest)} templates to {dest}")
     return 0
 

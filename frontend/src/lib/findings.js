@@ -88,6 +88,12 @@ export function engineProgress(result, scanRunning) {
   return { pending, notChecked: pending.length > 0, text: pending.length === 0 ? "" : (scanRunning ? "Not checked yet." : "Not checked: the scan stopped before these checks.") };
 }
 
+// The list inside a grouped finding ("Login or admin pages found: 4"). Everything is plain text from a scan, shown escaped.
+export function panelItems(finding) {
+  const list = Array.isArray(finding?.details?.panels) ? finding.details.panels : [];
+  return list.slice(0, 100).map(p => ({ name: String(p.name ?? ""), path: String(p.path ?? ""), key: `${p.template}:${p.path}` }));
+}
+
 export function cvssText(finding) {
   if (finding.cvss_score === null || finding.cvss_score === undefined) return "";
   return `CVSS ${Number(finding.cvss_score).toFixed(1)} (${SEVERITY_LABEL[finding.severity] || ""})`;

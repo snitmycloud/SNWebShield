@@ -290,12 +290,24 @@ def web_probe(port, tls):
                      web=WebPage(port=port, tls=tls, status=200, headers={}, cookies=[], body=""))
 
 
+INDEX_ROWS = {
+    "http/exposures/some-exposure.yaml": {"id": "some-exposure", "category": "exposures"},
+    "http/exposures/some-other.yaml": {"id": "some-other", "category": "exposures"},
+    "http/cves/CVE-2021-1.yaml": {"id": "CVE-2021-1", "category": "cves"},
+    "http/cves/CVE-2017-9788.yaml": {"id": "CVE-2017-9788", "category": "cves"},
+    "http/cves/CVE-2020-9999.yaml": {"id": "odd-name", "category": "cves"},
+    "http/misconfiguration/apache-server-status.yaml": {"id": "apache-server-status", "category": "misconfiguration"},
+    "http/exposures/backup-directory-listing.yaml": {"id": "backup-directory-listing", "category": "exposures"},
+}
+DEFAULT_MANIFEST = {"templates": {name: "h" for name in INDEX_ROWS}, "index": INDEX_ROWS}
+
+
 def engine_run(monkeypatch, probes, *, enabled=True, binary=Path("nuclei"), templates=None, selftest=None, runner=None, guard=None, tmp_path=None):
     monkeypatch.setattr(settings, "nuclei_enabled", enabled)
     if tmp_path is not None:
         monkeypatch.setattr(settings, "nuclei_log_dir", tmp_path / "logs")
     monkeypatch.setattr(nuclei_lock, "verified_binary", lambda: binary if not isinstance(binary, Exception) else (_ for _ in ()).throw(binary))
-    monkeypatch.setattr(en, "verify_templates", lambda *a, **k: templates if templates is not None else {"templates": {"a": "h"}})
+    monkeypatch.setattr(en, "verify_templates", lambda *a, **k: templates if templates is not None else DEFAULT_MANIFEST)
 
     async def ensure(guard=None):
         return selftest or {"ok": True, "failed": [], "at": 1.0}

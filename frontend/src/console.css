@@ -145,3 +145,4 @@
   .page-heading{flex-direction:column;align-items:flex-start}
 }
 .sw-more{margin-top:10px}.sw-more>summary{cursor:pointer;font-size:12px;font-weight:700;color:#34445c}
+.sw-panels{margin:0 12px 12px;padding-left:18px;font-size:12px;color:#34445c;line-height:1.7}.sw-panels code{color:#5d6b80}

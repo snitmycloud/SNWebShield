@@ -53,6 +53,7 @@ class Verdict:
     category: str | None = None
     template_id: str | None = None
     severity: str | None = None
+    name: str | None = None
     reasons: list = field(default_factory=list)
 
     @property
@@ -119,6 +120,7 @@ def validate(text: str, path: str = "") -> Verdict:
         reject("bad_metadata")
     else:
         verdict.template_id, verdict.severity = template_id, str(info["severity"]).lower()
+        verdict.name = info["name"][:200]
     if verdict.category is None:
         reject("out_of_scope")
     tags = _tags(info) if isinstance(info, dict) else set()

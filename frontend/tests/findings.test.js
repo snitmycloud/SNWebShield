@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checksNotFinished, cvssText, emptyText, engineProgress, groupFindings, lifecycleTier, reasonText, severityCounts, sourceLabel, summaryText }
+import { checksNotFinished, cvssText, emptyText, engineProgress, groupFindings, lifecycleTier, panelItems, reasonText, severityCounts, sourceLabel, summaryText }
   from "../src/lib/findings.js";
 
 let counter = 0;
@@ -87,4 +87,24 @@ test("the optional Nuclei engine never makes the findings look incomplete, and i
   assert.match(rows[0].text, /its safety self-test did not pass, so it stayed off\. Your other results are not affected\./);
   assert.match(emptyText(failed, false), /No findings from these checks/);   // the core checks all finished
   assert.equal(checksNotFinished({ steps: { ...core, nuclei: { state: "not_applicable" } } }).length, 0);
+});
+
+test("the list inside a grouped panel finding is shown as plain text and bounded", () => {
+  const finding = { details: { panels: [{ name: "WordPress Login", path: "/wp-login.php", template: "wordpress-login" }, { name: "<img src=x onerror=alert(1)>", path: "/a", template: "t" }] } };
+  const items = panelItems(finding);
+  assert.equal(items.length, 2);
+  assert.deepEqual(items[0], { name: "WordPress Login", path: "/wp-login.php", key: "wordpress-login:/wp-login.php" });
+  assert.equal(items[1].name, "<img src=x onerror=alert(1)>");   // returned as text; React escapes it
+  assert.deepEqual(panelItems({}), []);
+  assert.deepEqual(panelItems({ details: { panels: "no" } }), []);
+  assert.equal(panelItems({ details: { panels: Array.from({ length: 300 }, (_, i) => ({ name: `p${i}`, path: "/", template: "t" })) } }).length, 100);
+});
+
+test("a grouped panel finding is an Info item (Good to know) and a sensitive one counts as Medium", () => {
+  const group = { fingerprint: "g", title: "Login or admin pages found: 4", severity: "info", confidence: "confirmed", group: "findings" };
+  const sensitive = { fingerprint: "s", title: "phpMyAdmin is reachable from the internet", severity: "medium", confidence: "confirmed", group: "findings" };
+  const parts = groupFindings([group, sensitive]);
+  assert.deepEqual(parts.info.map(x => x.fingerprint), ["g"]);
+  assert.deepEqual(parts.confirmed.map(x => x.fingerprint), ["s"]);
+  assert.equal(summaryText([group, sensitive]), "1 finding (1 medium)");
 });

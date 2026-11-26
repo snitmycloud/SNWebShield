@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from app.core.config import settings
-from app.services import egress_proxy, engines, netio, nuclei_lock, nuclei_runner, nuclei_selftest
+from app.services import detect_tech, egress_proxy, engines, netio, nuclei_lock, nuclei_runner, nuclei_selftest
 from app.services.finding import Finding
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "data" / "nuclei" / "templates"
@@ -109,6 +109,129 @@ def to_finding(raw: dict, domain: str, equivalents: dict) -> Finding | None:
     return finding
 
 
+SENSITIVE_PATH = Path(__file__).resolve().parent.parent / "data" / "nuclei" / "sensitive_panels.json"
+_TECH_SUFFIX = re.compile(r"\s*\b(?:version\s+)?(?:detect(?:ion|ed)?|fingerprint(?:ing)?|technology|panel|exposure)\s*$", re.I)
+_VERSION = re.compile(r"^v?(\d[\w.\-+]{0,30})$")
+MAX_PANELS = 100
+
+
+def load_sensitive() -> list[tuple[str, list[str]]]:
+    """[(label, [lowercase match texts])] from the editable file; a broken file means 'nothing is sensitive', never a crash."""
+    try:
+        rows = json.loads(SENSITIVE_PATH.read_text(encoding="utf-8")).get("sensitive", [])
+        return [(str(r["label"]), [str(m).lower() for m in r["match"] if str(m).strip()]) for r in rows if isinstance(r, dict)]
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return []
+
+
+def sensitive_label(template_id: str, name: str, rules) -> str | None:
+    text = f"{template_id} {name}".lower()
+    for label, needles in rules:
+        if any(needle in text for needle in needles):
+            return label
+    return None
+
+
+def technology_name(name: str) -> str:
+    cleaned = name
+    for _ in range(3):
+        cleaned = _TECH_SUFFIX.sub("", cleaned).strip(" -:")
+    return netio.clean_text(cleaned or name, 80)
+
+
+def to_technology(raw: dict, domain: str, existing_names: dict) -> dict | None:
+    """A Nuclei technology result -> a row for the Technologies list (never a finding). `existing_names` maps lower-case
+    built-in names to their spelling so the same technology is merged, not listed twice."""
+    template_id = raw.get("template-id")
+    info = raw.get("info") if isinstance(raw.get("info"), dict) else {}
+    matched = str(raw.get("matched-at") or raw.get("url") or "")
+    parts = urlsplit(matched if "://" in matched else f"http://{matched}")
+    if not isinstance(template_id, str) or not SAFE_ID.match(template_id) or (parts.hostname or "").lower().rstrip(".") != domain.lower():
+        return None
+    name = technology_name(str(info.get("name") or template_id))
+    if not name:
+        return None
+    version = None
+    extracted = raw.get("extracted-results")
+    for item in (extracted if isinstance(extracted, list) else []):
+        found = _VERSION.match(str(item).strip())
+        if found:
+            version = found.group(1)
+            break
+    return {"name": existing_names.get(name.lower(), name), "category": "Other", "version": version, "source": "nuclei",
+            "evidence": f"Nuclei check {template_id}"[:200], "port": parts.port or (443 if parts.scheme == "https" else 80)}
+
+
+def panel_findings(panels: list[dict], domain: str) -> list[Finding]:
+    """One Info finding listing every ordinary login/admin page, plus one Medium finding per SENSITIVE panel."""
+    found: list[Finding] = []
+    ordinary = [p for p in panels if not p["sensitive"]]
+    if ordinary:
+        listed = ordinary[:MAX_PANELS]
+        found.append(Finding(
+            kind="exposure", check_id="nuclei-panels", title=f"Login or admin pages found: {len(ordinary)}", location=domain, severity="info",
+            confidence="confirmed", you_have=f"{len(ordinary)} login or admin page(s)",
+            why="These pages let people sign in or manage something. They are normal for many websites, but admin pages are a common target for password guessing.",
+            how_to_fix="Make sure each page is needed and kept up to date, protect it with strong passwords and two-step login, and restrict admin pages to trusted addresses where you can.",
+            evidence="; ".join(f"{p['name']} ({p['path']})" for p in listed[:10]) + (" ..." if len(ordinary) > 10 else ""),
+            sources=["nuclei"], details={"panels": [{"name": p["name"], "path": p["path"], "template": p["template"]} for p in listed],
+                                         "sensitive_reported_separately": len(panels) - len(ordinary)}))
+    for panel in panels:
+        if panel["sensitive"]:
+            found.append(Finding(
+                kind="exposure", check_id=f"nuclei-panel:{panel['template']}", title=f"{panel['name']} is reachable from the internet",
+                location=f"{domain}{panel['path']}", severity="medium", confidence="confirmed", you_have=panel["name"],
+                you_should_have="Admin and management tools reachable only from trusted addresses or through a VPN.",
+                why=f"This looks like a {panel['sensitive'].lower()}. Tools like this give wide control, are attacked constantly, and should not be open to everyone.",
+                how_to_fix="Restrict it to trusted addresses or a VPN, require strong logins and two-step verification, keep it updated, or remove it if you do not use it.",
+                evidence=f"Matched by the Nuclei check \u201c{panel['template']}\u201d at {panel['path'][:120]}.", sources=["nuclei"],
+                details={"template": panel["template"], "sensitive": panel["sensitive"]}))
+    return found
+
+
+def process_results(raw_results: list, domain: str, index: dict, equivalents: dict, existing_technologies: list) -> dict:
+    """Sort Nuclei results by the category of their template (from the verified manifest): technologies -> Technologies list,
+    exposed-panels -> one grouped finding (+ Medium for sensitive ones), everything else -> ordinary findings."""
+    rules = load_sensitive()
+    existing = {t["name"].lower(): t["name"] for t in existing_technologies}
+    findings, technologies, panels, dropped, seen_panels = [], [], [], 0, set()
+    for raw in raw_results[:500]:
+        template_id = raw.get("template-id") if isinstance(raw, dict) else None
+        meta = index.get(template_id)
+        if meta is None:
+            dropped += 1                  # not one of the vendored, validated templates: ignored
+            continue
+        category = meta["category"]
+        if category == "technologies":
+            tech = to_technology(raw, domain, existing)
+            if tech is None:
+                dropped += 1
+            else:
+                technologies.append(tech)
+        elif category == "exposed-panels":
+            matched = str(raw.get("matched-at") or "")
+            parts = urlsplit(matched if "://" in matched else f"http://{matched}")
+            if (parts.hostname or "").lower().rstrip(".") != domain.lower() or not SAFE_ID.match(str(template_id)):
+                dropped += 1
+                continue
+            path = netio.clean_text(parts.path or "/", 200)
+            if (template_id, path) in seen_panels:
+                continue
+            seen_panels.add((template_id, path))
+            info = raw.get("info") if isinstance(raw.get("info"), dict) else {}
+            name = netio.clean_text(info.get("name") or template_id, 120)
+            panels.append({"template": template_id, "name": name, "path": path, "sensitive": sensitive_label(template_id, name, rules)})
+        else:
+            finding = to_finding(raw, domain, equivalents)
+            if finding is None:
+                dropped += 1
+            else:
+                findings.append(finding)
+    findings += panel_findings(panels, domain)
+    return {"findings": findings, "technologies": technologies, "dropped": dropped, "panels": len(panels),
+            "sensitive_panels": sum(1 for p in panels if p["sensitive"])}
+
+
 class NucleiEngine(engines.Engine):
     name = "nuclei"
     label = "Running extra template checks"
@@ -137,16 +260,17 @@ class NucleiEngine(engines.Engine):
             outcome = await nuclei_runner.run(binary, TEMPLATES_DIR, targets, proxy.url, guard)
         finally:
             await proxy.stop()
-        equivalents = load_equivalents()
-        found, dropped = [], 0
-        for raw in outcome.results[:500]:
-            finding = to_finding(raw, ctx.domain, equivalents)
-            if finding is None:
-                dropped += 1
-            else:
-                found.append(finding)
+        index = {meta["id"]: meta for meta in manifest.get("index", {}).values()}
+        processed = process_results(outcome.results, ctx.domain, index, load_equivalents(), state.technologies)
+        found, dropped = processed["findings"], processed["dropped"]
+        if processed["technologies"]:
+            # Technologies found by Nuclei join the built-in list (same name = one row, the best version wins); never findings.
+            state.technologies = detect_tech.merge(state.technologies, processed["technologies"])
+            from app.services import detect_runner   # imported here: detect_runner imports the engines
+            detect_runner.save_technologies(ctx, state.technologies)
         summary = proxy.summary()
-        detail = {"templates": len(manifest["templates"]), "targets": targets, "findings": len(found), "dropped_results": dropped,
+        detail = {"templates": len(manifest["templates"]), "targets": targets, "findings": len(found), "dropped_results": dropped, "technologies_added": len(processed["technologies"]),
+                  "panels": processed["panels"], "sensitive_panels": processed["sensitive_panels"],
                   "proxy": summary, "proxy_log": str(log_path), "exit_code": outcome.exit_code, "selftest_at": check["at"]}
         if outcome.timed_out or outcome.truncated or (outcome.exit_code not in (0, None) and not found):
             detail["reason"] = "timed_out" if outcome.timed_out else "output_too_large" if outcome.truncated else "nuclei_failed"
