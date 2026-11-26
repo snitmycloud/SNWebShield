@@ -154,3 +154,40 @@ def test_the_scan_stops_cleanly_while_waiting_for_a_slow_database(client, monkey
     assert row.status == "incomplete" and row.result["code"] == "website_removed" and row.result["stopped_step"] == "vulnerabilities"
     with SessionLocal() as db:   # what the configuration step found before the stop is kept
         assert db.query(ScanFinding).filter_by(scan_id=scan_id).count() > 0
+
+
+def test_a_whole_scan_with_nuclei_merges_duplicates_into_one_finding_with_both_sources(client, monkeypatch, tmp_path):
+    """Built-in findings and Nuclei findings land in ONE list; the same issue found by both appears once with both sources."""
+    from pathlib import Path
+    from app.services import engine_nuclei, nuclei_lock, nuclei_runner, nuclei_selftest
+    fake_databases(monkeypatch)
+    listing = (200, {"Content-Type": "text/html"}, b"<html><title>Index of /backup/</title><a href='/'>Parent Directory</a><a href='x.zip'>x</a></html>")
+    site = {**WEB, "/backup/": listing}
+    seen = {}
+
+    async def fake_run(binary, templates, targets, proxy_url, guard=None, **kw):
+        seen["proxy"], seen["targets"] = proxy_url, targets
+        return nuclei_runner.RunResult(exit_code=0, results=[
+            {"template-id": "backup-directory-listing", "matched-at": "http://example.com/backup/", "info": {"name": "Directory listing", "severity": "medium"}},
+            {"template-id": "wordpress-login", "matched-at": "http://example.com/wp-login.php", "info": {"name": "WordPress login panel", "severity": "info"}},
+            {"template-id": "elsewhere", "matched-at": "http://evil.example.org/", "info": {"name": "x", "severity": "high"}}])
+
+    async def passed(guard=None):
+        return {"ok": True, "failed": [], "at": 1.0}
+    monkeypatch.setattr(settings, "nuclei_enabled", True)
+    monkeypatch.setattr(settings, "nuclei_log_dir", tmp_path / "logs")
+    monkeypatch.setattr(nuclei_lock, "verified_binary", lambda: Path("nuclei"))
+    monkeypatch.setattr(engine_nuclei, "verify_templates", lambda *a, **k: {"templates": {"a": "h"}})
+    monkeypatch.setattr(engine_nuclei, "web_targets", lambda domain, probes: ["http://example.com"])
+    monkeypatch.setattr(nuclei_selftest, "ensure", passed)
+    monkeypatch.setattr(nuclei_runner, "run", fake_run)
+    with BackgroundServer(http_handler(site)) as web:
+        status, body, _ = scan_and_read(client, monkeypatch, [web.port])
+    steps = body["scan"]["result"]["steps"]
+    assert steps["nuclei"]["state"] == "ok" and steps["nuclei"]["dropped_results"] == 1 and status == "completed"
+    assert seen["proxy"].startswith("http://127.0.0.1:") and seen["targets"] == ["http://example.com"]
+    by_id = {f["check_id"]: f for f in body["findings"]}
+    merged = [f for f in body["findings"] if f["location"] == "example.com/backup/"]
+    assert len(merged) == 1 and merged[0]["check_id"] == "exposed:index-of:/backup/" and merged[0]["sources"] == ["nuclei", "snwebshield"]
+    assert "nuclei:wordpress-login" in by_id and by_id["nuclei:wordpress-login"]["sources"] == ["nuclei"]
+    assert not any("evil.example.org" in f["location"] for f in body["findings"])

@@ -101,6 +101,16 @@ class Settings(BaseSettings):
     scan_identify_budget_seconds: int = Field(default=120, ge=10, le=900)   # all vulnerability look-ups of one scan together
     scan_tls_probe_timeout_seconds: float = Field(default=2.0, ge=0.5, le=10)
 
+    # --- Nuclei engine (Phase 3B). OFF by default; it also needs its self-test to pass at run time. ---
+    nuclei_enabled: bool = False
+    nuclei_dir: Path = Path.home() / "SNWebShield-Private" / "engines"          # where the pinned binary is installed (outside the repo)
+    nuclei_log_dir: Path = Path.home() / "SNWebShield-Private" / "nuclei-logs"  # one proxy log per scan
+    nuclei_run_seconds: int = Field(default=300, ge=30, le=1800)                # hard limit for one Nuclei run
+    nuclei_rate_limit: int = Field(default=10, ge=1, le=50)                     # requests per second (to the one host)
+    nuclei_concurrency: int = Field(default=5, ge=1, le=10)
+    nuclei_max_output_bytes: int = Field(default=1024 * 1024, ge=65536, le=8 * 1024 * 1024)
+    nuclei_selftest_valid_minutes: int = Field(default=60, ge=1, le=1440)
+
     # Sent only when the API itself is served over HTTPS.
     hsts_max_age_seconds: int = Field(default=31536000, ge=0, le=63072000)
 

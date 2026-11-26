@@ -3,7 +3,9 @@
 
 export const SEVERITIES = ["critical", "high", "medium", "low", "info"];
 export const SEVERITY_LABEL = { critical: "Critical", high: "High", medium: "Medium", low: "Low", info: "Info" };
-export const ENGINE_STEPS = { configuration: "Security settings", vulnerabilities: "Known vulnerabilities", lifecycle: "End of life" };
+export const ENGINE_STEPS = { configuration: "Security settings", vulnerabilities: "Known vulnerabilities", lifecycle: "End of life" };   // core
+// Optional engines add depth. If one is off or cannot run, the scan and its core results are unaffected; it is only mentioned when it failed.
+export const OPTIONAL_ENGINES = { nuclei: "Extra template checks (Nuclei)" };
 
 const SOURCES = { nvd: "NVD (US National Vulnerability Database)", osv: "OSV (Open Source Vulnerabilities)",
   "endoflife.date": "endoflife.date", snwebshield: "SNWebShield checks", nuclei: "Nuclei" };
@@ -67,6 +69,14 @@ export function checksNotFinished(result) {
         details.push(item.used_old_data ? `${item.item}: ${reasonText(item.reason)}, so older saved data was used` : `${item.item}: ${reasonText(item.reason)}`);
       }
       rows.push({ key, label, text: why, details });
+    }
+  }
+  for (const [key, label] of Object.entries(OPTIONAL_ENGINES)) {
+    const step = steps[key];
+    if (step && ["could_not_check", "stopped"].includes(step.state)) {
+      const reasons = { selftest_failed: "its safety self-test did not pass, so it stayed off", binary_hash_mismatch: "the installed program did not match its pinned checksum",
+        binary_not_installed: "it is not installed", template_set_changed: "its template set did not match the reviewed list", template_hash_mismatch: "a template did not match its reviewed checksum" };
+      rows.push({ key, label, text: `Did not run: ${reasons[step.reason] || reasonText(step.reason)}. Your other results are not affected.`, details: [], optional: true });
     }
   }
   return rows;

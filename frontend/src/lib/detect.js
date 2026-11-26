@@ -53,12 +53,12 @@ export function softwareText(item) {
 export const STEP_LABELS = {
   ports: "Open ports", versions: "Service versions", technologies: "Technologies",
   exposed: "Exposed files", dns: "Email and DNS records", subdomains: "Subdomain list",
-  configuration: "Security settings", vulnerabilities: "Known vulnerabilities", lifecycle: "End of life",
+  configuration: "Security settings", vulnerabilities: "Known vulnerabilities", lifecycle: "End of life", nuclei: "Extra template checks (Nuclei)",
 };
 
 // Every step that did not finish, in plain words. A step that failed or timed out is "could not check", never "clean".
 // Optional steps (an outside service that is not part of the security results) never count as a problem here.
-export const OPTIONAL_STEPS = ["subdomains"];
+export const OPTIONAL_STEPS = ["subdomains", "nuclei"];
 
 export function stepProblems(result) {
   const steps = result?.steps || {};

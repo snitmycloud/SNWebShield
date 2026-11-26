@@ -83,7 +83,8 @@ def merge(findings: list[Finding]) -> list[Finding]:
     """
     merged: dict[tuple, Finding] = {}
     for item in findings:
-        key = (item.location, item.cve_id or item.check_id)
+        # `equivalent_to` lets an engine say "this is the same issue as that other check" (Nuclei template vs built-in check).
+        key = (item.location, item.cve_id or item.details.get("equivalent_to") or item.check_id)
         current = merged.get(key)
         if current is None:
             merged[key] = item

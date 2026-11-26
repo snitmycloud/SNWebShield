@@ -37,6 +37,7 @@ STEP_NAMES = {
 # still ends "completed" with this note. Every other step is CORE: any failure there makes the scan "incomplete".
 OPTIONAL_STEPS = {
     "subdomains": "Subdomain list unavailable right now (outside service didn't answer). This does not affect your security results.",
+    "nuclei": "The extra template checks (Nuclei) could not run this time. Your built-in security results are not affected.",
 }
 identify.register_builtin()
 

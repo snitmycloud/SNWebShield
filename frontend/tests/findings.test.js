@@ -73,3 +73,18 @@ test("scores, sources and unknown reasons are shown safely", () => {
   assert.equal(sourceLabel("<script>"), "<script>");           // returned as text; React escapes it
   assert.equal(reasonText("something_new"), "the check did not finish");
 });
+
+test("the optional Nuclei engine never makes the findings look incomplete, and is only mentioned when it failed", () => {
+  const core = { configuration: { state: "ok" }, vulnerabilities: { state: "ok" }, lifecycle: { state: "ok" } };
+  const off = { steps: { ...core, nuclei: { state: "skipped", reason: "disabled" } } };
+  assert.deepEqual(checksNotFinished(off), []);
+  assert.match(emptyText(off, false), /No findings from these checks/);
+  assert.equal(engineProgress(off, false).notChecked, false);
+  const failed = { steps: { ...core, nuclei: { state: "could_not_check", reason: "selftest_failed" } } };
+  const rows = checksNotFinished(failed);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].key, "nuclei");
+  assert.match(rows[0].text, /its safety self-test did not pass, so it stayed off\. Your other results are not affected\./);
+  assert.match(emptyText(failed, false), /No findings from these checks/);   // the core checks all finished
+  assert.equal(checksNotFinished({ steps: { ...core, nuclei: { state: "not_applicable" } } }).length, 0);
+});

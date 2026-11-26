@@ -1,0 +1,9 @@
+{
+  "_help": "Nuclei templates that detect the SAME issue as one of our built-in checks. The value is the built-in check id ({path} is the matched path). The two findings are then merged into one with both sources. Add a row only when the built-in check really is the same finding.",
+  "templates": {
+    "apache-server-status": "exposed:apache-server-status:{path}",
+    "ds-store-file": "exposed:ds-store:{path}",
+    "wordpress-login": "exposed:login-form:{path}",
+    "backup-directory-listing": "exposed:index-of:{path}"
+  }
+}
