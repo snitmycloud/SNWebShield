@@ -200,6 +200,10 @@ export const api = {
   websiteScans: (id) => request(`/websites/${encodeURIComponent(id)}/scans?limit=10`),
   scanNow: (id, scanType = "standard") => jsonPost(`/websites/${encodeURIComponent(id)}/scan`, { scan_type: scanType }),
   scanDetail: (id, scanId) => request(`/websites/${encodeURIComponent(id)}/scans/${encodeURIComponent(scanId)}`),
+  scanComparison: (id, scanId) => request(`/websites/${encodeURIComponent(id)}/scans/${encodeURIComponent(scanId)}/comparison`),
+  acceptRisk: (id, fingerprint, reason, days) => jsonPost(`/websites/${encodeURIComponent(id)}/findings/${encodeURIComponent(fingerprint)}/accept`, { reason, days }),
+  stopAcceptingRisk: (id, fingerprint) => request(`/websites/${encodeURIComponent(id)}/findings/${encodeURIComponent(fingerprint)}/accept`, { method: "DELETE" }),
+  recheckFinding: (id, fingerprint) => jsonPost(`/websites/${encodeURIComponent(id)}/findings/${encodeURIComponent(fingerprint)}/recheck`, {}),
   removeWebsite: (id, confirmDomain) => jsonPost(`/websites/${encodeURIComponent(id)}/remove`, { confirm_domain: confirmDomain }),
 
   // Admin

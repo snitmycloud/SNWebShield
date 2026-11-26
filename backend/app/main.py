@@ -50,6 +50,8 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("Production hardening migration required: python -m alembic upgrade head")
     if not all(inspector.has_table(name) for name in ("scan_ports", "scan_technologies", "scan_observations")):
         raise RuntimeError("Detection migration required (back up first): python -m alembic upgrade head")
+    if not all(inspector.has_table(name) for name in ("finding_states", "finding_rechecks")):
+        raise RuntimeError("Finding lifecycle migration required (back up first): python -m alembic upgrade head")
     if not all(inspector.has_table(name) for name in ("scan_findings", "vuln_cache")):
         raise RuntimeError("Findings migration required (back up first): python -m alembic upgrade head")
     if not all(inspector.has_table(name) for name in ("scans", "account_tokens", "retired_tables")) or not {

@@ -129,7 +129,8 @@ def make_fetcher(ip: str, port: int, tls: bool, domain: str, *, timeout: float):
     return fetch
 
 
-async def check_exposed(fetch, *, guard=None, concurrency: int = 4, on_progress=None) -> ExposedResult:
+async def check_exposed(fetch, *, guard=None, concurrency: int = 4, on_progress=None, only_paths=None) -> ExposedResult:
+    """`only_paths`: check just these paths (a recheck of one finding); the soft-404 baseline is still learned first."""
     result = ExposedResult()
     probe = await fetch(f"/snwebshield-nf-{secrets.token_hex(6)}")
     baseline = None
@@ -152,7 +153,7 @@ async def check_exposed(fetch, *, guard=None, concurrency: int = 4, on_progress=
             if on_progress is not None:
                 on_progress(result)
 
-    tasks = [asyncio.create_task(one(*check)) for check in CHECKS]
+    tasks = [asyncio.create_task(one(*check)) for check in CHECKS if only_paths is None or check[0] in only_paths]
     try:
         await asyncio.gather(*tasks)
     except BaseException:

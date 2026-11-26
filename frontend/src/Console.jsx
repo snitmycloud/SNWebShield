@@ -10,6 +10,7 @@ import { DetectSections, ScanBanner, useScanDetail } from "./DetectResults.jsx";
 import FindingsPanel from "./FindingsPanel.jsx";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import ReportView from "./ReportView.jsx";
+import ChangesPanel from "./ChangesPanel.jsx";
 import { certificateView, gradeView, scanDuration, TABS } from "./lib/report.js";
 import { isFriendlyLimit, scanNowText } from "./lib/detect.js";
 import MonitoringPage from "./MonitoringPage.jsx";
@@ -277,7 +278,9 @@ function MonitorTab({ site, data }) {
 
 function ScanTabs({ site, scan, plan }) {
   const [tab, setTab] = useState("monitor");
-  const { data, error } = useScanDetail(site.id, scan);
+  const [version, setVersion] = useState(0);
+  const { data, error } = useScanDetail(site.id, scan, version);
+  const refresh = () => setVersion(v => v + 1);
   if (error) return <div className="form-error" role="alert"><AlertTriangle size={15} />{error}</div>;
   if (!data) return scan.status === "queued" ? null : <div className="loading-rows"><div /><div /></div>;
   const running = ["queued", "running"].includes(data.scan.status);
@@ -287,8 +290,8 @@ function ScanTabs({ site, scan, plan }) {
       <button key={t.id} role="tab" aria-selected={tab === t.id} data-testid={`tab-${t.id}`} className={tab === t.id ? "active" : ""} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
     {tab === "monitor" && <MonitorTab site={site} data={data} />}
     {tab === "detect" && <DetectSections data={data} running={running} />}
-    {tab === "vulnerabilities" && <FindingsPanel findings={data.findings || []} result={data.scan.result || {}} running={running} />}
-    {tab === "report" && <ReportView site={site} data={data} plan={plan} />}
+    {tab === "vulnerabilities" && <><ChangesPanel site={site} scan={scan} data={data} /><FindingsPanel findings={data.findings || []} result={data.scan.result || {}} running={running} site={site} onChanged={refresh} /></>}
+    {tab === "report" && <ReportView site={site} data={data} plan={plan} scan={scan} />}
   </>;
 }
 

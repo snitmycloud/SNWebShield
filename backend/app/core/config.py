@@ -14,6 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # accounts can use it, at most TEST_TARGET_SCANS_PER_DAY scans per target per UTC day, and every scan is audited.
 APPROVED_TEST_TARGETS = ("scanme.nmap.org",)  # published by the Nmap project for test scans
 TEST_TARGET_SCANS_PER_DAY = 10
+TEST_TARGET_RECHECKS_PER_DAY = 20   # re-scans of single findings on a test target, separate from its scans
 
 
 class Settings(BaseSettings):
@@ -104,6 +105,8 @@ class Settings(BaseSettings):
     scan_identify_budget_seconds: int = Field(default=90, ge=10, le=900)   # all vulnerability look-ups of one scan together
     scan_tls_probe_timeout_seconds: float = Field(default=2.0, ge=0.5, le=10)
 
+    recheck_time_limit_seconds: int = Field(default=120, ge=30, le=900)    # one "re-scan to confirm fix"
+
     # --- Score and grade (spec section 7): start at 100, subtract per open confirmed finding ---
     score_weight_critical: int = Field(default=25, ge=0, le=100)
     score_weight_high: int = Field(default=10, ge=0, le=100)
@@ -148,6 +151,10 @@ class Settings(BaseSettings):
     def approved_test_targets(self) -> tuple[str, ...]:
         """Read-only. There is no environment variable or API for this list."""
         return APPROVED_TEST_TARGETS
+
+    @property
+    def test_target_rechecks_per_day(self) -> int:
+        return TEST_TARGET_RECHECKS_PER_DAY
 
     @property
     def test_target_scans_per_day(self) -> int:

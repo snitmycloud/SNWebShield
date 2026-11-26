@@ -43,8 +43,8 @@ export function reportFields(finding) {
 
 // Confirmed findings (Info ones last), and the ones that need a human check. Needs-checking items never count in the score.
 export function reportGroups(findings) {
-  const { confirmed, needsChecking, info } = groupFindings(findings);
-  return { confirmed: [...confirmed, ...info], needsChecking };
+  const { confirmed, needsChecking, info, accepted, fixed } = groupFindings(findings);
+  return { confirmed: [...confirmed, ...info], needsChecking, accepted, fixed };
 }
 
 export function certificateView(certificate, now = Date.now()) {

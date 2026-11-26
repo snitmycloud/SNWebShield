@@ -27,11 +27,51 @@ export function reasonText(code) {
 }
 
 // Only confirmed findings above "info" count in the score. "Needs checking" findings never do.
+// A finding's life (set by the server): open, fixed (and how it was confirmed) or an accepted risk (with a reason and an end date).
+export function stateOf(finding) {
+  return finding?.state?.status || "open";
+}
+
+const dateOnly = iso => (iso ? String(iso).slice(0, 10) : "");
+
+export function stateText(finding) {
+  const state = finding?.state || {};
+  if (state.status === "fixed") return `Fixed on ${dateOnly(state.fixed_at)} ${state.fixed_how === "recheck" ? "(confirmed by a re-check)" : "(confirmed by a full scan)"}`;
+  if (state.status === "accepted") return `Accepted risk until ${dateOnly(state.accepted?.until)}`;
+  if (state.reopened) return "Open again (it came back after being fixed)";
+  return "Open";
+}
+
+export function reviewSoon(finding) {
+  return stateOf(finding) === "accepted" && finding.state.accepted?.review_soon === true;
+}
+
+// "2 new, 3 fixed, 14 unchanged" - the short summary at the top of a report. Nothing is said when there is no earlier scan to compare with.
+export function changesText(changes) {
+  if (!changes) return "";
+  const parts = [`${changes.new || 0} new`, `${changes.fixed || 0} fixed`, `${changes.unchanged || 0} unchanged`];
+  if (changes.could_not_confirm) parts.push(`${changes.could_not_confirm} could not be confirmed`);
+  return parts.join(", ");
+}
+
+export const ACCEPT_PERIODS = [30, 90, 180, 365];
+export const DEFAULT_ACCEPT_DAYS = 90;
+export const REASON_RANGE = [10, 300];
+
+export function reasonProblem(reason) {
+  const length = String(reason || "").trim().length;
+  return length >= REASON_RANGE[0] && length <= REASON_RANGE[1] ? "" : `Please give a reason of ${REASON_RANGE[0]} to ${REASON_RANGE[1]} characters.`;
+}
+
 export function groupFindings(findings) {
-  const list = Array.isArray(findings) ? findings : [];
+  const all = Array.isArray(findings) ? findings : [];
+  const accepted = all.filter(f => stateOf(f) === "accepted"), fixed = all.filter(f => stateOf(f) === "fixed");
+  // Fixed and accepted findings stay on the page but are not counted: they are listed in their own sections.
+  const list = all.filter(f => stateOf(f) === "open");
   const rank = f => SEVERITIES.indexOf(f.severity) * 1000 - (f.cvss_score || 0);
   const sorted = [...list].sort((a, b) => rank(a) - rank(b) || String(a.title).localeCompare(String(b.title)));
   return {
+    accepted: [...accepted].sort((a, b) => rank(a) - rank(b)), fixed: [...fixed].sort((a, b) => rank(a) - rank(b)),
     confirmed: sorted.filter(f => f.group === "findings" && f.severity !== "info"),
     needsChecking: sorted.filter(f => f.group === "needs_checking"),
     info: sorted.filter(f => f.group === "findings" && f.severity === "info"),

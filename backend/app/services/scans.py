@@ -50,6 +50,9 @@ MESSAGES = {
     "dns_lookup_failed": "We could not find this domain's address in DNS, so the scan could not run.",
     "private_or_reserved_address": "This domain points to a private or reserved network address. "
                                    "SNWebShield only scans public addresses.",
+    "recheck_fixed": "We re-checked this finding and it is no longer found. It is now marked as fixed.",
+    "recheck_still_open": "We re-checked this finding and it is still there.",
+    "recheck_unconfirmed": "We could not finish the re-check, so we cannot tell whether this is fixed. That is not the same as fixed. Please try again.",
     "ipv6_only": "This website only has an IPv6 address, which SNWebShield does not support yet, so it was not scanned. "
                  "It is not a problem with your website's security.",
     "cloud_metadata_address": "This domain points to a cloud internal address. SNWebShield will not scan it.",
@@ -81,7 +84,7 @@ def active_scan(db, website_id: int) -> Scan | None:
 
 
 def latest_scan(db, website_id: int) -> Scan | None:
-    return db.scalar(select(Scan).where(Scan.website_id == website_id).order_by(Scan.requested_at.desc()).limit(1))
+    return db.scalar(select(Scan).where(Scan.website_id == website_id, Scan.scan_type != "recheck").order_by(Scan.requested_at.desc()).limit(1))
 
 
 def is_test_target(website: Website) -> bool:
@@ -90,6 +93,8 @@ def is_test_target(website: Website) -> bool:
 
 def time_limit_for(scan_type: str) -> int:
     """Total time a scan may run before it ends incomplete: standard 15 minutes, full (all 65,535 ports) 60 minutes."""
+    if scan_type == "recheck":
+        return settings.recheck_time_limit_seconds
     return settings.scan_full_time_limit_seconds if scan_type == "full" else settings.scan_time_limit_seconds
 
 
@@ -282,6 +287,59 @@ def recover_expired(db, now=None) -> int:
     return count
 
 
+def rechecks_used_today(db, *, account_id: int | None = None, website_id: int | None = None, now=None) -> int:
+    from app.models.scan import FindingRecheck
+    query = select(func.count()).select_from(FindingRecheck).where(FindingRecheck.requested_at >= _day_start(now or utc_now()))
+    if account_id is not None:
+        query = query.where(FindingRecheck.requested_by_id == account_id)
+    if website_id is not None:
+        query = query.where(FindingRecheck.website_id == website_id)
+    return db.scalar(query) or 0
+
+
+def request_recheck(db, website: Website, account: Admin, fingerprint: str):
+    """"Re-scan to confirm fix": queue a focused scan of ONE finding. Owner only; the website must be verified; separate daily allowance
+    (plans.json `rechecks_per_day`, and 20 a day on a test target). Returns (scan, recheck)."""
+    from app.models.scan import FindingRecheck
+    from app.services import finding_states
+    if website.removed_at is not None or website.owner_id != account.id or not account.is_active:
+        raise HTTPException(403, "Only the owner of this website can re-check a finding.")
+    ownership.expire_manual(website)
+    if website.verification_status != "verified":
+        raise HTTPException(409, MESSAGES["not_verified"])
+    try:
+        state = finding_states.ensure_state(db, website.id, fingerprint)
+    except finding_states.StateError as error:
+        raise HTTPException(404, error.message) from error
+    if state.status == "fixed":
+        raise HTTPException(409, {"code": "already_fixed", "message": "This finding is already marked as fixed."})
+    if not finding_states.recheckable(state.check_id):
+        raise HTTPException(422, {"code": "not_rechecked_alone", "message": "This kind of finding cannot be re-checked on its own. Run a full scan instead."})
+    existing = active_scan(db, website.id)
+    if existing:
+        raise HTTPException(409, {"code": "scan_running", "message": "A scan is already running for this website. Wait for it to finish, then try again."})
+    now = utc_now()
+    plan = plans.get(account.plan)
+    allowance = int(plan.get("rechecks_per_day", 0))
+    if rechecks_used_today(db, account_id=account.id, now=now) >= allowance:
+        raise HTTPException(429, {"code": "recheck_limit", "message": f"Your {plan['label']} plan includes {allowance} re-checks a day. Try again after 00:00 UTC."})
+    if is_test_target(website) and rechecks_used_today(db, website_id=website.id, now=now) >= settings.test_target_rechecks_per_day:
+        raise HTTPException(429, {"code": "recheck_limit", "message": f"This test target can be re-checked at most {settings.test_target_rechecks_per_day} times a day (UTC). Try again tomorrow."})
+    scan = Scan(id=str(uuid4()), website_id=website.id, owner_id=website.owner_id, scan_type="recheck", trigger="manual", status="queued",
+                requested_at=now, progress={"step": "queued", "message": "Waiting to start\u2026"})
+    try:
+        with db.begin_nested():
+            db.add(scan)
+            db.flush()
+    except IntegrityError:
+        raise HTTPException(409, {"code": "scan_running", "message": "A scan is already running for this website. Wait for it to finish, then try again."})
+    recheck = FindingRecheck(scan_id=scan.id, website_id=website.id, fingerprint=fingerprint, check_id=state.check_id, requested_by_id=account.id, requested_at=now)
+    db.add(recheck)
+    engine.event(db, "recheck_requested", resource_id=website.id, actor_id=account.id, detail={
+        "scan_id": scan.id, "fingerprint": fingerprint, "check_id": state.check_id, "domain": website.domain, "test_target": is_test_target(website)})
+    return scan, recheck
+
+
 def claim(db, now=None):
     """Claim the oldest queued scan if fewer than SCAN_MAX_CONCURRENT are running. Returns (id, token) or None."""
     now = now or utc_now()
@@ -392,12 +450,62 @@ def _conclude(db, scan_id, token, website_id, state, guard, meta) -> str:
     return "completed"
 
 
+def _after_full_scan(db, scan_id: str) -> None:
+    """Update the website's finding states (new / fixed / reopened) from a finished full scan. Never lets a problem here spoil the scan."""
+    try:
+        from app.services import finding_states
+        scan = db.get(Scan, scan_id)
+        if scan is not None and scan.scan_type != "recheck" and scan.status in ("completed", "incomplete"):
+            finding_states.refresh_from_scan(db, scan)
+            db.commit()
+    except Exception:
+        db.rollback()
+
+
+def _conclude_recheck(db, scan_id, token, website_id, state, guard) -> str:
+    """End a recheck: Fixed only if the check finished and the finding is gone; a stop or a failed check is never 'fixed'."""
+    from sqlalchemy import select as _select
+    from app.models.scan import FindingRecheck, FindingState
+    from app.services import finding_states
+    recheck = db.scalar(_select(FindingRecheck).where(FindingRecheck.scan_id == scan_id))
+    state_row = db.scalar(_select(FindingState).where(FindingState.website_id == recheck.website_id, FindingState.fingerprint == recheck.fingerprint)) if recheck else None
+    result = getattr(state, "recheck", None) or {"outcome": "could_not_check", "detail": "not_started"}
+    stop = guard.stop
+
+    def done(*args, **kwargs):   # _finish expires the session, so write what we changed first
+        db.flush()
+        return _finish(*args, **kwargs)
+    info = {"fingerprint": recheck.fingerprint if recheck else None, "check_id": recheck.check_id if recheck else None, "detail": result.get("detail")}
+    if stop is not None:
+        if recheck is not None:
+            recheck.outcome, recheck.detail = "could_not_check", {**info, "stopped": stop.code}
+        key = STOP_MESSAGES.get(stop.code, "internal_error")
+        done(db, scan_id, token, "incomplete", stop.code, message=MESSAGES[key], stopped_step=state.current, recheck={**info, "outcome": "could_not_check"})
+        return "incomplete"
+    outcome = result.get("outcome")
+    now = utc_now()
+    if outcome == "absent" and state_row is not None:
+        scan_row = db.get(Scan, scan_id)
+        finding_states.mark_fixed_by_recheck(db, state_row, scan_row, now)
+        recheck.outcome, recheck.detail = "fixed", info
+        done(db, scan_id, token, "completed", "recheck_fixed", recheck={**info, "outcome": "fixed"})
+        return "completed"
+    if outcome == "present":
+        if state_row is not None:
+            state_row.last_seen_at = now
+        recheck.outcome, recheck.detail = "still_open", info
+        done(db, scan_id, token, "completed", "recheck_still_open", recheck={**info, "outcome": "still_open"})
+        return "completed"
+    recheck.outcome, recheck.detail = "could_not_check", info
+    done(db, scan_id, token, "incomplete", "recheck_unconfirmed", recheck={**info, "outcome": "could_not_check"})
+    return "incomplete"
+
+
 def execute(scan_id: str, token: str, *, resolve=ip_policy.resolve_public, verify=ownership.ensure_verified,
             detect=None) -> str:
     """Run one claimed scan. Returns the final status. Never raises."""
     from app.db.session import SessionLocal
     from app.services import detect_runner
-    detect = detect or detect_runner.run
     began = time.monotonic()
     deadline = began + settings.scan_time_limit_seconds
     ready = None
@@ -464,6 +572,12 @@ def execute(scan_id: str, token: str, *, resolve=ip_policy.resolve_public, verif
             return "incomplete"
 
     website_id, domain, ip, scan_type, meta = ready
+    if detect is None:
+        if scan_type == "recheck":
+            from app.services import recheck
+            detect = recheck.run
+        else:
+            detect = detect_runner.run
     state = detect_runner.ScanState()
     ctx = detect_runner.ScanContext(scan_id=scan_id, domain=domain, ip=ip, scan_type=scan_type,
                                     progress=lambda step, message: _write_progress(scan_id, token, step, message))
@@ -471,7 +585,11 @@ def execute(scan_id: str, token: str, *, resolve=ip_policy.resolve_public, verif
     try:
         asyncio.run(_drive(ctx, state, guard, detect))
         with SessionLocal() as db:
-            return _conclude(db, scan_id, token, website_id, state, guard, meta)
+            if scan_type == "recheck":
+                return _conclude_recheck(db, scan_id, token, website_id, state, guard)
+            result = _conclude(db, scan_id, token, website_id, state, guard, meta)
+            _after_full_scan(db, scan_id)
+            return result
     except Exception:
         try:
             with SessionLocal() as db:
@@ -505,6 +623,13 @@ class Worker:
             engine.heartbeat(db, WORKER_NAME)
             db.commit()
             recover_expired(db)
+        try:   # accepted risks whose period ended go back to Open (and are audit-logged)
+            from app.services import finding_states
+            with SessionLocal() as db:
+                finding_states.expire_due(db)
+                db.commit()
+        except Exception:
+            pass
         self.running = {f for f in self.running if not f.done()}
         while len(self.running) < settings.scan_max_concurrent:
             with SessionLocal() as db:

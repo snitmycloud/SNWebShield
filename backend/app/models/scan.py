@@ -135,6 +135,50 @@ class VulnCache(Base):
     last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
 
+class FindingState(Base):
+    """What became of one finding on one website across scans: open or fixed (and how), plus an optional risk acceptance."""
+    __tablename__ = "finding_states"
+    __table_args__ = (UniqueConstraint("website_id", "fingerprint", name="uq_finding_state"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    website_id: Mapped[int] = mapped_column(ForeignKey("websites.id", ondelete="RESTRICT"), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    check_id: Mapped[str] = mapped_column(String(120))
+    title: Mapped[str] = mapped_column(Text)
+    location: Mapped[str] = mapped_column(String(300))
+    severity: Mapped[str] = mapped_column(String(10))
+    status: Mapped[str] = mapped_column(String(10), default="open", server_default="open")   # open | fixed
+    first_seen_scan_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    first_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_seen_scan_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fixed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fixed_scan_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    fixed_how: Mapped[str | None] = mapped_column(String(12), nullable=True)     # recheck | full_scan
+    reopened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reopened_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    accepted_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    accepted_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    accepted_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    accepted_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
+
+class FindingRecheck(Base):
+    """One "Re-scan to confirm fix" request: the focused scan it ran and what it found."""
+    __tablename__ = "finding_rechecks"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    scan_id: Mapped[str] = mapped_column(ForeignKey("scans.id", ondelete="RESTRICT"), unique=True)
+    website_id: Mapped[int] = mapped_column(ForeignKey("websites.id", ondelete="RESTRICT"), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    check_id: Mapped[str] = mapped_column(String(120))
+    requested_by_id: Mapped[int] = mapped_column(Integer)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    outcome: Mapped[str | None] = mapped_column(String(20), nullable=True)      # fixed | still_open | could_not_check
+    detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
 class RetiredTable(Base):
     """Tables of the removed written-permission system. Kept with their data, no longer used by code."""
     __tablename__ = "retired_tables"
