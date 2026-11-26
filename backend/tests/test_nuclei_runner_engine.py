@@ -326,8 +326,10 @@ async def fake_run(binary, templates, targets, proxy_url, guard=None, **kw):
 fake_run.results = []
 
 
-def test_it_is_off_by_default():
-    assert settings.nuclei_enabled is False
+def test_it_is_on_by_default_in_development_but_the_test_suite_runs_with_it_off():
+    from app.core.config import Settings
+    assert Settings.model_fields["nuclei_enabled"].default is True       # the development default
+    assert settings.nuclei_enabled is False                               # tests/conftest.py switches it off (NUCLEI_ENABLED=false)
 
 
 def test_disabled_means_skipped_and_nothing_runs(monkeypatch):

@@ -4,6 +4,7 @@ os.environ["ASSESSMENT_REMOTE_DOCKER_ENABLED"] = "false"
 os.environ["ASSESSMENT_REMOTE_IMAGE_ID"] = ""
 os.environ["ASSESSMENT_NMAP_ENABLED"] = "false"
 os.environ["ASSESSMENT_NMAP_IMAGE_ID"] = ""
+os.environ["NUCLEI_ENABLED"] = "false"   # the development default is ON; tests that need it switch it on themselves
 from pathlib import Path
 from tempfile import TemporaryDirectory
 

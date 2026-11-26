@@ -304,22 +304,48 @@ async def run(ctx: ScanContext, state: ScanState, guard) -> None:
     await stage("subdomains", subdomains_step)
 
     # 7+. IDENTIFY engines: they use only what the steps above found, and only the one pinned IP.
+    # An engine marked `parallel` (Nuclei) starts first and runs at the same time as the others, so a slow database or a long
+    # template run never adds up. Its results are merged when it finishes; a stop cancels it with everything else.
     _engine_names()
-    for item in engines.registered():
-        if not ports_ok:
-            state.steps[item.name] = {"state": "skipped", "reason": "ports_not_checked"}
-            continue
 
-        def publish(items, engine_name=item.name):
-            """Partial results: shown on the page as soon as an engine has them, before it finishes (a slow database never blocks)."""
-            save_findings(ctx, finding_format.merge(state.findings + list(items)))
+    def publish(items):
+        """Partial results: shown on the page as soon as an engine has them, before it finishes (a slow database never blocks)."""
+        save_findings(ctx, finding_format.merge(state.findings + list(items)))
 
-        async def engine_step(item=item):
-            state.publish = publish
-            result = await engines.run_engine(item, ctx, state, guard)
-            state.steps[item.name] = {"state": result.state, **result.detail}
-            state.findings = finding_format.merge(state.findings + result.findings)
-            save_findings(ctx, state.findings)
+    async def run_engine_step(item):
+        result = await engines.run_engine(item, ctx, state, guard)
+        state.steps[item.name] = {"state": result.state, **result.detail}
+        state.findings = finding_format.merge(state.findings + result.findings)
+        save_findings(ctx, state.findings)
 
-        await stage(item.name, engine_step)
+    state.publish = publish
+    background: dict[str, asyncio.Task] = {}
+    try:
+        for item in engines.registered():
+            if not ports_ok:
+                state.steps[item.name] = {"state": "skipped", "reason": "ports_not_checked"}
+            elif getattr(item, "parallel", False):
+                background[item.name] = asyncio.create_task(run_engine_step(item))
+        for item in engines.registered():
+            if ports_ok and not getattr(item, "parallel", False):
+                await stage(item.name, lambda item=item: run_engine_step(item))
+        for name, task in background.items():
+            if not task.done():
+                state.current = name
+                ctx.progress(name, f"{STEP_LABELS[name]}\u2026")
+            try:
+                await task
+            except (ScanStopped, asyncio.CancelledError):
+                state.steps[name] = {"state": "stopped"}
+                raise
+            except Exception:
+                state.steps[name] = {"state": "could_not_check", "reason": "unexpected_error"}
+    except BaseException:
+        for name, task in background.items():
+            task.cancel()
+        await asyncio.gather(*background.values(), return_exceptions=True)
+        for name, task in background.items():
+            if name not in state.steps:
+                state.steps[name] = {"state": "stopped"}
+        raise
     state.current = None

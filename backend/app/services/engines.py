@@ -23,6 +23,7 @@ class EngineResult:
 
 
 class Engine:
+    parallel = False         # True: starts together with the other engines and is awaited at the end (Nuclei)
     name = "engine"          # step key, e.g. "configuration"
     label = "Running checks"  # progress text
     title = "Checks"         # plain name for the results panel

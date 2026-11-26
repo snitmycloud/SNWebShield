@@ -265,6 +265,7 @@ def select_templates(manifest: dict, mode: str, tokens: set[str], rules=None, ma
 
 class NucleiEngine(engines.Engine):
     name = "nuclei"
+    parallel = True          # runs at the same time as the vulnerability and end-of-life steps
     label = "Running extra template checks"
     title = "Extra checks (Nuclei)"
 
@@ -278,6 +279,8 @@ class NucleiEngine(engines.Engine):
             binary = nuclei_lock.verified_binary()
             manifest = verify_templates()
         except nuclei_lock.LockError as error:
+            if error.code == "binary_not_installed":   # not installed here (for example a fresh checkout): simply off, no note
+                return engines.EngineResult("skipped", [], {"reason": "not_installed"})
             return engines.EngineResult("could_not_check", [], {"reason": error.code})
         except TemplateSetError as error:
             return engines.EngineResult("could_not_check", [], {"reason": error.code})

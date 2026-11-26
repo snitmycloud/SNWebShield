@@ -103,8 +103,7 @@ def test_the_resolver_file_names_only_the_loopback_address_and_a_subset_becomes_
 
 
 def test_the_run_limits():
-    assert settings.nuclei_run_seconds == 100 and settings.nuclei_deep_run_seconds == 600 and settings.nuclei_rate_limit == 25
-    assert settings.nuclei_enabled is False
+    assert settings.nuclei_run_seconds == 180 and settings.nuclei_deep_run_seconds == 600 and settings.nuclei_rate_limit == 25
 
 
 # --- the engine uses the selection ------------------------------------------------------------------------------------------------------------------

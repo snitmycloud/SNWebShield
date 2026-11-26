@@ -84,7 +84,10 @@ class Settings(BaseSettings):
     scan_banner_max_bytes: int = Field(default=1024, ge=64, le=8192)
     scan_http_body_max_bytes: int = Field(default=256 * 1024, ge=4096, le=2 * 1024 * 1024)
     scan_http_request_timeout_seconds: float = Field(default=3.0, ge=0.5, le=15)
-    scan_dns_timeout_seconds: float = Field(default=3.0, ge=0.5, le=15)
+    scan_dns_timeout_seconds: float = Field(default=2.5, ge=0.5, le=15)      # per attempt: short, because a failing look-up is retried
+    scan_dns_attempts: int = Field(default=3, ge=1, le=5)                     # 1 try + 2 retries before a look-up is "could not check"
+    # A SECOND resolver tried on the retry (plain DNS, never DNS-over-HTTPS). Comma-separated; empty = only this machine's resolvers.
+    scan_dns_fallback_resolvers: str = "1.1.1.1,9.9.9.9"
     crtsh_timeout_seconds: float = Field(default=6.0, ge=1, le=15)           # short: never holds up the scan
     # How often a running scan re-reads the website, owner and verification, so it can stop cleanly (seconds).
     scan_guard_poll_seconds: float = Field(default=1.0, ge=0.2, le=10)
@@ -112,10 +115,10 @@ class Settings(BaseSettings):
     grade_d_min: int = Field(default=40, ge=0, le=100)
 
     # --- Nuclei engine (Phase 3B). OFF by default; it also needs its self-test to pass at run time. ---
-    nuclei_enabled: bool = False
+    nuclei_enabled: bool = True      # development default: ON, but it only runs while its self-test passes (and is skipped if the binary is not installed)
     nuclei_dir: Path = Path.home() / "SNWebShield-Private" / "engines"          # where the pinned binary is installed (outside the repo)
     nuclei_log_dir: Path = Path.home() / "SNWebShield-Private" / "nuclei-logs"  # one proxy log per scan
-    nuclei_run_seconds: int = Field(default=100, ge=30, le=1800)                # hard limit for one QUICK Nuclei run (a quick run normally takes about a minute)
+    nuclei_run_seconds: int = Field(default=180, ge=30, le=1800)                # hard limit for one QUICK Nuclei run (it runs alongside the vulnerability and end-of-life steps)
     nuclei_deep_run_seconds: int = Field(default=600, ge=60, le=3600)           # hard limit for a DEEP run (all templates; scheduled deep scans, Phase 5)
     nuclei_max_quick_cves: int = Field(default=300, ge=0, le=1000)
     nuclei_rate_limit: int = Field(default=25, ge=1, le=50)                     # requests per second (to the one host)

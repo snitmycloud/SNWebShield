@@ -156,3 +156,136 @@ def test_a_slow_crtsh_never_holds_the_scan_up(monkeypatch):
 
 def test_the_short_timeout_is_the_default():
     assert settings.crtsh_timeout_seconds <= 8
+
+
+# --- reliability: retries, a second resolver, and only then "could not check" -----------------------------------------------------------------------
+
+class Resolvers:
+    """Stands in for ONE resolver attempt (detect_dns._query). `script`: a list per call of 'ok' / a list of texts / an exception."""
+    def __init__(self, script):
+        self.script, self.calls = list(script), []
+
+    async def __call__(self, nameservers, name, rdtype):
+        self.calls.append(nameservers)
+        step = self.script[min(len(self.calls) - 1, len(self.script) - 1)]
+        if isinstance(step, BaseException):
+            raise step
+        return step
+
+
+def system_lookup(monkeypatch, script, attempts=3, fallback="1.1.1.1,9.9.9.9"):
+    fake = Resolvers(script)
+    monkeypatch.setattr(dns_checks, "_query", fake)
+    monkeypatch.setattr(dns_checks.settings, "scan_dns_attempts", attempts)
+    monkeypatch.setattr(dns_checks.settings, "scan_dns_fallback_resolvers", fallback)
+    return fake
+
+
+def test_a_clean_first_answer_is_used_at_once_and_never_retried(monkeypatch):
+    fake = system_lookup(monkeypatch, [["v=spf1 -all"]])
+    assert asyncio.run(dns_checks.system_lookup("example.com", "TXT")) == ["v=spf1 -all"] and fake.calls == [None]
+
+
+def test_a_clean_no_record_answer_is_not_retried_and_stays_missing(monkeypatch):
+    fake = system_lookup(monkeypatch, [[]])
+    assert asyncio.run(dns_checks.system_lookup("example.com", "CAA")) == [] and len(fake.calls) == 1
+
+
+def test_a_timeout_is_retried_with_the_second_resolvers_and_can_succeed(monkeypatch):
+    fake = system_lookup(monkeypatch, [TimeoutError(), ["v=DMARC1; p=none"]])
+    assert asyncio.run(dns_checks.system_lookup("_dmarc.example.com", "TXT")) == ["v=DMARC1; p=none"]
+    assert fake.calls == [None, ["1.1.1.1", "9.9.9.9"]]                  # this machine's resolver first, then the second resolvers
+
+
+def test_the_third_attempt_goes_back_to_this_machines_resolver(monkeypatch):
+    fake = system_lookup(monkeypatch, [TimeoutError(), OSError("servfail"), ["ok"]])
+    assert asyncio.run(dns_checks.system_lookup("example.com", "MX")) == ["ok"]
+    assert fake.calls == [None, ["1.1.1.1", "9.9.9.9"], None]
+
+
+def test_only_after_every_attempt_failed_does_the_lookup_raise(monkeypatch):
+    fake = system_lookup(monkeypatch, [TimeoutError("slow")])
+    with pytest.raises(TimeoutError):
+        asyncio.run(dns_checks.system_lookup("example.com", "TXT"))
+    assert len(fake.calls) == 3                                           # one try and two retries, no more
+
+
+def test_without_second_resolvers_this_machines_resolver_is_retried(monkeypatch):
+    fake = system_lookup(monkeypatch, [TimeoutError()], fallback="")
+    with pytest.raises(TimeoutError):
+        asyncio.run(dns_checks.system_lookup("example.com", "TXT"))
+    assert fake.calls == [None, None, None]
+
+
+def test_the_number_of_attempts_is_a_setting(monkeypatch):
+    fake = system_lookup(monkeypatch, [TimeoutError()], attempts=1)
+    with pytest.raises(TimeoutError):
+        asyncio.run(dns_checks.system_lookup("example.com", "TXT"))
+    assert len(fake.calls) == 1
+    assert dns_checks.settings.scan_dns_timeout_seconds == 2.5            # short per-attempt timeout
+
+
+def test_cancellation_is_never_swallowed_by_the_retries(monkeypatch):
+    fake = system_lookup(monkeypatch, [asyncio.CancelledError()])
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(dns_checks.system_lookup("example.com", "TXT"))
+    assert len(fake.calls) == 1
+
+
+def test_a_record_that_needed_a_retry_is_a_normal_present_record_and_the_scan_step_stays_ok(monkeypatch):
+    monkeypatch.setattr(dns_checks, "lookup", dns_checks.system_lookup)
+    script = {"calls": 0}
+
+    async def flaky(nameservers, name, rdtype):
+        script["calls"] += 1
+        if script["calls"] % 2 == 1:
+            raise TimeoutError("first attempt of every look-up fails")
+        return ["v=spf1 include:_spf.example.net ~all"] if (name, rdtype) == ("example.com", "TXT") else []
+    monkeypatch.setattr(dns_checks, "_query", flaky)
+    monkeypatch.setattr(dns_checks.settings, "scan_dns_attempts", 3)
+    rows = {r["key"]: r for r in asyncio.run(dns_checks.check_dns("example.com"))}
+    assert rows["spf"]["status"] == "present" and all(r["status"] != "could_not_check" for r in rows.values())
+
+
+def test_when_all_resolvers_fail_every_record_is_could_not_check_never_missing(monkeypatch):
+    monkeypatch.setattr(dns_checks, "lookup", dns_checks.system_lookup)
+    system_lookup(monkeypatch, [TimeoutError()])
+    rows = {r["key"]: r for r in asyncio.run(dns_checks.check_dns("example.com"))}
+    assert {k: v["status"] for k, v in rows.items()} == {"spf": "could_not_check", "dmarc": "could_not_check", "dkim": "could_not_check",
+                                                           "caa": "could_not_check", "mx": "could_not_check"}
+
+
+def test_dkim_gives_up_after_three_failures_in_a_row_instead_of_waiting_through_every_selector(monkeypatch):
+    asked = []
+
+    async def down(name, rdtype):
+        asked.append(name)
+        raise TimeoutError()
+    monkeypatch.setattr(dns_checks, "lookup", down)
+    rows = {r["key"]: r for r in asyncio.run(dns_checks.check_dns("example.com"))}
+    dkim_lookups = [n for n in asked if "_domainkey" in n]
+    assert len(dkim_lookups) == 3 and rows["dkim"]["status"] == "could_not_check"
+
+
+def test_dkim_gives_up_early_but_never_claims_missing_for_selectors_it_did_not_ask(monkeypatch):
+    names = list(dns_checks.DKIM_SELECTORS)
+
+    async def partly(name, rdtype):
+        if "_domainkey" in name and name.split(".")[0] in names[:2]:
+            return []                                                     # two clean "none" answers, then the resolver stops answering
+        if "_domainkey" in name:
+            raise TimeoutError()
+        return []
+    monkeypatch.setattr(dns_checks, "lookup", partly)
+    rows = {r["key"]: r for r in asyncio.run(dns_checks.check_dns("example.com"))}
+    assert rows["dkim"]["status"] == "could_not_check" and rows["dkim"]["data"]["selectors_checked"] < len(names)
+
+
+def test_a_scan_with_a_flaky_resolver_completes_instead_of_going_incomplete(monkeypatch):
+    # The whole-scan rule: a DNS record that needed retries is fine; only a total failure makes the step (and the scan) incomplete.
+    from app.services.detect_runner import ScanState
+    state = ScanState()
+    state.steps = {"dns": {"state": "ok"}}
+    assert state.incomplete_steps() == []
+    state.steps = {"dns": {"state": "could_not_check", "unchecked": ["dmarc"]}}
+    assert state.incomplete_steps() == ["dns"]
