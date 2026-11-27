@@ -593,8 +593,11 @@ def test_supervisor_survives_a_role_that_cannot_start():
     assert s.roles[0].state == "failed_to_start" and s.roles[0].next_start > now["t"]
 
 
-def test_only_one_supervisor_can_run_at_a_time():
+def test_only_one_supervisor_can_run_at_a_time(monkeypatch):
     from app.cli import supervisor as sup
+    with __import__("socket").socket() as probe:   # a free port of its own: the real supervisor may be running on this computer
+        probe.bind(("127.0.0.1", 0))
+        monkeypatch.setattr(sup, "LOCK_PORT", probe.getsockname()[1])
     first = sup.acquire_lock()
     try:
         assert first is not None and sup.acquire_lock() is None
@@ -637,3 +640,51 @@ def test_the_monitor_allowlist_limits_scheduled_scans_and_uptime_checks(client, 
         assert allowed_domain in checked and all(d == allowed_domain for d in checked)
     monkeypatch.setattr(settings, "monitor_domain_allowlist", "")
     assert settings.monitor_may_touch("anything.example.com")   # empty = every verified website (production)
+
+
+# --- no valid verification, no contact: the monitor, the scheduler and scans skip such websites even with an empty allowlist -----------------------
+
+def _break(db, site_id, how, owner_id):
+    site = db.get(Website, site_id)
+    if how == "unverified":
+        site.verification_status = "unverified"
+    elif how == "lost":
+        site.verification_status = "lost"
+    elif how == "manual_expired":   # still marked verified, but the 24 hours are over and nothing has swept it yet
+        site.verification_method, site.verification_status = "manual", "verified"
+        site.verification_result = {"expires_at": (utc_now() - timedelta(minutes=1)).isoformat()}
+    elif how == "manual_no_expiry":   # an unreadable expiry fails closed
+        site.verification_method, site.verification_status, site.verification_result = "manual", "verified", {}
+    elif how == "fake_test_target":   # marked as a test target but not on the approved list
+        site.verification_method, site.verification_status = "test_target", "verified"
+    elif how == "owner_disabled":
+        db.get(Admin, owner_id).is_active = False
+    elif how == "removed":
+        site.removed_at = utc_now()
+    else:
+        raise AssertionError(how)
+
+
+@pytest.mark.parametrize("how", ["unverified", "lost", "manual_expired", "manual_no_expiry", "fake_test_target", "owner_disabled", "removed"])
+def test_websites_without_valid_verification_are_never_scheduled_checked_or_scanned(client, monkeypatch, how):
+    monkeypatch.setattr(settings, "monitor_domain_allowlist", "")   # the empty allowlist must not widen anything
+    owner, _, _, bad, _ = verified_site(client, plan="pro")
+    good_owner, _, _, good, good_domain = verified_site(client, plan="pro")
+    for account, site in ((owner, bad), (good_owner, good)):
+        add_scan(site, account, when=utc_now() - timedelta(days=5))
+    with SessionLocal() as db:
+        _break(db, bad, how, owner)
+        db.commit()
+        checked = []
+
+        async def checker(domain):
+            checked.append(domain)
+            return {"ok": True, "status_code": 200, "response_ms": 1, "scheme": "https"}
+        bad_domain = db.get(Website, bad).domain
+        scheduling.run_due(db, utc_now(), limit=100)
+        uptime.tick(db, utc_now(), checker=checker)
+        queued = set(db.scalars(select(Scan.website_id).where(Scan.trigger == "scheduled")))
+        assert bad not in queued and bad_domain not in checked and db.get(UptimeState, bad) is None
+        assert good in queued and good_domain in checked   # the control: a properly verified website is still handled
+        with pytest.raises(Exception):   # and a direct scan request is refused too
+            scans.request_scan(db, db.get(Website, bad), "manual")

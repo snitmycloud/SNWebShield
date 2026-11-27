@@ -16,7 +16,7 @@ from app.core.time import as_utc, utc_now
 from app.models.admin import Admin
 from app.models.scan import Scan
 from app.models.website import Website
-from app.services import plans, scans
+from app.services import ownership, plans, scans
 
 DEFAULT_HOURS = {"weekly": 168, "daily": 24}
 
@@ -88,7 +88,7 @@ def run_due(db, now: datetime | None = None, limit: int | None = None) -> dict:
             owner = db.get(Admin, website.owner_id)
             if not settings.monitor_may_touch(website.domain):
                 continue
-            if owner is None or not owner.is_active or not is_due(db, website, owner, now):
+            if owner is None or not owner.is_active or not ownership.has_valid_verification(db, website, now) or not is_due(db, website, owner, now):
                 continue
             if scans.active_scan(db, website.id) is not None:
                 continue

@@ -144,6 +144,8 @@ def request_scan(db, website: Website, trigger: str, scan_type: str = "standard"
     ownership.expire_manual(website)   # a manual verification that ran out no longer counts
     if website.removed_at is not None or website.verification_status != "verified" or not website.owner_id:
         raise HTTPException(409, MESSAGES["not_verified"])
+    if not ownership.has_valid_verification(db, website):   # owner disabled, fake test target, ... : never even queued
+        raise HTTPException(409, MESSAGES["not_verified"])
     existing = active_scan(db, website.id)
     if existing:
         return existing

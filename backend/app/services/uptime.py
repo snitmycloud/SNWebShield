@@ -18,7 +18,7 @@ from app.core.config import settings
 from app.core.time import as_utc, utc_now
 from app.models.watch import UptimeCheck, UptimeState
 from app.models.website import Website
-from app.services import alerts, ip_policy, netio, scans, x509_lite
+from app.services import alerts, ip_policy, netio, ownership, scans, x509_lite
 
 MAX_HEAD = 4096
 _last_prune = {"at": 0.0}
@@ -155,7 +155,7 @@ def due_websites(db, now) -> list[Website]:
     due = []
     states = {s.website_id: s for s in db.scalars(select(UptimeState))}
     for website in db.scalars(select(Website).where(Website.verification_status == "verified", Website.removed_at.is_(None), Website.domain.is_not(None))):
-        if not settings.monitor_may_touch(website.domain):
+        if not settings.monitor_may_touch(website.domain) or not ownership.has_valid_verification(db, website, now):
             continue
         state = states.get(website.id)
         if state is None or state.last_checked_at is None or (now - as_utc(state.last_checked_at)).total_seconds() >= interval_for(website):
