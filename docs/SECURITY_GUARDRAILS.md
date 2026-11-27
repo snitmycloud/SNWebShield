@@ -1,53 +1,28 @@
-# SNWebShield — Security and Safety Guardrails
+# SNWebShield security and safety guardrails
 
-These guardrails are mandatory design requirements, not optional enhancements.
+Mandatory design rules. The engineering version is in `CLAUDE.md`.
 
-## Assessment authorisation
+## Who may be scanned
 
-- No assessment may begin without written, current authorisation from an appropriately authorised client representative.
-- A public URL, public DNS record, hosting login or domain registration does not independently establish permission to penetration-test an asset.
-- Every asset and test activity must be within the approved engagement scope.
-- Scope changes require documented approval.
+- A website is scanned (or probed by uptime checks) only after its owner has verified ownership with a DNS TXT record, a file or a meta tag. Verification is re-checked before every scan (24-hour cache) and right before execution; scans pause when it is lost.
+- An administrator can verify a website by hand for 24 hours, but only with the owner's name, how they consented (email, written letter, in person) and a real reason (20+ characters); all of it is audit-logged.
+- Test targets are a fixed list in code (`scanme.nmap.org`), usable only by admin accounts, with a daily limit.
 
-## Safe testing
+## Safe scanning
 
-- Default to non-destructive testing and low request rates.
-- Do not conduct denial-of-service, stress testing, destructive actions, persistence, lateral movement, credential theft, data exfiltration or tests against third-party payment/identity services as part of the standard service.
-- Use client-provided test accounts and synthetic data.
-- Stop testing if service instability, unexpected access to sensitive data or an out-of-scope system is encountered.
-- Notify the client through the agreed emergency contact process.
+- Non-destructive checks only; low request rates; per-scan time limits. No exploitation, denial of service, brute forcing or fuzzing. Nuclei templates that could do these are rejected by the template validator.
+- Never contact private, loopback, link-local, multicast, cloud-metadata or this server's own addresses. DNS is resolved once per scan and the address pinned; redirects to another host are not followed.
+- No arbitrary URL from a user starts a scan; no shell commands from an API; fixed argument lists for the one external binary.
+- Everything from a target (headers, pages, banners, scanner output) is untrusted data, shown as escaped text.
+- A check that fails or times out is "could not check", never "safe".
 
 ## Application protections
 
-- Deny by default and enforce server-side role and tenant checks.
-- Require MFA for privileged accounts where available.
-- Protect sessions, CSRF-sensitive actions and administrative endpoints.
-- Rate-limit authentication and sensitive actions.
-- Keep secrets out of source code and logs.
-- Use HTTPS and secure cookie settings in deployed environments.
+- Deny by default; server-side ownership and role checks on every route; other users get 404, not 403, for resources they cannot see.
+- Argon2 passwords, a password policy, login and sign-up rate limits, server-side logout, signed short-lived tokens, strict security headers and CORS.
+- Secrets stay out of source code, logs and chat; `.env` is private.
+- A complete audit log for authentication, ownership checks, scans, admin actions and remediation (accepted risks, re-checks).
 
-## Scanner protections (future phase)
+## Claims
 
-- No user-supplied arbitrary URL may trigger a scan.
-- Resolve and validate targets against approved scope before execution.
-- Block loopback, private, link-local, multicast and metadata-service destinations by default.
-- Revalidate redirects and DNS answers to reduce SSRF and DNS-rebinding risk.
-- Use strict allowlists, egress filtering, low rate limits and execution timeouts.
-- Run scanners in isolated, least-privilege workers with no access to application secrets or database networks.
-- Do not implement arbitrary shell command execution through an API.
-- Treat tool output as untrusted and require analyst verification.
-
-## Evidence and privacy
-
-- Collect the minimum evidence necessary to substantiate findings.
-- Redact passwords, API keys, session tokens, personal information and customer content.
-- Store evidence in private encrypted storage with access logging.
-- Define and contractually communicate retention, deletion and incident-notification processes.
-- Restrict report downloads to authorised client users.
-
-## Quality and claims
-
-- Distinguish confirmed vulnerabilities, potential issues, observations and false positives.
-- Record methodology, tool versions, coverage, limitations and exclusions.
-- Do not promise that a website is completely secure.
-- Do not claim certification, accreditation or regulatory empanelment unless formally granted by the relevant authority.
+- Reports list what automated checks found. They never say a website is "secure" or "clean", and a good score is not a proof.

@@ -143,18 +143,6 @@ async function request(path, options = {}) {
   return binary ? response.blob() : payload;
 }
 
-// Existing list APIs return pages of up to 100. Keep the current UI search and
-// relationships complete while retaining the public paginated API contract.
-async function allPages(path, filters = {}) {
-  const rows = [];
-  for (let offset = 0; ; offset += 100) {
-    const params = new URLSearchParams({ ...filters, limit: "100", offset: String(offset) });
-    const page = await request(`${path}?${params}`);
-    rows.push(...page);
-    if (page.length < 100) return rows;
-  }
-}
-
 const jsonPost = (path, data) =>
   request(path, {
     method: "POST",
@@ -192,7 +180,6 @@ export const api = {
 
   // Websites and ownership verification (self-service)
   myWebsites: () => request("/websites?limit=200"),
-  allWebsites: () => request("/websites?limit=200&all_accounts=true"),
   website: (id) => request(`/websites/${encodeURIComponent(id)}`),
   addWebsite: (domain) => jsonPost("/websites", { domain }),
   verifyManually: (id, { ownerName, consent, reason }) => jsonPost(`/websites/${encodeURIComponent(id)}/verify-manual`, { owner_name: ownerName, consent_method: consent, reason }),
@@ -235,95 +222,8 @@ export const api = {
     }
   },
 
-  // Monitoring uses the shared execution engine; API requests only queue work.
-  monitoringOverview: () => request("/monitoring/overview"),
-  monitoringHistory: (id, collection, offset = 0) => request(`/websites/${id}/monitoring/${collection}?limit=50&offset=${offset}`),
-  monitoringConfig: (id) => request(`/websites/${id}/monitoring`),
-  monitoringAction: (id, action) => jsonPost(`/websites/${id}/monitoring/${action}`, {}),
-  stopMonitoring: () => jsonPost("/monitoring/stop", {}),
-
-  // Legacy assessments (staff, read-only; stop actions only).
-  portWatch: id => request(`/port-watch/${encodeURIComponent(id)}`),
-  disablePortWatch: (id, data) => jsonPost(`/port-watch/${encodeURIComponent(id)}/disable`, data),
-  websiteLifecycle: id => request(`/websites/${encodeURIComponent(id)}/lifecycle`),
-  orphanContainers: () => request("/assessments/orphan-containers"),
-  assessmentWorkerStatus: () => request("/assessments/worker-status"),
-  getAssessments: (websiteId = "", offset = 0) => request(`/assessments?limit=50&offset=${offset}${websiteId ? `&website_id=${websiteId}` : ""}`),
-  downloadAssessmentReport: id => request(`/assessments/${id}/report/download`, { binary: true }),
-  assessmentReviews: id => request(`/assessments/${id}/reviews`),
-  reviewObservation: (id, check, data) => jsonPost(`/assessments/${id}/reviews/${encodeURIComponent(check)}`, data),
-  observationReviewHistory: (id, check, offset = 0) => request(`/assessments/${id}/reviews/${encodeURIComponent(check)}/history?limit=50&offset=${offset}`),
-  createReviewedReport: id => jsonPost(`/assessments/${id}/reviewed-reports`, {}),
-  downloadReviewedReport: (id, exportId) => request(`/assessments/${id}/reviewed-reports/${exportId}/download`, { binary: true }),
-  getAssessment: (id) => request(`/assessments/${id}`),
-  assessmentHistory: (id, collection, offset = 0) => request(`/assessments/${id}/${collection}?limit=50&offset=${offset}`),
-  cancelAssessment: (id, data) => jsonPost(`/assessments/${id}/cancel`, data),
-
-  getFindings: (filters = {}, offset = 0) => {
-    const params = new URLSearchParams({ limit: "50", offset: String(offset) });
-    for (const [key, value] of Object.entries(filters)) if (value !== "" && value !== false && value != null) params.set(key, String(value));
-    return request(`/findings?${params}`);
-  },
-  findingDetail: (id, check) => request(`/findings/${id}/${encodeURIComponent(check)}`),
-  setFindingDeadline: (id, check, data) => jsonPost(`/findings/${id}/${encodeURIComponent(check)}/deadline`, data),
-  findingDeadlineHistory: (id, check, offset = 0) => request(`/findings/${id}/${encodeURIComponent(check)}/deadline-history?limit=50&offset=${offset}`),
-
-  // Module E: normalised, deduplicated vulnerabilities. Ingestion reads stored reports only.
-  getVulnerabilities: (filters = {}, offset = 0) => {
-    const params = new URLSearchParams({ limit: "50", offset: String(offset) });
-    for (const [key, value] of Object.entries(filters)) if (value !== "" && value != null) params.set(key, String(value));
-    return request(`/vulnerabilities?${params}`);
-  },
-  vulnerability: id => request(`/vulnerabilities/${encodeURIComponent(id)}`),
-  vulnerabilityHistory: (id, collection, offset = 0) => request(`/vulnerabilities/${encodeURIComponent(id)}/${collection === "occurrences" ? "occurrences" : "events"}?limit=20&offset=${offset}`),
-  ingestVulnerabilities: (assessmentId = null) => jsonPost("/vulnerabilities/ingest", assessmentId ? { assessment_id: assessmentId } : {}),
-  commentVulnerability: (id, comment) => jsonPost(`/vulnerabilities/${encodeURIComponent(id)}/comments`, { comment }),
-  decideVulnerability: (id, data) => jsonPost(`/vulnerabilities/${encodeURIComponent(id)}/validation`, data),
-
-  // Module F: analyst workbench (analyst role required by the API)
-  workbenchQueue: (filters = {}, offset = 0) => {
-    const params = new URLSearchParams({ limit: "50", offset: String(offset) });
-    for (const [key, value] of Object.entries(filters)) if (value !== "" && value != null) params.set(key, String(value));
-    return request(`/workbench/queue?${params}`);
-  },
-  workbenchDetail: id => request(`/workbench/${encodeURIComponent(id)}`),
-  workbenchAudit: id => request(`/workbench/${encodeURIComponent(id)}/audit?limit=100`),
-  saveWorkbenchAssessment: (id, data) => jsonPost(`/workbench/${encodeURIComponent(id)}/assessment`, data),
-  signoffWorkbench: (id, data) => jsonPost(`/workbench/${encodeURIComponent(id)}/signoff`, data),
-
-  // Module G: VAPT reports (report role required by the API). PDFs are fetched with the bearer token.
-  reportEligibility: assessmentId => request(`/reports/eligibility?assessment_id=${encodeURIComponent(assessmentId)}`),
-  generateReport: assessmentId => jsonPost("/reports", { assessment_id: assessmentId }),
-  reports: (filters = {}, offset = 0) => {
-    const params = new URLSearchParams({ limit: "50", offset: String(offset) });
-    for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
-    return request(`/reports?${params}`);
-  },
-  report: id => request(`/reports/${encodeURIComponent(id)}`),
-  reportEvents: id => request(`/reports/${encodeURIComponent(id)}/events?limit=100`),
-  approveReport: (id, data) => jsonPost(`/reports/${encodeURIComponent(id)}/approve`, data),
-  rejectReport: (id, data) => jsonPost(`/reports/${encodeURIComponent(id)}/reject`, data),
-  // Module H: remediation, retesting and closure. A retest is a normal authorised assessment request.
-  remediationList: (filters = {}, offset = 0) => {
-    const params = new URLSearchParams({ limit: "50", offset: String(offset) });
-    for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
-    return request(`/remediation?${params}`);
-  },
-  remediation: id => request(`/remediation/${encodeURIComponent(id)}`),
-  updateRemediation: (id, data) => jsonPost(`/remediation/${encodeURIComponent(id)}/update`, data),
-  verifyFix: (id, data) => jsonPost(`/remediation/${encodeURIComponent(id)}/verify-fix`, data),
-  reopenRemediation: (id, data) => jsonPost(`/remediation/${encodeURIComponent(id)}/reopen`, data),
-  assessmentClosure: id => request(`/assessments/${encodeURIComponent(id)}/closure`),
-  closeAssessment: (id, data) => jsonPost(`/assessments/${encodeURIComponent(id)}/close`, data),
-  reopenClosure: (id, data) => jsonPost(`/assessments/${encodeURIComponent(id)}/reopen-closure`, data),
-  downloadReportPdf: (id, official) =>
-    request(`/reports/${encodeURIComponent(id)}/${official ? "pdf" : "preview"}`, { binary: true }),
-
   // Health
   health: () => request("/health", { auth: false }),
-
-  // Legacy clients (staff, read-only)
-  getClients: () => allPages("/clients"),
 };
 
 export { API_BASE_URL };

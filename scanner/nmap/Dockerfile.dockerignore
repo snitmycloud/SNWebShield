@@ -1,9 +1,0 @@
-**
-!backend/
-!backend/app/
-!backend/app/services/
-!backend/app/services/nmap_policy.py
-!scanner/
-!scanner/nmap/
-!scanner/nmap/entry.py
-!scanner/nmap/guard.py

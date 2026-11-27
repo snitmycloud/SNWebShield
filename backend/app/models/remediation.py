@@ -1,4 +1,7 @@
-"""Remediation tracking, retests and assessment closure (Module H).
+"""UNUSED (the earlier analyst pipeline was removed on 2026-11-27). The tables and all their data are kept in the database and
+listed in `retired_tables`; no code reads or writes them. This file only keeps the schema description.
+
+Remediation tracking, retests and assessment closure (Module H).
 
 `vulnerability_remediations` holds the current state of one confirmed finding. Everything that
 explains how it got there is append-only: `remediation_events`, completed `retest_requests` and

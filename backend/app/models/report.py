@@ -1,4 +1,7 @@
-"""VAPT reports (Module G).
+"""UNUSED (the earlier analyst pipeline was removed on 2026-11-27). The tables and all their data are kept in the database and
+listed in `retired_tables`; no code reads or writes them. This file only keeps the schema description.
+
+VAPT reports (Module G).
 
 A report row is a frozen snapshot of report-eligible findings. Only `status` and the decision
 columns may change after creation (enforced in the ORM and, on SQLite, by triggers); PDF artifacts,

@@ -1,12 +1,10 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect
 
-from app.api import legacy
-from app.api.routes import (alerts as alert_routes, admin_users, assessments, auth, clients, findings, health, monitoring, port_watch,
-                            remediation, reports, vulnerabilities, websites, workbench)
+from app.api.routes import alerts as alert_routes, admin_users, auth, health, websites
 from app.core.config import settings
 from app.core.headers import SecurityHeadersMiddleware
 from app.db.session import engine
@@ -87,7 +85,3 @@ app.include_router(websites.router, prefix="/api/v1")
 app.include_router(admin_users.router, prefix="/api/v1")
 app.include_router(alert_routes.router, prefix="/api/v1")
 
-# Legacy analyst pipeline: staff-only and read-only (stop actions excepted) until Phases 2-4 replace it.
-# The written-permission system (authorisations, evidence) was removed in Phase 1; its tables keep their data.
-for _legacy in (clients, monitoring, assessments, findings, vulnerabilities, workbench, reports, remediation, port_watch):
-    app.include_router(_legacy.router, prefix="/api/v1", dependencies=[Depends(legacy.read_only)])

@@ -1,4 +1,7 @@
-"""Explicitly enabled, recurring TCP 80/443 state checks for one website (Option A port watch).
+"""UNUSED (the earlier analyst pipeline was removed on 2026-11-27). The tables and all their data are kept in the database and
+listed in `retired_tables`; no code reads or writes them. This file only keeps the schema description.
+
+Explicitly enabled, recurring TCP 80/443 state checks for one website (Option A port watch).
 
 `port_watches` is the current configuration and the last known port state. `port_watch_changes` is an
 append-only history of every observed change, so what was seen and when can never be rewritten.

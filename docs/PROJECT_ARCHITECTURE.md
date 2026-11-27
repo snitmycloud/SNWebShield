@@ -1,162 +1,47 @@
-# SNWebShield — Project Architecture
+# SNWebShield architecture
 
-**Version:** Draft v0.1
+SNWebShield is a self-service website security scanner. It runs entirely on one Windows computer (Linux later): a FastAPI backend, a React frontend and a SQLite database (PostgreSQL is supported by the same code). Nothing is deployed to Azure.
 
-The current analyst workflow includes [per-observation review and private report snapshots](ANALYST_REVIEW.md) and the [central Findings/remediation dashboard](FINDINGS_DASHBOARD.md). Findings derive from latest human confirmations; deadline history is stored separately, and these screens never execute scans. Current database head: `0008_findings_dashboard`.
+## Processes
 
-The current remote-scanner increment is described in [Existing Azure Docker scanner host](REMOTE_DOCKER_SCANNER.md). Its control plane, trusted HEAD broker, evidence and database stay on Windows. A fixed SSH runner executes only networkless header-analysis containers on the existing VM. Live Windows SSH, isolation, timeout, cancellation and cleanup acceptance passed. Execution is disabled by default in distributed settings and requires an explicit local opt-in and separately authorised assessment requests.
+| Process | What it does | Started by |
+|---|---|---|
+| **API** (`uvicorn app.main:app`, port 8000) | Accounts, websites, ownership verification, scans, findings, alerts, admin | supervisor |
+| **Web app** (port 5173) | The React app (`frontend/dist` in production, Vite in development) | supervisor |
+| **Scan worker** (`app.cli.operations scan-worker`) | Claims queued scans and runs them; also re-checks of single findings | supervisor |
+| **Monitor** (`app.cli.operations monitor`) | Scheduled scans, uptime checks, certificate checks, alert sweeps, accepted-risk expiry | supervisor |
+| **Supervisor** (`app.cli.supervisor`) | Starts the four above at boot, restarts any that stops (back-off 1 to 60 s), writes a heartbeat the Admin page shows | Task Scheduler (Windows) or systemd (Linux) |
 
-## Implementation status at commit 50b0f0e
+Roles talk only through the database (scans table, heartbeats, audit events). The API never runs a scan; it only queues one.
 
-The architecture below is a target design. The current implementation uses React/Vite, FastAPI, SQLAlchemy and SQLite, with integer primary keys. It includes a single administrator role, JWT login, clients, websites, authorisation records and decision audit events. Business logic currently resides mainly in route handlers. PostgreSQL deployment, UUID adoption, tenant isolation, private evidence storage, findings, reporting and workers are not implemented. Do not infer those capabilities from the proposed modules or diagrams below. See [the foundation assessment](FOUNDATION_ASSESSMENT.md) for verified checks and the next milestone. Preserve existing IDs and relationships; changes require a migration design.
+## A scan, step by step
 
-## 1. Architecture principles
+1. **Queue.** `scans.request_scan` (verified website, one active scan per website, plan and test-target limits). Ownership verification queues the first scan automatically; the monitor queues scheduled ones.
+2. **Claim.** The worker takes the oldest queued scan, re-checks the owner, the verification and the resolved IP (`ownership.ensure_verified`, `ip_policy`), and **pins one public IP** for the whole scan.
+3. **Detect** (`detect_runner`): port scan, service and version probes, technologies, DNS and email settings, exposed files, subdomains. A **scan guard** polls the database and stops the scan if the website is removed, verification is lost or the time limit passes.
+4. **Identify** (`engines`): configuration checks, vulnerabilities (NVD and OSV, cached), end-of-life data, and the optional Nuclei engine, in parallel. Results merge into one finding list (`finding.py`, stable fingerprint per finding).
+5. **Finish.** Findings are stored, finding states updated (new / fixed / reopened), the score recorded for the trend, alerts raised (new port, new Critical/High), audit entries written.
 
-1. Separate the business management application from the security testing environment.
-2. Require approved, versioned scope before any testing activity.
-3. Use human-led assessment and validation in the first release.
-4. Treat scanner output as untrusted leads, not confirmed vulnerabilities.
-5. Enforce tenant isolation on the server and database layers.
-6. Store evidence privately and provide controlled access.
-7. Make assessment activity auditable.
+A check that fails or times out is reported as "could not check", never as safe.
 
-## 2. Logical components
+## Safety layers
 
-```text
-Client / Internal Staff
-        |
-        v
-React Web Application
-        |
-        v
-FastAPI Application
-  |       |        |         |
-  |       |        |         +--> Audit Log Service
-  |       |        +------------> Report Service
-  |       +---------------------> Assessment & Findings Services
-  +-----------------------------> Client / Asset / Scope Services
-        |
-        +------> PostgreSQL
-        |
-        +------> Private Evidence Storage
-        |
-        +------> PDF Rendering Service
+- **Ownership** (DNS TXT, file or meta tag) is the only approval step. It is re-checked before every scan (24-hour cache) and again right before execution.
+- **SSRF guard** (`services/ip_policy.py`): every address must be public; private, loopback, link-local, multicast, cloud-metadata and this server's own addresses are refused. DNS is resolved once per scan and pinned (no DNS rebinding); redirects are never followed to another host.
+- **Nuclei** (optional): one pinned, checksum-verified binary, vendored and validated templates only, all traffic through a local egress proxy that allows only the verified host and pinned IP, killed by the scan guard, disabled unless its self-test passes.
+- **Untrusted data:** everything from a target (headers, pages, banners, scanner output) is treated as text and shown escaped.
+- **Audit log:** authentication, ownership checks, scans, accepted risks, alerts, admin actions (`auth_events`, `execution_events`).
 
-Separate Assessment Workstation / Isolated Worker
-        |
-        +--> Approved manual tools and, in a later phase, controlled integrations
-        |
-        +--> Analyst-reviewed results imported into SNWebShield
-```
+## Data
 
-The assessment environment must not have unrestricted access to the management database. Future scan workers should run in an isolated network/security boundary with explicit egress controls and strict target allowlists.
+- `scans`, `scan_ports`, `scan_technologies`, `scan_observations`, `scan_findings` - what each scan found.
+- `finding_states`, `finding_rechecks` - the life of a finding: open, fixed (and how), accepted risk with expiry.
+- `uptime_checks`, `uptime_states`, `score_history`, `alerts`, `alert_preferences` - monitoring.
+- `admins` (accounts, role `user` or staff), `websites`, `account_tokens`, `revoked_tokens`.
+- `retired_tables` lists the tables of the removed analyst pipeline and written-permission system: kept with their data, no code uses them.
 
-## 3. Suggested backend modules
+Plans and limits live in `backend/app/plans.json`; settings in `backend/app/core/config.py` (environment variables, `backend/.env`).
 
-- `authentication`: identities, sessions, MFA integration and password policy
-- `tenants`: client organisations and tenant context
-- `users`: roles, invitations and memberships
-- `assets`: websites, domains, APIs and asset ownership
-- `engagements`: contracts, authorisation and rules of engagement
-- `assessments`: assessment records, assignments, schedule and status
-- `methodology`: test case library and versioning
-- `executions`: test-case results and analyst notes
-- `findings`: vulnerability records, severity, validation and lifecycle
-- `evidence`: private evidence metadata and access control
-- `reports`: report data snapshots, rendering, versioning and publication
-- `remediation`: client fix notes and target dates
-- `retests`: retest evidence and outcomes
-- `audit`: append-only business/security event records
+## Code map
 
-## 4. Suggested data model
-
-Primary entities and relationships:
-
-- `Client` 1-to-many `ClientUser`
-- `Client` 1-to-many `WebsiteAsset`
-- `Client` 1-to-many `Engagement`
-- `Engagement` 1-to-many `EngagementAsset`
-- `Engagement` 1-to-many `Assessment`
-- `Assessment` 1-to-many `TestExecution`
-- `Assessment` 1-to-many `Finding`
-- `Finding` 1-to-many `Evidence`
-- `Finding` 1-to-many `RemediationUpdate`
-- `Finding` 1-to-many `Retest`
-- `Assessment` 1-to-many `ReportVersion`
-- All tenant-owned records carry a `client_id` or are reachable only through a server-validated tenant relationship.
-
-Use UUID primary keys. Add created/updated timestamps, actor IDs and lifecycle status fields where appropriate. Use database migrations for all schema changes.
-
-## 5. API route groups (proposed)
-
-```text
-/api/v1/auth/*
-/api/v1/clients/*
-/api/v1/client-users/*
-/api/v1/assets/*
-/api/v1/engagements/*
-/api/v1/assessments/*
-/api/v1/methodology/*
-/api/v1/test-executions/*
-/api/v1/findings/*
-/api/v1/evidence/*
-/api/v1/reports/*
-/api/v1/remediation/*
-/api/v1/retests/*
-/api/v1/audit-events/*
-```
-
-Every route must authenticate the caller, check role permissions and enforce tenant scope. Do not trust a `client_id` supplied by the browser without checking the user's membership and permissions.
-
-## 6. Report generation design
-
-1. Reviewer approves the assessment findings and scope record.
-2. Report service creates an immutable data snapshot for a report version.
-3. HTML templates render executive and technical report views.
-4. PDF renderer creates the document.
-5. PDF is stored in private object storage.
-6. Publication event is logged.
-7. Client download is provided through a short-lived authorised link or authenticated download endpoint.
-
-The report snapshot should preserve the exact finding and methodology versions used at publication time.
-
-## 7. Future scanner integration design
-
-Scanner integration is not part of the first manual release. When added:
-
-- Only a manager-approved assessment can request a scan.
-- Targets must be matched against exact approved domains/IPs and exclusions.
-- Block localhost, private, link-local, multicast and cloud metadata destinations unless a separately reviewed internal scope explicitly requires them.
-- Re-check DNS resolution at execution time and defend against DNS rebinding.
-- Restrict redirects and outbound network destinations.
-- Enforce rate, concurrency, time and response-size limits.
-- Run tools in disposable, least-privilege containers or isolated workers.
-- Do not expose a generic shell or arbitrary command execution endpoint.
-- Save raw output as untrusted evidence; require analyst validation before creating a confirmed finding.
-- Log the tool/version, configuration, operator, scope, start/end time and result digest.
-
-## 8. Deployment direction
-
-Development can use Docker Compose for the web app and PostgreSQL. Production should use separate services, managed secrets, encrypted backups, private evidence storage, monitoring, patching and a documented recovery process. Do not deploy the assessment worker on the same unrestricted network as the client portal.
-
-## Correctness milestone update
-
-[Authentication and authorisation correctness](AUTHORIZATION_CORRECTNESS.md) adds a focused policy/decision service, UTC-normalised creation, computed effective states and summaries, conditional decision updates with transactional audit writes, and Alembic baseline adoption plus a date-provenance column. There are no scanners or monitoring workers. Browser verification and PostgreSQL integration testing remain pending.
-
-## Authorisation evidence subsystem
-
-See [Authorisation Evidence Management](AUTHORIZATION_EVIDENCE.md): private UUID storage, three evidence/review/event tables, conditional revision gating and authenticated binary access. PDF preview is download-only; malware scanning, production parser isolation, tenant isolation and PostgreSQL integration are not implemented or verified.
-
-## Monitoring as the first operational handler
-
-The historical target architecture above is not a current completion claim. [Monitoring](MONITORING.md) now adds a shared SQLAlchemy job engine: durable scheduling, idempotent enqueue, pool slots, atomic claims, attempt/lease records, token-fenced results and transactional execution events. Monitoring registers eligibility, scheduling and result processing on this engine. A future scanner should register its own policy and isolated adapter, keeping the same execution records and scheduler rather than introducing a competing job system. No scanner handler exists today.
-
-The independent scheduler, spawned-probe worker and notification dispatcher run outside FastAPI. Explicit reviewed monitoring consent, configuration revisions and runtime destination validation gate each check. HTTP/DNS/TLS metrics, incidents and notification delivery history are separate from assessment findings. Additive migration `0004_monitoring` leaves existing relationships intact. SQLite is the tested local deployment; production isolation, Windows acceptance and PostgreSQL remain separate validation work.
-
-## Assessment control plane (scanner stage one)
-
-[Scanner stage one](SCANNER_STAGE_ONE.md) adds immutable assessment intents referencing the existing jobs, websites, authorisations and administrators. The shared engine registers an assessment policy handler and independent pool, with no recurring assessment scheduling or tool execution. Live UTC status, exact domain/method scope, approval-linked evidence and snapshot hashes gate each preflight. Authorisation revocation and assessment cancellation share one transaction. Profile approval management, enforced network isolation and real scanner adapters remain later phases.
-
-## Local assessment adapter
-
-The shared assessment queue dispatches the code-owned local Python adapter. A trusted one-HEAD broker pins public DNS addresses and a separate bounded pure analyzer emits observations. Authorisation/evidence is revalidated at dispatch, during broker permission handshakes and transactional result acceptance. A single nullable intent snapshot and private JSON report table extend existing models; existing attempts/events retain the lifecycle audit. This is trusted-code separation, not OS-level egress isolation.
+`backend/app/api/routes` (auth, websites, alerts, admin_users, health) · `backend/app/services` (scans, detect_*, engine_*, finding_states, comparison, recheck, scheduling, uptime, alerts, ownership, ip_policy, ...) · `backend/app/models` · `backend/migrations/versions` (additive, downgrades refused) · `frontend/src` (Console.jsx and its panels, `lib/` pure helpers with unit tests).

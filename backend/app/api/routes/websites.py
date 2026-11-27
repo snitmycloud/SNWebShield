@@ -17,7 +17,7 @@ from app.models.scan import Scan, ScanFinding, ScanObservation, ScanPort, ScanTe
 from app.models.website import Website
 from app.schemas.website import AcceptRiskRequest, ManualVerifyRequest, RemoveRequest, ScanRequest, VerifyRequest, WebsiteCreate
 from app.services import job_engine as engine
-from app.services import comparison, finding_states, lifecycle, ownership, plans, scans, score_history, scheduling, scoring, uptime
+from app.services import comparison, finding_states, ownership, plans, scans, score_history, scheduling, scoring, uptime
 from app.services.domains import DomainError, normalize_domain
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
@@ -441,9 +441,3 @@ def recheck_finding(website_id: int, fingerprint: str, account: Admin = Depends(
     scan, _ = scans.request_recheck(db, website, account, fingerprint)
     db.commit()
     return {"scan": scans.serial(scan)}
-
-
-@router.get("/{website_id}/lifecycle")
-def website_lifecycle(website_id: int, db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
-    """Legacy (staff, read-only) monitor / detect / validate / protect summary. No network, no writes."""
-    return lifecycle.website_lifecycle(db, admin.id, website_id)
