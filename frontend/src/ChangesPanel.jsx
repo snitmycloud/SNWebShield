@@ -35,6 +35,7 @@ export default function ChangesPanel({ site, scan, data, compact = false }) {
     <p className="sw-changes-summary" data-testid="changes-summary">{changesText(comparison.counts)}</p>
     {!compact && <>
       <List title="New" items={comparison.new} />
+      <List title="Checked for the first time (the last scan did not run this check)" items={comparison.first_checked || []} />
       <List title="Fixed" items={comparison.fixed} />
       <List title="Could not be confirmed" items={comparison.could_not_confirm} />
       <List title="Unchanged" items={comparison.unchanged} />

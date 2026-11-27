@@ -50,6 +50,7 @@ export function reviewSoon(finding) {
 export function changesText(changes) {
   if (!changes) return "";
   const parts = [`${changes.new || 0} new`, `${changes.fixed || 0} fixed`, `${changes.unchanged || 0} unchanged`];
+  if (changes.first_checked) parts.push(`${changes.first_checked} checked for the first time`);
   if (changes.could_not_confirm) parts.push(`${changes.could_not_confirm} could not be confirmed`);
   return parts.join(", ");
 }
