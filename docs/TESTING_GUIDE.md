@@ -8,7 +8,7 @@ Run one command at a time (running several together can exhaust memory on this c
 |---|---|---|---|
 | **Quick** | `powershell -File scripts\test-quick.ps1` (backend `pytest -m "not slow"` + frontend tests) | about 1 minute | while you work |
 | **Full** | `powershell -File scripts\test-full.ps1` (all backend tests, in parallel with pytest-xdist, + frontend tests + build) | about 1 minute (5 minutes without xdist) | before every commit you want to trust |
-| **Release** | `powershell -ExecutionPolicy Bypass -File scriptsresh-clone-check.ps1` | about 5 minutes | once at the end of each phase, before merging |
+| **Release** | `powershell -ExecutionPolicy Bypass -File scripts\fresh-clone-check.ps1` | about 5 minutes | once at the end of each phase, before merging |
 
 By hand: `cd backend; .\.venv\Scripts\python.exe -m pytest` (full), add `-m "not slow"` for quick or `-n 6` for parallel (needs `pip install -r requirements-dev.txt`, dev-only). `cd frontend; npm test; npm run build`.
 

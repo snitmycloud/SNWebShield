@@ -220,7 +220,7 @@ powershell -File scripts\test-quick.ps1      # backend quick level + frontend te
 powershell -File scripts\test-full.ps1       # all backend tests (parallel with pytest-xdist) + frontend tests + build, about 1 minute
 ```
 
-By hand: `cd backend; .\.venv\Scripts\python.exe -m pytest` (add `-m "not slow"` for quick, `-n 6` for parallel after `pip install -r requirements-dev.txt`), then `cd frontend; npm test; npm run build`. Before merging a phase run `powershell -ExecutionPolicy Bypass -File scriptsresh-clone-check.ps1` (clone, install from scratch, all tests and the build). Details: [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md).
+By hand: `cd backend; .\.venv\Scripts\python.exe -m pytest` (add `-m "not slow"` for quick, `-n 6` for parallel after `pip install -r requirements-dev.txt`), then `cd frontend; npm test; npm run build`. Before merging a phase run `powershell -ExecutionPolicy Bypass -File scripts\fresh-clone-check.ps1` (clone, install from scratch, all tests and the build). Details: [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md).
 
 ## Removed: the earlier analyst pipeline
 
