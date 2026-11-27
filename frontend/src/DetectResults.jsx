@@ -8,10 +8,11 @@ import { describePort, dnsText, exposedText, isActiveScan, resultBanner, section
 // Loads one scan's results and keeps them fresh while the scan runs (partial results appear as they arrive).
 export function useScanDetail(siteId, scan, version = 0) {
   const [data, setData] = useState(null), [error, setError] = useState("");
-  const alive = useRef(true);
+  const alive = useRef(true), shownFor = useRef(null);
   const scanId = scan?.id, status = scan?.status, endedAt = scan?.ended_at;
   useEffect(() => {
-    alive.current = true; setData(null); setError("");
+    alive.current = true; setError("");
+    if (shownFor.current !== scanId) { setData(null); shownFor.current = scanId; }   // keep what is on screen while a refresh loads (a re-check result must stay visible)
     if (!scanId || status === "queued") return undefined;
     const load = () => api.scanDetail(siteId, scanId).then(d => alive.current && setData(d)).catch(e => alive.current && setError(e.message));
     load();

@@ -36,7 +36,11 @@ def compare(db, scan: Scan) -> dict:
                 "unchanged": [_brief(r) for r in list(now_rows.values())[:MAX_LISTED]], "could_not_confirm": [], "first_scan": True}
     old_rows = {r.fingerprint: r for r in db.scalars(select(ScanFinding).where(ScanFinding.scan_id == before.id))}
     steps = (scan.result or {}).get("steps") or {}
-    new = [_brief(r) for fp, r in now_rows.items() if fp not in old_rows]
+    before_steps = (before.result or {}).get("steps") or {}
+    # A finding the earlier scan could not have found (its step did not run or did not finish there) is not "new": it is first checked now.
+    added = [(fp, r) for fp, r in now_rows.items() if fp not in old_rows]
+    new = [_brief(r) for fp, r in added if finding_states.step_finished_ok(before_steps, r.check_id)]
+    first_checked = [_brief(r) for fp, r in added if not finding_states.step_finished_ok(before_steps, r.check_id)]
     unchanged = [_brief(r) for fp, r in now_rows.items() if fp in old_rows]
     fixed, unsure = [], []
     for fp, row in old_rows.items():
@@ -44,10 +48,10 @@ def compare(db, scan: Scan) -> dict:
             continue
         (fixed if finding_states.step_finished_ok(steps, row.check_id) else unsure).append(_brief(row))
     order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
-    for group in (new, fixed, unchanged, unsure):
+    for group in (new, fixed, unchanged, unsure, first_checked):
         group.sort(key=lambda f: (order.get(f["severity"], 9), f["title"]))
     return {
         "previous": {"scan_id": before.id, "scanned_at": as_utc(before.ended_at or before.requested_at).isoformat(), "status": before.status},
-        "counts": {"new": len(new), "fixed": len(fixed), "unchanged": len(unchanged), "could_not_confirm": len(unsure)},
-        "new": new[:MAX_LISTED], "fixed": fixed[:MAX_LISTED], "unchanged": unchanged[:MAX_LISTED], "could_not_confirm": unsure[:MAX_LISTED],
+        "counts": {"new": len(new), "fixed": len(fixed), "unchanged": len(unchanged), "could_not_confirm": len(unsure), "first_checked": len(first_checked)},
+        "first_checked": first_checked[:MAX_LISTED], "new": new[:MAX_LISTED], "fixed": fixed[:MAX_LISTED], "unchanged": unchanged[:MAX_LISTED], "could_not_confirm": unsure[:MAX_LISTED],
     }

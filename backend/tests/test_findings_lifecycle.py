@@ -109,7 +109,7 @@ def test_accepting_a_risk_raises_the_score_and_stopping_brings_it_back(client, m
         listed = site.findings(scan_id)[CSP]
         assert listed["state"]["status"] == "accepted" and listed["state"]["accepted"]["days"] == 90 and not listed["scored"]
 
-        assert client.delete(f"{W}/{site.id}/findings/{fp}/accept", headers=site.headers).status_code == 200
+        assert client.post(f"{W}/{site.id}/findings/{fp}/unaccept", headers=site.headers).status_code == 200
         assert site.summary(scan_id)["score"] == before["score"]
         assert site.events("risk_accepted") and site.events("risk_unaccepted")
 
@@ -312,3 +312,43 @@ def test_test_target_rechecks_have_their_own_daily_limit(client, monkeypatch):
         assert site.recheck(fp)[0].status_code == 200
         limited = client.post(f"{W}/{site.id}/findings/{fp}/recheck", headers=site.headers)
         assert limited.status_code == 429 and "test target" in limited.json()["detail"]["message"]
+
+
+# --- same site, same findings: a check that did not run last time is not "new" ---------------------------------------------------------------
+
+def test_a_finding_from_a_step_the_earlier_scan_did_not_run_is_first_checked_not_new(client, monkeypatch):
+    pages = {"/": GOOD}
+    with BackgroundServer(http_handler(pages)) as server:
+        site = Site(client, monkeypatch, pages)
+        _, first = site.full_scan(server.port)
+        pages["/"] = BARE
+        with SessionLocal() as db:   # pretend the first scan's configuration step never ran (like Nuclei skipped at worker start-up)
+            row = db.get(Scan, first)
+            result = dict(row.result)
+            result["steps"] = {k: v for k, v in result["steps"].items() if k != "configuration"}
+            row.result = result
+            db.commit()
+        _, second = site.full_scan(server.port)
+        body = client.get(f"{W}/{site.id}/scans/{second}/comparison", headers=site.headers).json()
+        assert body["counts"]["new"] == 0 and body["counts"]["first_checked"] >= 1
+        assert CSP in [f["check_id"] for f in body["first_checked"]]
+
+
+def test_a_scan_waits_for_a_running_selftest_and_never_longer_than_the_limit():
+    import asyncio
+    from app.services import engine_nuclei
+    answers = [{"ok": False, "failed": ["selftest_running"]}] * 3 + [{"ok": True, "failed": []}]
+    calls = []
+
+    async def ensure(guard):
+        calls.append(1)
+        return answers[min(len(calls) - 1, len(answers) - 1)]
+
+    async def no_sleep(_):
+        return None
+    assert asyncio.run(engine_nuclei.wait_for_selftest(None, ensure=ensure, sleep=no_sleep))["ok"] is True and len(calls) == 4
+
+    async def always_running(guard):
+        return {"ok": False, "failed": ["selftest_running"]}
+    out = asyncio.run(engine_nuclei.wait_for_selftest(None, ensure=always_running, wait=0, sleep=no_sleep))
+    assert out["failed"] == ["selftest_running"]   # gives up after the limit: the scan goes on without Nuclei, never held up

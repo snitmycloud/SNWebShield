@@ -263,6 +263,26 @@ def select_templates(manifest: dict, mode: str, tokens: set[str], rules=None, ma
     return sorted(chosen)
 
 
+SELFTEST_WAIT_SECONDS = 60   # the worker's start-up self-test takes about 16 s; a scan started meanwhile waits for it instead of silently running without Nuclei
+
+
+async def wait_for_selftest(guard=None, *, ensure=None, wait=None, pause=1.0, sleep=None) -> dict:
+    """The self-test result, waiting (never longer than `wait`, and stopping when the scan guard stops the scan) for one that is still
+    running. Same site, same checks: a scan must not lose Nuclei just because it started a few seconds after the worker did."""
+    import asyncio
+    import time
+    ensure = ensure or nuclei_selftest.ensure
+    sleep = sleep or asyncio.sleep
+    end = time.monotonic() + (SELFTEST_WAIT_SECONDS if wait is None else wait)
+    while True:
+        check = await ensure(guard)
+        if check.get("failed") != ["selftest_running"] or time.monotonic() >= end:
+            return check
+        if guard is not None:
+            guard.check()
+        await sleep(pause)
+
+
 class NucleiEngine(engines.Engine):
     name = "nuclei"
     parallel = True          # runs at the same time as the vulnerability and end-of-life steps
@@ -284,7 +304,7 @@ class NucleiEngine(engines.Engine):
             return engines.EngineResult("could_not_check", [], {"reason": error.code})
         except TemplateSetError as error:
             return engines.EngineResult("could_not_check", [], {"reason": error.code})
-        check = await nuclei_selftest.ensure(guard)
+        check = await wait_for_selftest(guard)
         if check["failed"] == ["selftest_running"]:   # the worker's start-up self-test has not finished yet: skip this scan, no warning
             return engines.EngineResult("skipped", [], {"reason": "selftest_starting"})
         if not check["ok"]:
