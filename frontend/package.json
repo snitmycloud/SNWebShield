@@ -7,8 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test tests/api.test.js tests/scanner.test.js tests/vulnerabilities.test.js tests/workbench.test.js tests/reports.test.js tests/remediation.test.js tests/lifecycle.test.js tests/portWatch.test.js tests/account.test.js tests/detect.test.js tests/findings.test.js tests/report.test.js tests/compare.test.js tests/monitor.test.js",
-    "test:e2e": "playwright test"
+    "test": "node --test tests/api.test.js tests/account.test.js tests/detect.test.js tests/findings.test.js tests/report.test.js tests/compare.test.js tests/monitor.test.js"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

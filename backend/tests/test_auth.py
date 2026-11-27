@@ -54,17 +54,25 @@ def test_inactive_account_cannot_login(client):
     create_admin_and_login(client, active=False)
 
 
-def test_customer_is_refused_by_every_staff_route(client):
+def test_customer_is_refused_by_every_admin_route(client):
     _, headers = create_admin_and_login(client, role="user")
     assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
-    for path in ("/api/v1/clients", "/api/v1/assessments", "/api/v1/vulnerabilities", "/api/v1/workbench/queue",
-                 "/api/v1/reports", "/api/v1/remediation", "/api/v1/monitoring/overview", "/api/v1/admin/users"):
+    for path in ("/api/v1/admin/users", "/api/v1/admin/workers"):
         assert client.get(path, headers=headers).status_code == 403, path
 
 
-def test_staff_routes_still_require_a_token(client):
-    assert client.get("/api/v1/assessments").status_code == 401
-    assert client.get("/api/v1/websites").status_code == 401
+def test_admin_routes_and_websites_still_require_a_token(client):
+    for path in ("/api/v1/admin/users", "/api/v1/admin/workers", "/api/v1/websites", "/api/v1/alerts/preferences"):
+        assert client.get(path).status_code == 401, path
+
+
+def test_the_removed_analyst_pipeline_api_is_gone(client):
+    _, headers = create_admin_and_login(client)   # even an administrator finds nothing there
+    for path in ("/clients", "/assessments", "/vulnerabilities", "/workbench/queue", "/reports", "/remediation", "/monitoring/overview",
+                 "/port-watch/1", "/findings", "/websites/1/lifecycle"):
+        assert client.get("/api/v1" + path, headers=headers).status_code == 404, path
+    paths = client.get("/openapi.json").json()["paths"]
+    assert not any(p.startswith(("/api/v1/assessments", "/api/v1/clients", "/api/v1/workbench", "/api/v1/reports", "/api/v1/remediation")) for p in paths)
 
 
 def test_the_written_permission_api_is_gone(client):

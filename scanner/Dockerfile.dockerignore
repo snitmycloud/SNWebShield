@@ -1,7 +1,0 @@
-**
-!backend/
-!backend/app/
-!backend/app/services/
-!backend/app/services/header_analyzer.py
-!scanner/
-!scanner/container_entry.py

@@ -1,5 +1,8 @@
 ﻿# SNWebShield technical audit matrix
 
+> **Note (2026-11-27):** the sections below that describe the earlier analyst pipeline (milestones, assessments, VAPT reports, remediation sign-off, port watch, the Docker/VM runner) are history. That code was removed on 2026-11-27 (git tag `before-legacy-removal`); see "Legacy pipeline removed" near the end of this file.
+
+
 | | |
 |---|---|
 | Audit date | 2026-11-24 |
@@ -755,3 +758,17 @@ The scheduler ran each job type in sequence, so an error in one (for example a t
 **Not verified.** Everything ran against synthetic VM, DNS and scanner output: no real port scan, no real VM, no live scheduler process. A real run needs your steps below. The browser tests do not cover the sign-off form or the lifecycle "next step" for every state (the rules are unit-tested instead). Monitoring itself still cannot be configured without consent evidence, so the lifecycle integration tests pin a healthy monitor. A change in port state is reported once; there is no acknowledge button (analysts review it through the assessment's port observations).
 
 **To use it (your steps).** Back up the database (`python -m app.cli.backup_database` from `backend`), run `.\.venv\Scripts\python.exe -m alembic upgrade head` from `backend` (adds 0014 and 0015; nothing is enabled), restart the API, then run the scheduler, assessment worker and notification dispatcher (`scripts\start-workers.ps1`). Until the migration is applied, the new Port watch endpoints answer 503 with that instruction, while the lifecycle view, remediation pages, scheduler and monitoring keep working without the new data (`test_unmigrated.py`). The VM runners from the previous milestone still need your redeploy and a real Nmap check before turning port watch on.
+
+
+## Legacy pipeline removed (branch `chore/remove-legacy`, 2026-11-27)
+
+| Item | Result |
+|---|---|
+| Recovery point | git tag `before-legacy-removal` (= `phase5-done`, commit 2af4871) |
+| Deleted code | 9 legacy API routes and `api/legacy.py`; 22 legacy services; `core/rbac.py`; `schemas/client.py`; the Docker/VM Nmap runner (`scanner/`); `cli/nmap_check.py`, `cli/scanner_check.py`; the legacy `GET /websites/{id}/lifecycle`; the legacy roles of `cli/operations.py` (now `scan-worker` and `monitor` only); the old job queue in `job_engine.py` (now `event` and `heartbeat`); the `assessment_*` settings |
+| Deleted tests | the 25 disabled legacy test files and 4 active legacy ones (`test_legacy_read_only`, `test_monitor_probe`, `test_monitor_http_fixture`, `test_scheduler_isolation`) and their helpers |
+| Ported before deleting | `test_ip_policy.py` (every prohibited address range, for the shared guard `services/ip_policy.py`, which all new code already used) and `test_security_hardening.py` (audit log, throttling, logout, forged tokens, passwords, headers, CORS, role storage, cross-user access, admin-only routes, no leaked error details) |
+| Deleted frontend | 10 legacy pages and panels, 4 stylesheets, 7 helper modules, their unit tests and the Playwright journey |
+| Kept | every database table and all data (marked unused in `retired_tables`, migration 0022), all audit data, model files (marked UNUSED), all migrations |
+| Packages removed | `reportlab`, `pypdf`, `Pillow` (the PDF report is the browser's print) |
+| Docs | legacy docs deleted; README trimmed; PROJECT_ARCHITECTURE, PROJECT_REQUIREMENTS, TESTING_GUIDE and SECURITY_GUARDRAILS rewritten for the new design |

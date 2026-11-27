@@ -16,12 +16,20 @@ def migrate(path, revision="head"):
     )
 
 
+def assert_unchanged_except_retired_register(db, tables, before):
+    """Every table is exactly as before, except that `retired_tables` may have gained rows (0022 marks the removed pipeline's tables unused)."""
+    after = {t: db.execute(f'SELECT * FROM "{t}"').fetchall() for t in tables}
+    old, new = before.pop("retired_tables", []), after.pop("retired_tables", [])
+    assert after == before
+    assert all(row in new for row in old)   # nothing that was registered disappeared
+
+
 def test_new_database_migrates_and_upgrade_is_idempotent(tmp_path):
     path = tmp_path / "fresh.db"
     migrate(path)
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0021_monitor"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0022_legacy_retired"
         columns = {row[1] for row in db.execute("PRAGMA table_info(website_authorizations)")}
         assert "timestamps_verified" in columns
         assert db.execute("SELECT COUNT(*) FROM admins").fetchone()[0] == 0
@@ -129,8 +137,10 @@ def test_self_service_migration_keeps_every_row_and_marks_the_permission_tables_
         # First admin owns the first example.com row; the duplicate and the IP-only row stay staff-only legacy rows.
         assert websites == [(5, 7, "example.com", "unverified", 32, 4), (6, None, None, "unverified", 32, 4),
                             (8, None, None, "unverified", 32, 4)]
-        assert {r[0] for r in db.execute("SELECT name FROM retired_tables")} == {
-            "website_authorizations", "authorization_audit_events", "authorization_evidence", "evidence_reviews", "evidence_events"}
+        retired = {r[0] for r in db.execute("SELECT name FROM retired_tables")}
+        assert {"website_authorizations", "authorization_audit_events", "authorization_evidence", "evidence_reviews", "evidence_events"} <= retired
+        assert {"assessment_requests", "vulnerabilities", "vapt_reports", "port_watches", "monitoring_configs", "jobs", "clients"} <= retired   # 0022
+        assert not retired & {"execution_events", "auth_events", "worker_heartbeats", "revoked_tokens", "scans", "websites", "admins", "finding_states"}   # still in use
         db.execute("INSERT INTO admins (email,full_name,password_hash,role,is_active,plan) VALUES ('u@example.com','U','h','user',1,'free')")
         for statement in ("UPDATE auth_events SET reason='x'", "DELETE FROM auth_events"):
             try:
@@ -152,7 +162,7 @@ def test_vulnerability_migration_preserves_reports_reviews_and_deadlines(tmp_pat
     migrate(path)
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0021_monitor"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0022_legacy_retired"
         after = {table: db.execute(f'SELECT * FROM {table}').fetchall() for table in tables}
         # 0016 appends account columns to admins; every pre-existing value is unchanged.
         after["admins"] = [row[:len(before["admins"][0])] for row in after["admins"]]
@@ -175,7 +185,7 @@ def test_website_removal_migration_keeps_rows_and_only_limits_the_unique_rule_to
     migrate(path)
     migrate(path)  # idempotent
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0021_monitor"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0022_legacy_retired"
         assert db.execute("SELECT id,owner_id,domain,verification_status FROM websites").fetchall() == before
         assert db.execute("SELECT removed_at FROM websites WHERE id=1").fetchone() == (None,)
         assert db.execute("SELECT COUNT(*) FROM scans").fetchone() == (1,)
@@ -203,8 +213,8 @@ def test_detect_results_migration_is_additive_and_keeps_scan_history(tmp_path):
     migrate(path)
     migrate(path)  # idempotent
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0021_monitor"
-        assert {t: db.execute(f'SELECT * FROM "{t}"').fetchall() for t in tables} == before  # nothing existing changed
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0022_legacy_retired"
+        assert_unchanged_except_retired_register(db, tables, before)  # nothing existing changed
         for table in ("scan_ports", "scan_technologies", "scan_observations"):
             assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone() == (0,)
         db.execute("INSERT INTO scan_ports (scan_id,port,state,service) VALUES ('s1',22,'open','ssh')")
@@ -229,8 +239,8 @@ def test_findings_migration_is_additive_keeps_history_and_enforces_one_finding_p
     migrate(path)
     migrate(path)  # idempotent
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0021_monitor"
-        assert {t: db.execute(f'SELECT * FROM "{t}"').fetchall() for t in tables} == before
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0022_legacy_retired"
+        assert_unchanged_except_retired_register(db, tables, before)
         for table in ("scan_findings", "vuln_cache"):
             assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone() == (0,)
         row = "INSERT INTO scan_findings (scan_id,fingerprint,kind,check_id,title,location,severity,confidence,\"group\") VALUES ('s1','f1','config','x','t','l','low','confirmed','findings')"

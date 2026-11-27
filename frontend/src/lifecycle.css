@@ -1,4 +1,0 @@
-.lifecycle-page { display: grid; gap: 14px; }
-.lifecycle-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-.lifecycle-card h2, .lifecycle-next h2 { margin: 0 0 6px; font-size: 0.95rem; letter-spacing: 0.06em; }
-.lifecycle-card p, .lifecycle-next p { margin: 4px 0; }

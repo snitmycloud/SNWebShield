@@ -1,5 +1,3 @@
-# Linux runner shebangs and Docker assets must keep Unix line endings on Windows.
-scanner/** text eol=lf
 
 # Vendored Nuclei templates are hashed byte for byte (MANIFEST.json): never convert line endings.
 backend/app/data/nuclei/templates/** -text

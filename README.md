@@ -17,90 +17,24 @@ SNWebShield is a self-service website security scanner for website owners. A use
 - **Automatic first scan:** as soon as verification succeeds, the first scan is queued and run by the new `scan-worker`. In Phase 1 a scan re-checks ownership, resolves and pins one public IP, records the audit entry and ends as **incomplete**; the port, version and technology checks arrive in Phase 2.
 - **Removed:** written authorisations, evidence uploads, approval states, attestation checkboxes, the assessment profile picker and dual sign-off. Their tables and data are kept and listed in `retired_tables` (migration `0016_self_service`). The earlier analyst pipeline (assessments, Docker/Nmap profiles, workbench, VAPT reports, remediation, port watch, monitoring set-up) is **read-only**: staff can still read past data, only "stop" actions work, and it will be deleted after Phases 2â€“4 replace it.
 
-## Initial product goals
+## What it does
 
-1. Manage clients, contacts and website assets.
-2. Record signed authorisation, scope, rules of engagement and exclusions.
-3. Support analyst-led manual website assessments.
-4. Record test coverage, limitations, evidence and validated vulnerabilities.
-5. Apply consistent severity and business-priority ratings.
-6. Generate separate executive and technical PDF reports.
-7. Give each client a tenant-isolated portal to view its own assessments and reports.
-8. Track remediation and retest outcomes.
-9. Add controlled scanner integrations only after the manual workflow is proven.
-
-## Current stack and future direction
-
-- Frontend: React 18 + Vite 6, JavaScript and CSS
-- Backend: Python + FastAPI, SQLAlchemy and Pydantic
-- Authentication: Argon2 password hashing and HS256 JWTs; browser sessionStorage for development
-- Current database: SQLite with additive Alembic migrations; PostgreSQL deployment is unverified
-- Background jobs: shared durable SQLAlchemy job engine with separate scheduler, monitoring worker and notification dispatcher
-- Evidence: private local files with authenticated retrieval; encrypted object storage is future work
-- Reports: PDFs rendered locally with `reportlab`, released only after human approval
-- Development: Git + GitHub
-
-The application runs locally on Windows (React frontend, FastAPI backend, workers); only the isolated scanner container runs on the Azure VM. It has been hardened for single-team production use behind HTTPS but has not been independently penetration tested; see the open items in [docs/AUDIT_MATRIX.md](docs/AUDIT_MATRIX.md).
-
-## Local setup and verified review
-
-Use [backend setup](backend/README.md) and [frontend setup](frontend/README.md). Configure `JWT_SECRET_KEY` in `backend/.env` and provision an administrator with `python -m app.cli.create_admin` before signing in. The root environment example is an older planning example; runtime backend settings are defined in `backend/app/core/config.py` and read from the backend working directory.
-
-The [authentication and authorisation implementation guide](docs/AUTHORIZATION_CORRECTNESS.md) covers the current fixes, migration, Windows checks and review workflow. Browser verification remains pending.
-
-The [foundation assessment](docs/FOUNDATION_ASSESSMENT.md) records the review of commit `50b0f0e`, baseline checks, reproduced defects and the next milestone. The architecture and workflow documents describe future requirements as well as implemented features; they are not a feature-completion checklist.
+1. **MONITORS** - uptime every 5 minutes, certificate expiry, scheduled scans, score trend and email alerts.
+2. **DETECTS** - open ports, services and versions, technologies, DNS and email settings, exposed files, subdomains.
+3. **IDENTIFIES** - vulnerabilities (NVD, OSV, end-of-life data and pinned Nuclei templates) and configuration problems.
+4. **REPORTS** - what you have, what you should have, how risky it is and how to fix it; re-scan to confirm a fix; accepted risks; comparison between scans.
 
 ## Repository map
 
 ```text
-SNWebShield/
-â”œâ”€â”€ README.md
-â”œâ”€â”€ .gitignore
-â”œâ”€â”€ .env.example
-â”œâ”€â”€ docs/
-â”‚   â”œâ”€â”€ PROJECT_REQUIREMENTS.md
-â”‚   â”œâ”€â”€ PROJECT_ARCHITECTURE.md
-â”‚   â”œâ”€â”€ ASSESSMENT_WORKFLOW.md
-â”‚   â””â”€â”€ SECURITY_GUARDRAILS.md
-â”œâ”€â”€ backend/
-â”‚   â””â”€â”€ app/
-â”œâ”€â”€ frontend/
-â”‚   â””â”€â”€ src/
-â”œâ”€â”€ assessment/
-â”‚   â”œâ”€â”€ checklists/
-â”‚   â””â”€â”€ methodologies/
-â”œâ”€â”€ reporting/
-â”‚   â””â”€â”€ templates/
-â”œâ”€â”€ database/
-â”‚   â””â”€â”€ schema/
-â””â”€â”€ tests/
+backend/   FastAPI app (app/api, app/services, app/models), migrations, tests, scan data (app/data)
+frontend/  React app (src), unit tests (tests)
+scripts/   start-demo, install-autostart, fresh-clone-check, Nuclei firewall helpers
+deploy/    systemd unit for Linux (written, not yet tested on Linux)
+docs/      product spec, audit matrix, demo script, proof (screenshots and run output)
 ```
 
-## Development phases
-
-1. Requirements, governance and assessment SOP.
-2. Manual assessment checklist and controlled lab validation.
-3. Executive and technical report templates.
-4. Database schema and authentication/authorisation.
-5. Client and admin dashboard MVP.
-6. Findings, evidence and PDF report workflow.
-7. Security review and pilot with owned or explicitly authorised sites.
-8. Controlled scanner integration and automation.
-
-## Non-goals for the first release
-
-- Unrestricted public URL scanning.
-- Automatically exploiting vulnerabilities.
-- Denial-of-service or stress testing.
-- Persistence, lateral movement or data exfiltration.
-- Scanning third-party services outside the approved scope.
-- Claiming that a site is completely secure based only on automated checks.
-
-## Status
-
-**Phase 1 of the self-service spec is implemented on branch `feat/phase1-self-service`** (see the Phase 1 section above and [docs/AUDIT_MATRIX.md](docs/AUDIT_MATRIX.md)). The milestone notes below describe the earlier analyst workflow, which is now read-only.
-
-Earlier status â€” **Milestones 1 to 6 complete (Modules A to H plus production hardening).** Authentication, authorisation evidence, monitoring, the scanner worker, vulnerability management, the analyst workbench, VAPT reporting, remediation and closure are implemented and tested, with an end-to-end lifecycle test. Open items are manual user steps (VM runner redeploy, real-target acceptance) and the risks listed as open in the audit matrix. Authorisation creation has an API but no UI form. Neither website registration nor authorisation approval starts a scan.
+Product spec and build phases: [docs/SNWEBSHIELD_SPEC.md](docs/SNWEBSHIELD_SPEC.md). Evidence per phase: [docs/AUDIT_MATRIX.md](docs/AUDIT_MATRIX.md).
 
 ## Phase 2: DETECT (what a scan finds)
 
@@ -185,36 +119,6 @@ Migration `0021_monitor`; the new background role is `monitor` (`python -m app.c
 
 An administrator can still verify a website by hand for 24 hours, but only with all three of: **Owner name or company**, **How consent was given** (email, written letter or in person) and a **reason of at least 20 characters** that says what the owner agreed to. "admin only", "test", "demo" and similar filler are refused (server and form use the same rules: `ownership.manual_details_problem`, `lib/account.js`). The details are stored with the verification, written to the `manual_verification` audit event and shown in the website's **Audit history** panel (`GET /api/v1/websites/{id}/audit`; the owner sees "an administrator", staff see who). Older entries without these details are shown as "not recorded". Three websites verified earlier with the reason "admin only" were reset to unverified (audit event `verification_reset`).
 
-## Milestone 1: scanner worker hardening (Module D)
-
-The scanner worker now uses one fixed, hardened SSH transport for both remote profiles: the Windows OpenSSH client is pinned by absolute path, and command-line options override any `ssh_config` that would enable agent/X11/port forwarding, proxies, passwords or session reuse. A missing client, an unreachable VM, an unavailable Docker daemon or the wrong runner/image fails the job with a specific audited error, with no local fallback. Assessment jobs hold a 120-second lease that exceeds every bounded remote stage budget. The HEAD broker requires TLS 1.2 or later, records the negotiated version, and classifies redirects into fixed categories without following them or storing the `Location` value. The VM runner can now inspect each created container and refuse to start it unless network, user, filesystem, capability, resource, IPC, mount and port settings match policy. This only takes effect after the runner is redeployed manually.
-
-The full audit, risk register, test evidence, manual VM steps and remaining roadmap are in [docs/AUDIT_MATRIX.md](docs/AUDIT_MATRIX.md). No schema migration was added.
-
-## Milestone 2: vulnerability management (Module E)
-
-Migration `0009_vulnerabilities` adds a normalised `Vulnerability` entity, per-assessment `VulnerabilityOccurrence` records and an append-only event history. Repeated detections of the same check on the same website and target share a fingerprint, so they are deduplicated across assessments while each occurrence keeps its own evidence hash. Each vulnerability carries scanner and analyst severity, a confidence score with its factors, reproduction steps, and a validation state. Nothing becomes confirmed without an explicit human analyst validation, and analyst comments are recorded in the audit history. The API is under `/api/v1/vulnerabilities` and the dashboard has a new Vulnerabilities page. Verified with 430 backend tests, 22 frontend tests and a passing production build. Back up the database before running `alembic upgrade head`.
-
-## Milestone 3: analyst workbench (Module F)
-
-Migration `0010_analyst_workbench` adds versioned risk assessments (likelihood x business impact with a reasoned override, business context, tailored remediation and priority) and an immutable sign-off ledger, and installs SQLite triggers that make vulnerability events, assessments and sign-offs append-only even against raw SQL. The `/api/v1/workbench` API provides a review queue, assessment authoring, approve/reject/reopen sign-off and an audit trail with analyst identity, all behind an analyst role check. A finding can only be confirmed after a human saves a risk assessment for its current revision and signs off with attestation; only then is it report eligible. The dashboard has a new Analyst workbench page that shows scanner evidence as escaped plain text only. Verified with 470 backend tests, 31 frontend tests and a passing production build. Back up the database, then run `alembic upgrade head` from `backend`. Vulnerabilities confirmed before this milestone must be re-approved in the workbench to become report eligible.
-
-## Milestone 4: VAPT reporting (Module G)
-
-Migration `0011_vapt_reports` adds report snapshots, PDF artifacts with SHA-256 hashes, an immutable approval ledger and an audit event log, with SQLite triggers that block rewriting them. The `/api/v1/reports` API generates a draft from one completed assessment, including only findings that an analyst confirmed and signed off against their current revision (everything else is counted and excluded), and renders a PDF locally with `reportlab` (no external binaries): executive summary, client and domain scope, methodology and isolation attestation, severity breakdown, validated findings with escaped evidence and reproduction steps, remediation by priority, and the analyst sign-off block. All client, target and evidence text is treated as untrusted and escaped. A report stays a draft until a human approves it with an attested justification; only then does an official PDF exist and become downloadable, and every download re-verifies its hash. The dashboard has a new VAPT reports page. Verified with 501 backend tests, 40 frontend tests and a passing production build. Back up the database, install `requirements.txt`, then run `alembic upgrade head` from `backend`.
-
-## Milestone 5: remediation, retesting and closure (Module H)
-
-Migration `0012_remediation_retesting` adds remediation tracking for confirmed findings (`open`, `in_progress`, `fix_submitted`, `retest_requested`, `verified_fixed`, `reopened`, `risk_accepted`) with client notes, target dates and an append-only actor/UTC history, scoped retest requests, and an immutable assessment closure record, all protected by SQLite triggers. A retest is an ordinary assessment request made through the existing scanner path, so the live written authorisation, exact domain and methods are revalidated at request, claim and execution, with no local fallback. When the retest's observation is ingested, the finding becomes `verified_fixed` if the weakness is gone, or is reopened automatically with the fresh evidence if it still reproduces. Analysts can also reopen a finding manually and formally accept a risk with an attested justification. `POST /api/v1/assessments/{id}/close` succeeds only when every confirmed finding is verified fixed or risk accepted. The dashboard has a new Remediation page. Verified with 540 backend tests, 49 frontend tests and a passing production build. Back up the database, run `alembic upgrade head` from `backend`, and restart the assessment worker.
-
-## Milestone 6: production hardening and end-to-end integration
-
-Migration `0013_production_hardening` closes the authentication risks: every login success, failure, inactive-account attempt, throttled attempt and logout is written to an append-only `auth_events` table (no passwords, tokens or raw emails); repeated failures lock a login with HTTP 429 and `Retry-After`; `POST /api/v1/auth/logout` revokes the token's `jti` on the server; tokens are bound to the account's current role; and new passwords must meet a policy. Every API response carries `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy` and related headers (`Strict-Transport-Security` only over TLS), and `CORS_ORIGINS` is validated at start-up.
-
-Three roles now exist: `analyst`, `lead_analyst` (also approves reports, accepts risk, closes and reopens closures) and `admin` (everything; the bootstrap account). `SEPARATION_OF_DUTIES_ENABLED=true` adds dual sign-off: the analyst who assessed a finding cannot approve it, the report creator cannot approve the report, and whoever handled remediation cannot close the assessment. It is off by default so one admin can run the whole workflow. Once an assessment is closed, its findings and remediation are locked until a lead analyst or admin formally reopens the closure with an audited reason. Evidence purging now overwrites the file before unlinking it while keeping the document's SHA-256 as immutable audit proof, and `python -m app.cli.evidence_retention` reports expired documents without deleting anything.
-
-`backend/tests/test_e2e_lifecycle.py` drives the whole workflow from client registration to closure and checks the audit trail at every stage. Verified with 580 backend tests, 53 frontend tests and a passing production build. The per-risk status and test references are in [docs/AUDIT_MATRIX.md](docs/AUDIT_MATRIX.md).
-
 ## Setup, run, test and deploy
 
 All commands are PowerShell, run from the repository root unless stated. Never paste secrets, `.env` contents or private keys into chat, commits or logs.
@@ -237,7 +141,7 @@ npm install
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m app.cli.backup_database      # verified copy of the SQLite file, outside the repository
-.\.venv\Scripts\python.exe -m alembic upgrade head          # head is 0018_detect_results
+.\.venv\Scripts\python.exe -m alembic upgrade head          # head is 0022_legacy_retired
 ```
 
 To restore a backup: stop the API and all workers, then copy the backup file over `backend\snwebshield_dev.db` and check out the code that matches it (for `0016` to `0018`, the commit before Phase 1).
@@ -257,26 +161,20 @@ Account emails (confirmation and password reset) go through SMTP when `SMTP_HOST
 
 Passwords are typed at a hidden prompt: 12 to 128 characters, at least three of lowercase, uppercase, digits and symbols, not common and not containing the email name.
 
-### 4. Run the processes (separate terminals)
+### 4. Run the processes
+
+**Everything at once, and after every reboot:** run `scripts\install-autostart.ps1` once as administrator (Phase 5). The supervisor then starts the API (8000), the web app (5173, from `frontend\dist`), the scan worker and the monitor at boot and restarts any that stops.
+
+**By hand for a demo:** `powershell -ExecutionPolicy Bypass -File scripts\start-demo.ps1` (API, scan worker, monitor and the dev web app; skips what is already running). Or in separate terminals from `backend`:
 
 ```powershell
-# API (from backend)
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-# Monitoring: scheduler, worker and notification dispatcher (from backend)
-.\.venv\Scripts\python.exe -m app.cli.operations scheduler
-.\.venv\Scripts\python.exe -m app.cli.operations worker
-.\.venv\Scripts\python.exe -m app.cli.operations notifications
-# Scan worker: runs self-service scans (at most SCAN_MAX_CONCURRENT at once). Run one scan-worker process. (from backend)
-.\.venv\Scripts\python.exe -m app.cli.operations scan-worker
-# Legacy assessment worker: only cancels leftover queued legacy jobs (optional) (from backend)
-.\.venv\Scripts\python.exe -m app.cli.operations assessment-worker
-# Frontend (from frontend)
-npm run dev        # http://127.0.0.1:5173
+.\.venv\Scripts\python.exe -m app.cli.operations scan-worker     # runs scans and re-checks (one process)
+.\.venv\Scripts\python.exe -m app.cli.operations monitor         # scheduled scans, uptime, certificates, alerts
+# frontend (from frontend):  npm run dev   # http://127.0.0.1:5173
 ```
 
-`scripts\start-workers.ps1` starts any local role that is not already running. The Assessments page shows the worker state and the start command when it is not running.
-
-Restart the API and the assessment worker after changing `.env` or upgrading. Keep everything on the Windows machine; do not deploy the stack to Azure.
+Restart the API and the workers after changing `.env` or upgrading. Keep everything on the Windows machine; do not deploy the stack to Azure. The Admin page shows the state of every role.
 
 **DNS look-ups and the second resolvers.** SPF, DMARC, DKIM, CAA and MX look-ups retry before a scan says "could not check": attempt 1 uses this machine's resolver, attempt 2 uses the second resolvers `1.1.1.1` and `9.9.9.9` (setting `SCAN_DNS_FALLBACK_RESOLVERS`, plain DNS, never DNS-over-HTTPS; approved by the owner because the domain names being scanned are public), attempt 3 uses this machine's resolver again (`SCAN_DNS_ATTEMPTS` 3, `SCAN_DNS_TIMEOUT_SECONDS` 2.5). Leave `SCAN_DNS_FALLBACK_RESOLVERS` empty to use only this machine's resolvers.
 
@@ -287,7 +185,6 @@ Restart the API and the assessment worker after changing `.env` or upgrading. Ke
 | `DATABASE_URL` | SQLite file by default (`sqlite:///./snwebshield_dev.db`) |
 | `JWT_SECRET_KEY` | Required, random, at least 32 bytes. Also `JWT_ACCESS_TOKEN_MINUTES` (20), `JWT_ISSUER`, `JWT_AUDIENCE` |
 | `CORS_ORIGINS` | Comma-separated frontend origins (`http://localhost:5173,...`); `*` is rejected |
-| `EVIDENCE_ROOT`, `EVIDENCE_MAX_BYTES`, `EVIDENCE_RETENTION_DAYS` | Private evidence storage outside the repository, upload limit, retention |
 | `LOGIN_MAX_FAILURES` (5), `LOGIN_WINDOW_MINUTES` (15) | Login throttling |
 | `HSTS_MAX_AGE_SECONDS` | `Strict-Transport-Security` lifetime when served over HTTPS |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY` (`ssl`/`starttls`), `SMTP_SENDER`, `SMTP_USERNAME`, `SMTP_PASSWORD` | Account emails (confirmation, password reset) and monitoring notifications |
@@ -301,101 +198,20 @@ Restart the API and the assessment worker after changing `.env` or upgrading. Ke
 | `NVD_API_KEY` (optional), `VULN_CACHE_HOURS` (24), `VULN_HTTP_TIMEOUT_SECONDS` (10), `VULN_MAX_RESPONSE_BYTES` (8 MB), `SCAN_IDENTIFY_BUDGET_SECONDS` (120), `SCAN_TLS_PROBE_TIMEOUT_SECONDS` (2) | Phase 3A vulnerability look-ups. Works **without** a key (5 NVD requests per 30 s); with a free key 50. Put the key only in `backend/.env`; it is read as a secret, sent only in the `apiKey` header to NVD and never logged. No code change is needed to add it |
 | `SCAN_DNS_TIMEOUT_SECONDS` (2.5), `SCAN_DNS_ATTEMPTS` (3), `SCAN_DNS_FALLBACK_RESOLVERS` (`1.1.1.1,9.9.9.9`; empty = this machine's resolvers only) | DNS look-ups for SPF/DMARC/DKIM/CAA/MX: per-attempt timeout, attempts (system resolver, second resolvers, system resolver) before "could not check" |
 | `NUCLEI_ENABLED` (true in development; it only runs while its self-test passes, and is skipped if the binary is not installed), `NUCLEI_DIR`, `NUCLEI_LOG_DIR`, `NUCLEI_RUN_SECONDS` (180, quick), `NUCLEI_DEEP_RUN_SECONDS` (600), `NUCLEI_MAX_QUICK_CVES` (300), `NUCLEI_RATE_LIMIT` (25), `NUCLEI_CONCURRENCY` (10), `NUCLEI_MAX_OUTPUT_BYTES`, `NUCLEI_SELFTEST_VALID_MINUTES` (60) | Phase 3B Nuclei engine. Off by default, and even when on it only runs while its self-test passes |
-| `NOTIFICATION_CHANNEL`, `NOTIFICATION_RECIPIENT` | Legacy monitoring notifications (dashboard by default) |
-| `ASSESSMENT_LOCAL_HTTP_ENABLED` (false) | Fixed local single-HEAD profile |
-| `ASSESSMENT_REMOTE_DOCKER_ENABLED`, `ASSESSMENT_REMOTE_IMAGE_ID`, `ASSESSMENT_REMOTE_REQUIRE_ISOLATION_ATTESTATION` | Remote Docker header analysis on the Azure VM; image ID is the immutable `sha256:` ID of the scanner image |
-| `ASSESSMENT_NMAP_ENABLED`, `ASSESSMENT_NMAP_IMAGE_ID` | Restricted Nmap profile |
 | `VITE_API_BASE_URL` (frontend) | API base URL including `/api/v1` |
 
 ### 6. Run the tests (one at a time, never together)
 
 ```powershell
 cd backend
-.\.venv\Scripts\python.exe -m pytest tests/test_e2e_lifecycle.py tests/test_production_hardening.py
-.\.venv\Scripts\python.exe -m pytest          # full regression, about 15 minutes
+.\.venv\Scripts\python.exe -m pytest                 # full backend suite
 cd ..\frontend
 npm test                                      # unit tests (Node test runner)
 npm run build                                 # production build
-npm run test:e2e                              # optional Chromium journeys (Playwright)
 ```
 
-Run `pytest`, `npm test` and `npm run build` strictly one after another; running them together can exhaust memory on this machine.
+Before merging a phase run `powershell -ExecutionPolicy Bypass -File scripts\fresh-clone-check.ps1`: it clones the committed branch into a temporary folder, installs it from scratch and runs the backend and frontend tests and the build.
 
-The legacy analyst-pipeline suites are listed in `collect_ignore` in `backend/tests/conftest.py`: they exercise the removed written-permission system and stay in the repository until Phases 2â€“4 replace that code. Phase 1 tests: `test_accounts.py`, `test_websites.py`, `test_website_removal.py`, `test_test_targets.py`, `test_detect_*.py`, `test_scan_stops_cleanly.py`, `test_scan_now.py`, `test_ownership.py`, `test_scans.py`, `test_legacy_read_only.py`, `test_auth.py`, `test_migrations.py`, and `frontend/tests/account.test.js`.
+## Removed: the earlier analyst pipeline
 
-### 7. Deploy or update the isolated scanner container on the Azure VM
-
-The scanner image is built on the existing VM `azureuser@57.159.27.58` only over SSH/SCP. Never expose Docker's TCP port 2375, never create paid Azure resources or registries, and never delete or prune existing containers, images or volumes. Only the scanner build files travel; no `.env`, database, evidence or keys. The container runs with `--network none`, a non-root user, a read-only root filesystem and strict CPU, memory, PID and time limits, enforced by `scanner/remote_runner.py`.
-
-```powershell
-# Windows: sync only the scanner build directory and the single analyser source the Dockerfile copies.
-ssh azureuser@57.159.27.58 "mkdir -p ~/snwebshield-scanner/backend/app/services"
-scp -r scanner azureuser@57.159.27.58:snwebshield-scanner/
-scp backend/app/services/header_analyzer.py azureuser@57.159.27.58:snwebshield-scanner/backend/app/services/
-```
-
-```bash
-# On the VM (ssh azureuser@57.159.27.58). Use a reviewed Python base image digest; there is no floating default.
-cd ~/snwebshield-scanner
-docker build --pull=false -f scanner/Dockerfile \
-  --build-arg PYTHON_BASE=python:3.12-slim@sha256:REPLACE_WITH_REVIEWED_DIGEST \
-  -t snwebshield-header-analysis:v1 .
-docker image inspect --format '{{.Id}}' snwebshield-header-analysis:v1      # note the new sha256 image ID
-# Install the runner and record the image ID (only if the image or runner changed):
-sudo install -o root -g root -m 755 scanner/remote_runner.py /usr/local/libexec/snwebshield-header-runner
-printf '%s\n' 'sha256:REPLACE_WITH_NEW_IMAGE_ID' | sudo tee /etc/snwebshield/header-image-id >/dev/null
-/usr/local/libexec/snwebshield-header-runner --check
-/usr/bin/python3 -I scanner/verify_host.py
-```
-
-Then on Windows, set `ASSESSMENT_REMOTE_IMAGE_ID` to the new ID in the private `backend\.env`, restart the API and assessment worker, and verify with `.\.venv\Scripts\python.exe -m app.cli.scanner_check` from `backend` (expect `passed: true`, `target_requests: 0`, `isolation_attested: true`, confirmed cleanup). If only `remote_runner.py` changed, skip the build and run just the `scp`, `install` and `--check` steps; the image ID does not change. When `isolation_attested` is true, set `ASSESSMENT_REMOTE_REQUIRE_ISOLATION_ATTESTATION=true`. Details and troubleshooting: [docs/REMOTE_DOCKER_SCANNER.md](docs/REMOTE_DOCKER_SCANNER.md).
-
-## Local authorisation evidence milestone
-
-Private document upload, authenticated retrieval, human reviews, retention/holds and the approval evidence gate are implemented for local testing. Follow [the evidence guide](docs/AUTHORIZATION_EVIDENCE.md) for migration `0003_evidence`, configuration, API details, backup limitations and Windows validation. See the monitoring guide for current validation limits; no GitHub push is required.
-
-## Website monitoring milestone
-
-The first operational handler uses a shared job engine with atomic claims, leases, attempts, fenced results and execution events. Separate reviewed monitoring consent and explicit activation are required. The dashboard provides HTTP/DNS/TLS metrics, response-time history, incidents and notification delivery history. Migration `0004_monitoring` preserves existing data.
-
-Follow [monitoring setup, APIs and validation](docs/MONITORING.md) for the five local processes, Windows commands and remaining acceptance checks. Browser execution was blocked by the implementation environment, so Windows browser acceptance remains required. Scanners are not implemented and cannot inherit monitoring permission.
-
-## Security Scanner Worker: stage one
-
-Explicit assessment requests, a versioned policy-only profile, live authorisation/evidence enforcement and an independent `assessment-worker` role now use the existing shared job engine. The Assessments dashboard supports request history, detail and cancellation. Migration `0005_assessment_intents` preserves existing monitoring data. No network check, Nmap, Nuclei or ZAP adapter is enabled; completed means permission preflight only.
-
-See [the assessment audit, design, API and Windows acceptance guide](docs/SCANNER_STAGE_ONE.md). Keep existing accounts, configuration and data; back up before migrating. New browser acceptance remains pending on Windows.
-
-## Local Python assessment worker
-
-The [restricted Nmap profile](docs/NMAP_SCANNER.md) adds isolated TCP connect discovery for ports 80/443 only, with a dedicated container firewall, explicit hostname + public-IP scope and separate `tcp_port_discovery` permission. It reuses reports, analyst review and Findings; web-only approvals are insufficient.
-
-The [Findings dashboard](docs/FINDINGS_DASHBOARD.md) provides a central queue of current analyst-confirmed issues, client/website/owner/severity/status filters, due dates, overdue counts and source-assessment navigation. It reuses the same review history and does not trigger scans. Migration: `0008_findings_dashboard`.
-
-Completed header assessments support [analyst review, remediation tracking and reviewed report exports](docs/ANALYST_REVIEW.md). Migration `0007_observation_reviews` preserves existing reports and adds human decisions with revision history; no rescan is needed to review an existing assessment.
-
-For the existing Azure VM integration, see [Remote Docker scanner setup and acceptance](docs/REMOTE_DOCKER_SCANNER.md). The default-off remote profile keeps the application/data on Windows and sends selected headers to a fixed networkless analyser. Windows SSH and live isolation, timeout, cancellation and cleanup checks passed. Real target assessments still require explicit, current written authorisation.
-
-A default-off fixed HTTP profile reuses assessment jobs and live authorisation/evidence checks. It performs one HEAD and runs a network-free header analysis program in a bounded local Python process. No Docker or cloud service is required. Migration: `0006_local_http`; setting: `ASSESSMENT_LOCAL_HTTP_ENABLED=false`. See `docs/LOCAL_HTTP_ASSESSMENTS.md` (repository root) for setup, execution limits, acceptance steps and trust-boundary limitations.
-
-## Running an assessment
-
-Open Assessments, choose a website and a profile. The page checks permission without any network request, shows which authorisation will be used or the exact reason it is blocked, and enables **Run assessment** only when permission is valid. The worker re-checks permission immediately before execution. Observations are unconfirmed until an analyst validates them in Vulnerability Management.
-
-## Scanner VM housekeeping
-
-After updating `scanner/remote_runner.py` and `scanner/nmap/runner.py`, install them on the VM as described above and run `--check` once. Then the Assessments page button "Check VM for leftover containers" lists SNWebShield-labelled containers older than two minutes. It is read-only; remove anything it flags manually and only after you approve (`/usr/local/libexec/snwebshield-nmap-runner --cleanup <token>` removes just a matching labelled container). The Nmap runner now inspects its guard and scanner containers before starting them; results from older runners show "not attested".
-
-## After a worker crash or restart
-
-Start the assessment worker again. It fails any run whose lease expired (once, never repeated), ingests results that were stored but not yet turned into observations, and records a `worker_startup_recovery` audit event. A request that cannot progress is labelled on the Assessments page, and it can be cancelled at any time without a worker.
-
-## Testing
-
-See [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for the step-by-step test process: automated suites, a manual walk through Monitors, Detects, Validates and Protects, negative and security tests, the Azure VM checks, port watch, crash recovery and a results sheet.
-
-## The four pillars as one cycle
-
-Open **Website lifecycle** for a per-website summary of Monitors, Detects, Validates and Protects and the single next step. The cycle is: monitoring watches uptime, DNS, TLS and response time; **port watch** (Monitoring page, off until you enable it with a written-permission attestation) re-checks TCP 80 and 443 on a schedule and alerts when a port changes state; authorised assessments detect issues, now including HTTPS use, certificate expiry and cookie flags; analysts validate observations; fixes are retested, and with `SEPARATION_OF_DUTIES_ENABLED=true` a second person must confirm a verified fix before the assessment can be closed.
-
-After pulling this version: back up the database, run `alembic upgrade head` from `backend` (migrations 0014 and 0015; nothing is enabled by upgrading), and restart the API and workers. Port watch needs the scheduler, the assessment worker and the notification dispatcher running, plus the Nmap profile enabled and the VM runners redeployed.
+On 2026-11-27 the earlier analyst-led pipeline (clients, authorisation evidence, assessments, observation review, vulnerability management, the analyst workbench, VAPT reports, remediation sign-off, port watch, the old monitoring jobs and the Docker/VM Nmap runner) was removed from the code. Phases 2 to 5 replaced it. Everything is recoverable from the git tag `before-legacy-removal`. The database tables are kept with all their data (listed in `retired_tables`, migration `0022_legacy_retired`) and all audit data (`execution_events`, `auth_events`, `authorization_audit_events`) is unchanged.

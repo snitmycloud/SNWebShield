@@ -23,20 +23,6 @@ os.environ["MONITOR_DOMAIN_ALLOWLIST"] = ""   # the development .env limits the 
 os.environ["CORS_ORIGINS"] = "http://localhost:5173"
 os.environ["JWT_SECRET_KEY"] = "test-only-secret-key-not-for-any-real-environment-123456789"
 
-# Legacy analyst-pipeline suites (Phase 1 decision). They exercise the written-permission system that was
-# removed (authorisations, evidence uploads, approvals, dual sign-off) and the Docker/Nmap runners, which are
-# now read-only. They stay in the repository, unchanged, until Phases 2-4 replace that code and they are
-# deleted with it. The read-only behaviour itself is covered by test_legacy_read_only.py.
-collect_ignore = [
-    "test_assessments.py", "test_authorization_correctness.py", "test_e2e_lifecycle.py", "test_evidence.py",
-    "test_findings.py", "test_fix_signoff.py", "test_job_recovery.py", "test_lifecycle.py", "test_local_assessment.py", "test_monitoring.py",
-    "test_nmap.py", "test_nmap_inspection.py", "test_observation_reviews.py", "test_one_step_flow.py",
-    "test_passive_checks.py", "test_port_watch.py", "test_production_hardening.py", "test_remediation.py",
-    "test_remote_assessment.py", "test_reports.py", "test_scanner_hardening.py", "test_unmigrated.py",
-    "test_vulnerabilities.py", "test_workbench.py", "test_worker_status.py",
-]
-
-
 @pytest.fixture(autouse=True)
 def no_internet(monkeypatch):
     """No test may reach the internet: scan connections are limited to loopback test servers, and real DNS and

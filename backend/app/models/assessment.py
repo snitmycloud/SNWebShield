@@ -1,4 +1,7 @@
-"""Immutable assessment intent linked to the shared job queue."""
+"""UNUSED (the earlier analyst pipeline was removed on 2026-11-27). The tables and all their data are kept in the database and
+listed in `retired_tables`; no code reads or writes them. This file only keeps the schema description.
+
+Immutable assessment intent linked to the shared job queue."""
 from datetime import datetime
 from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, JSON, String, Text, UniqueConstraint
 from datetime import date

@@ -18,30 +18,12 @@ import WorkersPanel from "./WorkersPanel.jsx";
 import { parseHash, scheduleText, uptimeView } from "./lib/monitor.js";
 import { certificateView, gradeView, scanDuration, TABS } from "./lib/report.js";
 import { isFriendlyLimit, scanNowText } from "./lib/detect.js";
-import MonitoringPage from "./MonitoringPage.jsx";
-import AssessmentsPage from "./AssessmentsPage.jsx";
-import FindingsPage from "./FindingsPage.jsx";
-import VulnerabilitiesPage from "./VulnerabilitiesPage.jsx";
-import WorkbenchPage from "./WorkbenchPage.jsx";
-import ReportsPage from "./ReportsPage.jsx";
-import RemediationPage from "./RemediationPage.jsx";
-import LifecyclePage from "./LifecyclePage.jsx";
 import "./console.css";
 
 const MAIN_NAV = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "websites", label: "Websites", icon: Globe2 },
   { id: "settings", label: "Settings", icon: Settings2 },
-];
-const LEGACY_NAV = [
-  { id: "legacy-monitoring", label: "Monitoring", icon: Activity },
-  { id: "legacy-assessments", label: "Assessments", icon: FileText },
-  { id: "legacy-vulnerabilities", label: "Vulnerabilities", icon: Bug },
-  { id: "legacy-workbench", label: "Analyst workbench", icon: UserCheck },
-  { id: "legacy-reports", label: "VAPT reports", icon: FileText },
-  { id: "legacy-remediation", label: "Remediation", icon: RefreshCw },
-  { id: "legacy-findings", label: "Findings", icon: ShieldAlert },
-  { id: "legacy-lifecycle", label: "Website lifecycle", icon: Shield },
 ];
 
 const when = value => {
@@ -485,7 +467,6 @@ export default function Console({ account, onLogout }) {
   const [page, setPage] = useState(linked?.page || "dashboard"), [openId, setOpenId] = useState(linked?.openId ?? null);
   const [alertFocus] = useState(linked?.alert || null);
   const [websites, setWebsites] = useState([]), [plan, setPlan] = useState(null), [loading, setLoading] = useState(true);
-  const [legacySites, setLegacySites] = useState([]), [clients, setClients] = useState([]);
   const [error, setError] = useState(""), [limit, setLimit] = useState(null), [notice, setNotice] = useState("");
   const load = useCallback(async () => {
     setError("");
@@ -495,11 +476,6 @@ export default function Console({ account, onLogout }) {
     } catch (e) { setError(e.message); } finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); const timer = setInterval(load, 30000); return () => clearInterval(timer); }, [load]);
-  useEffect(() => {
-    if (!staff || !page.startsWith("legacy-")) return;
-    api.allWebsites().then(setLegacySites).catch(e => setError(e.message));
-    if (page === "legacy-findings") api.getClients().then(setClients).catch(() => setClients([]));
-  }, [staff, page]);
 
   const go = id => { setPage(id); setOpenId(null); setError(""); setNotice(""); };
   useEffect(() => {
@@ -513,7 +489,7 @@ export default function Console({ account, onLogout }) {
     load();
   };
   const nav = useMemo(() => [...MAIN_NAV, ...(account.role === "admin" ? [{ id: "admin", label: "Admin", icon: Users }] : [])], [account.role]);
-  const title = [...nav, ...LEGACY_NAV].find(item => item.id === page)?.label || "Dashboard";
+  const title = nav.find(item => item.id === page)?.label || "Dashboard";
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -522,11 +498,6 @@ export default function Console({ account, onLogout }) {
       <nav className="main-nav" aria-label="Main navigation">{nav.map(({ id, label, icon: Icon }) =>
         <button key={id} className={`nav-item ${page === id ? "active" : ""}`} onClick={() => go(id)}><Icon size={18} /><span>{label}</span>
           {id === "websites" && <span className="nav-count">{websites.length}</span>}</button>)}</nav>
-      {staff && <>
-        <div className="nav-label tools-label">EARLIER WORKFLOW · READ-ONLY</div>
-        <nav className="main-nav" aria-label="Legacy pages">{LEGACY_NAV.map(({ id, label, icon: Icon }) =>
-          <button key={id} className={`nav-item ${page === id ? "active" : ""}`} onClick={() => go(id)}><Icon size={18} /><span>{label}</span></button>)}</nav>
-      </>}
       <div className="sidebar-bottom"><div className="profile-row"><div className="profile-avatar">{(account.full_name || "S")[0].toUpperCase()}</div>
         <div className="profile-copy"><strong>{account.full_name}</strong><span>{account.email}</span></div></div></div>
     </aside>
@@ -550,15 +521,6 @@ export default function Console({ account, onLogout }) {
           onAdded={site => { setWebsites(rows => [site, ...rows]); load(); }} onLimit={setLimit} onChanged={load} onRemoved={removed} onUpgrade={() => go("settings")} />}
         {page === "settings" && <SettingsView account={account} plan={plan} alertFocus={alertFocus} />}
         {page === "admin" && account.role === "admin" && <AdminView account={account} />}
-        {staff && page.startsWith("legacy-") && <div className="sw-legacy-note"><Shield size={15} />Earlier analyst workflow: read-only. Nothing can be started from these pages.</div>}
-        {staff && page === "legacy-monitoring" && <MonitoringPage websites={legacySites} />}
-        {staff && page === "legacy-assessments" && <AssessmentsPage websites={legacySites} />}
-        {staff && page === "legacy-vulnerabilities" && <VulnerabilitiesPage websites={legacySites} onOpenAssessment={() => go("legacy-assessments")} />}
-        {staff && page === "legacy-workbench" && <WorkbenchPage websites={legacySites} />}
-        {staff && page === "legacy-reports" && <ReportsPage websites={legacySites} />}
-        {staff && page === "legacy-remediation" && <RemediationPage websites={legacySites} />}
-        {staff && page === "legacy-findings" && <FindingsPage clients={clients} websites={legacySites} onOpenAssessment={() => go("legacy-assessments")} />}
-        {staff && page === "legacy-lifecycle" && <LifecyclePage websites={legacySites} onNavigate={target => go(`legacy-${target}`)} />}
         </ErrorBoundary>
         <footer className="content-footer"><span>SNWebShield</span><span><Shield size={13} /> We only scan websites whose ownership you have verified.</span></footer>
       </div>
