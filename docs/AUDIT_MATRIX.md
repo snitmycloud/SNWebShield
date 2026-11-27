@@ -215,6 +215,8 @@ Tests: `test_detect_pipeline.py` (optional step down: completed with the note; c
 
 **Not done / limits (Phase 5).** SMTP is not configured, so no real email was delivered (outbox files only). The web app under the supervisor is the built `frontend\dist` (rebuild with `npm run build` after changing the frontend). Alerts about "ownership no longer proved" repeat at most once a day while it stays lost. Uptime checks use one request per website per interval and do not follow redirects. The Linux unit and Linux paths are untested. A reboot test needs the administrator to install the task and restart the computer.
 
+**Manual verification made strict (2026-11-27, on the Phase 5 branch).** Owner name or company, how consent was given (email / written letter / in person) and a reason of 20 or more characters are required; placeholder reasons are refused; the details are in the audit event and the website's audit history (`GET /websites/{id}/audit`, field-filtered, staff see the admin's email, owners do not). Tests: `test_manual_verification.py` (65), `frontend/tests/report.test.js`, `monitor.test.js`. Websites 1, 2 and 8 (verified earlier by "admin only") were reset to unverified with `verification_reset` events. The monitor, scheduler, uptime checks and scan requests all use the read-only check `ownership.has_valid_verification` (expired manual verification, fake test target, disabled owner, removed website are skipped even with an empty allowlist).
+
 ## Demo build (2026-11-26): manual verification, robustness, report (minimal Phase 4)
 
 | Item | Status | Tests / proof |

@@ -349,6 +349,37 @@ def record(website: Website, result: CheckResult, now=None) -> None:
 
 MANUAL_HOURS = 24
 MANUAL_LABEL = "Manually verified by admin"
+MANUAL_REASON_MIN = 20
+CONSENT_METHODS = {"email": "Email", "written_letter": "Written letter", "in_person": "In person"}
+# Words that are not an answer. A name or reason that is only these (or the same few words repeated) is refused.
+_FILLER = {"admin", "only", "test", "testing", "tests", "demo", "ok", "okay", "none", "na", "n/a", "nil", "owner", "me", "self", "myself", "yes", "no",
+           "company", "name", "asdf", "qwerty", "xxx", "abc", "temp", "temporary", "just", "because", "needed", "need", "for", "the", "a", "is", "i", "am"}
+
+
+def _words(text: str) -> list[str]:
+    import re
+    return re.findall(r"[a-z0-9']+", (text or "").lower())
+
+
+def manual_details_problem(owner_name: str, consent_method: str, reason: str) -> tuple[str, str] | None:
+    """The details an administrator must give to verify a website by hand. Returns (field, plain message) for the first problem, or None.
+
+    Required: who the owner is (a person or company name), how they consented (email, written letter or in person) and a real reason of
+    at least 20 characters. "admin only", "test", "demo" and the like are not reasons and are refused."""
+    name = (owner_name or "").strip()
+    squashed = "".join(c for c in name.lower() if c.isalnum())   # "n/a" -> "na"
+    if len(name) < 2 or len(name) > 120 or not any(c.isalpha() for c in name) or squashed in _FILLER or all(w in _FILLER for w in _words(name)):
+        return "owner_name", "Enter the name of the website's owner or their company (not \"admin\", \"test\" or \"owner\")."
+    if consent_method not in CONSENT_METHODS:
+        return "consent_method", "Say how the owner gave consent: email, written letter or in person."
+    text = (reason or "").strip()
+    words = _words(text)
+    useful = [w for w in words if w not in _FILLER]
+    if len(text) < MANUAL_REASON_MIN or len(text) > 300:
+        return "reason", f"Write a reason of at least {MANUAL_REASON_MIN} characters (at most 300) that says what the owner agreed to."
+    if len(words) < 4 or len(set(words)) < 3 or len(useful) < 2:
+        return "reason", "That is not a reason. Say what the owner agreed to, for example: \"Owner Asha Rao emailed on 26 Nov to allow a scan for the customer demo.\""
+    return None
 
 
 def manual_expires_at(website: Website) -> datetime | None:
@@ -395,7 +426,7 @@ def expire_manual(website: Website, now=None) -> bool:
     return True
 
 
-def grant_manual(website: Website, admin: Admin, reason: str, now=None) -> dict:
+def grant_manual(website: Website, admin: Admin, reason: str, now=None, *, owner_name: str = "", consent_method: str = "") -> dict:
     """Mark the website verified by an administrator for 24 hours. The caller has already checked the role and writes the audit event."""
     now = now or utc_now()
     expires = now + timedelta(hours=MANUAL_HOURS)
@@ -405,6 +436,7 @@ def grant_manual(website: Website, admin: Admin, reason: str, now=None) -> dict:
         "ok": True, "method": "manual", "state": "verified", "expected": "", "found": [], "label": MANUAL_LABEL,
         "message": f"{MANUAL_LABEL} until {expires.strftime('%d %b %Y, %H:%M')} UTC.", "hint": "",
         "granted_by_id": admin.id, "granted_by": admin.full_name or admin.email, "reason": reason.strip(), "granted_at": now.isoformat(),
+        "owner_name": owner_name.strip(), "consent_method": consent_method, "consent_label": CONSENT_METHODS.get(consent_method, ""),
         "expires_at": expires.isoformat(), "checked_at": now.isoformat()}
     return website.verification_result
 

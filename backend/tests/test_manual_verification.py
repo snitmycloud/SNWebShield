@@ -32,8 +32,11 @@ def add_site(client, headers, domain="demo.example.org"):
     return response.json()
 
 
-def verify_manually(client, headers, site_id, reason=REASON):
-    return client.post(f"{W}/{site_id}/verify-manual", headers=headers, json={"reason": reason})
+OWNER = "Asha Rao Pvt Ltd"
+
+
+def verify_manually(client, headers, site_id, reason=REASON, owner_name=OWNER, consent="email"):
+    return client.post(f"{W}/{site_id}/verify-manual", headers=headers, json={"owner_name": owner_name, "consent_method": consent, "reason": reason})
 
 
 def events(action):
@@ -63,7 +66,7 @@ def test_a_user_cannot_use_it_on_somebody_elses_website_either(client):
 
 
 def test_it_needs_a_login(client):
-    assert client.post(f"{W}/1/verify-manual", json={"reason": REASON}).status_code in (401, 403)
+    assert client.post(f"{W}/1/verify-manual", json={"owner_name": OWNER, "consent_method": "email", "reason": REASON}).status_code in (401, 403)
 
 
 def test_the_button_is_offered_only_to_admins_and_only_while_unverified(client):
@@ -85,7 +88,7 @@ def test_a_typed_reason_is_required(client, reason):
     site = add_site(client, admin)
     assert verify_manually(client, admin, site["id"], reason).status_code == 422
     assert client.post(f"{W}/{site['id']}/verify-manual", headers=admin, json={}).status_code == 422
-    assert client.post(f"{W}/{site['id']}/verify-manual", headers=admin, json={"reason": REASON, "hours": 9999}).status_code == 422
+    assert client.post(f"{W}/{site['id']}/verify-manual", headers=admin, json={"owner_name": OWNER, "consent_method": "email", "reason": REASON, "hours": 9999}).status_code == 422
 
 
 # --- what it does ------------------------------------------------------------------------------------------------------------------------
@@ -311,3 +314,111 @@ def test_the_instructions_give_the_exact_file_name_and_folder_for_copy_buttons()
     assert info["file"]["file_name"] == f"snwebshield-{TOKEN}.txt" and info["file"]["folder"] == "/.well-known/"
     assert info["file"]["url"] == f"https://example.com/.well-known/snwebshield-{TOKEN}.txt" and info["file"]["content"] == TOKEN
     assert ownership.counterpart("example.com") == "www.example.com" and ownership.counterpart("www.example.com") == "example.com"
+
+
+# --- stricter manual verification: owner, consent and a real reason are all required -----------------------------------------------------------
+
+@pytest.mark.parametrize("reason", ["admin only", "Admin only", "admin only admin only admin only", "for testing purposes only", "just for the demo please ok", "test test test test test test", "aaaaaaaaaaaaaaaaaaaaaaaa", "x" * 20])
+def test_placeholder_reasons_are_refused_with_a_plain_message(client, reason):
+    _, _, admin = account_headers(client, "admin")
+    site = add_site(client, admin)
+    response = verify_manually(client, admin, site["id"], reason)
+    assert response.status_code == 422 and response.json()["detail"]["code"] == "manual_details" and response.json()["detail"]["field"] == "reason"
+    assert client.get(f"{W}/{site['id']}", headers=admin).json()["verification_status"] != "verified"
+    assert not [e for e in events("manual_verification") if e.resource_id == site["id"]]
+
+
+@pytest.mark.parametrize("name", ["", " ", "a", "admin", "Admin", "test", "owner", "n/a", "12345", "the owner", "demo test"])
+def test_the_owner_name_must_be_a_real_person_or_company(client, name):
+    _, _, admin = account_headers(client, "admin")
+    site = add_site(client, admin)
+    response = verify_manually(client, admin, site["id"], owner_name=name)
+    assert response.status_code == 422
+    if name.strip():
+        assert response.json()["detail"]["field"] == "owner_name"
+
+
+@pytest.mark.parametrize("consent", ["", "phone", "verbal", "EMAIL", None, "other"])
+def test_how_consent_was_given_must_be_email_letter_or_in_person(client, consent):
+    _, _, admin = account_headers(client, "admin")
+    site = add_site(client, admin)
+    assert verify_manually(client, admin, site["id"], consent=consent).status_code == 422
+
+
+def test_all_three_fields_are_required_and_a_short_vague_reason_is_refused(client):
+    _, _, admin = account_headers(client, "admin")
+    site = add_site(client, admin)
+    url = f"{W}/{site['id']}/verify-manual"
+    for body in ({"reason": REASON}, {"owner_name": OWNER, "reason": REASON}, {"owner_name": OWNER, "consent_method": "email"}, {}):
+        assert client.post(url, headers=admin, json=body).status_code == 422
+    assert verify_manually(client, admin, site["id"], "Owner agreed by mai").status_code == 422      # 19 characters
+    assert verify_manually(client, admin, site["id"], "Owner agreed by mail").status_code == 200     # exactly 20 characters, and it says something
+
+
+@pytest.mark.parametrize("consent", ["email", "written_letter", "in_person"])
+def test_a_proper_request_is_accepted_and_recorded_with_owner_consent_and_reason(client, consent):
+    admin_id, admin_email, admin = account_headers(client, "admin")
+    site = add_site(client, admin, f"{consent.replace('_', '-')}.example.org")
+    reason = "Director Asha Rao confirmed in writing that we may scan the website for the customer demo"
+    response = verify_manually(client, admin, site["id"], reason, owner_name="Asha Rao, Excel Logics", consent=consent)
+    assert response.status_code == 200, response.text
+    manual = response.json()["website"]["manual_verification"]
+    assert manual["owner_name"] == "Asha Rao, Excel Logics" and manual["consent_label"] == ownership.CONSENT_METHODS[consent] and manual["reason"] == reason
+    [event] = [e for e in events("manual_verification") if e.resource_id == site["id"]]
+    assert event.detail["owner_name"] == "Asha Rao, Excel Logics" and event.detail["consent_method"] == consent and event.detail["reason"] == reason
+    assert event.detail["admin_id"] == admin_id
+
+
+def test_the_website_audit_history_shows_the_details_to_staff_but_not_to_other_users(client):
+    admin_id, admin_email, admin = account_headers(client, "admin")
+    site = add_site(client, admin, "audit.example.org")
+    verify_manually(client, admin, site["id"], "Director Asha Rao emailed on 26 Nov allowing a scan for the demo", owner_name="Asha Rao", consent="email")
+    history = client.get(f"{W}/{site['id']}/audit", headers=admin).json()["events"]
+    manual = next(e for e in history if e["action"] == "manual_verification")
+    assert manual["detail"]["owner_name"] == "Asha Rao" and manual["detail"]["consent_label"] == "Email" and "emailed on 26 Nov" in manual["detail"]["reason"]
+    assert manual["detail"]["recorded_details"] is True and manual["detail"]["admin"] == admin_email
+    assert history[-1]["action"] == "website_added" and history[0]["at"] >= history[-1]["at"]
+    _, _, other = account_headers(client)
+    assert client.get(f"{W}/{site['id']}/audit", headers=other).status_code == 404
+    assert client.get(f"{W}/{site['id']}/audit").status_code in (401, 403)
+
+
+def test_an_owner_who_is_not_staff_sees_an_administrator_not_the_admin_email(client):
+    from app.models.admin import Admin
+    from app.services import job_engine as engine
+    _, admin_email, admin = account_headers(client, "admin")
+    _, _, owner_headers = account_headers(client)
+    site = add_site(client, owner_headers, "ownersees.example.org")
+    with SessionLocal() as db:   # an administrator verified this customer's website by hand
+        admin_account = db.scalar(select(Admin).where(Admin.email == admin_email))
+        row = db.get(Website, site["id"])
+        result = ownership.grant_manual(row, admin_account, "Customer emailed their consent for the security scan", owner_name="Customer Ltd", consent_method="email")
+        engine.event(db, "manual_verification", resource_id=row.id, actor_id=admin_account.id, detail={
+            "admin_id": admin_account.id, "admin": admin_email, "domain": row.domain, "reason": result["reason"], "owner_name": "Customer Ltd",
+            "consent_method": "email", "granted_at": result["granted_at"], "expires_at": result["expires_at"]})
+        db.commit()
+    seen = next(e for e in client.get(f"{W}/{site['id']}/audit", headers=owner_headers).json()["events"] if e["action"] == "manual_verification")
+    assert "admin" not in seen["detail"] and "admin_id" not in seen["detail"] and seen["detail"]["owner_name"] == "Customer Ltd"
+    assert admin_email not in str(seen)
+
+
+def test_older_manual_verifications_without_owner_or_consent_are_shown_as_not_recorded(client):
+    from app.services import job_engine as engine
+    _, _, admin = account_headers(client, "admin")
+    site = add_site(client, admin, "older.example.org")
+    with SessionLocal() as db:
+        engine.event(db, "manual_verification", resource_id=site["id"], actor_id=1, detail={"admin": "x@example.com", "domain": "older.example.org", "reason": "admin only"})
+        db.commit()
+    seen = next(e for e in client.get(f"{W}/{site['id']}/audit", headers=admin).json()["events"] if e["action"] == "manual_verification")
+    assert seen["detail"]["recorded_details"] is False and "owner_name" not in seen["detail"]
+
+
+def test_the_audit_history_hides_fields_it_does_not_list(client):
+    from app.services import job_engine as engine
+    _, _, admin = account_headers(client, "admin")
+    site = add_site(client, admin, "hide.example.org")
+    with SessionLocal() as db:
+        engine.event(db, "website_added", resource_id=site["id"], actor_id=None, detail={"domain": "hide.example.org", "secret_token": "should-not-appear", "password": "nope"})
+        db.commit()
+    body = client.get(f"{W}/{site['id']}/audit", headers=admin).text
+    assert "should-not-appear" not in body and "password" not in body

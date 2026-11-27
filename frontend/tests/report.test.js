@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { GRADE_TONE, TABS, certificateView, gradeView, reportFields, reportGroups, riskText, scanDuration, severityRows } from "../src/lib/report.js";
-import { MANUAL_REASON_MIN, manualReasonOk, manualTimeLeft, verificationView } from "../src/lib/account.js";
+import { MANUAL_REASON_MIN, manualDetailsProblem, manualOwnerOk, manualReasonOk, manualTimeLeft, verificationView } from "../src/lib/account.js";
 
 const f = (over = {}) => ({ fingerprint: `x${Math.random()}`, title: "t", severity: "high", confidence: "confirmed", group: "findings", ...over });
 
@@ -63,11 +63,23 @@ test("the website page has exactly the four tabs in order", () => {
 
 // --- manual verification -----------------------------------------------------------------------------------------------------
 
-test("a typed reason of at least 10 characters is required and shorter ones are refused", () => {
-  assert.equal(MANUAL_REASON_MIN, 10);
+test("a real reason of at least 20 characters is required; placeholders such as 'admin only' are refused", () => {
+  assert.equal(MANUAL_REASON_MIN, 20);
   assert.equal(manualReasonOk("Owner present at demo and gave consent"), true);
-  for (const bad of ["", "short", "         ", "x".repeat(301), null, undefined]) assert.equal(manualReasonOk(bad), false, String(bad));
-  assert.equal(manualReasonOk("  ten chars!  "), true);
+  assert.equal(manualReasonOk("  Owner agreed by mail  "), true);
+  for (const bad of ["", "short", "         ", "x".repeat(301), null, undefined, "admin only", "Admin only", "admin only admin only admin only",
+    "for testing purposes only", "test test test test test test", "aaaaaaaaaaaaaaaaaaaaaaaa", "Owner agreed by mai"]) assert.equal(manualReasonOk(bad), false, String(bad));
+});
+
+test("the owner name must be a person or company, and consent must be email, written letter or in person", () => {
+  for (const good of ["Asha Rao", "Excel Logics Pvt Ltd", "SN IT Solutions"]) assert.equal(manualOwnerOk(good), true, good);
+  for (const bad of ["", " ", "a", "admin", "Admin", "test", "owner", "n/a", "12345", "the owner", "demo test", null]) assert.equal(manualOwnerOk(bad), false, String(bad));
+  const ok = { ownerName: "Asha Rao", consent: "email", reason: "Director Asha Rao emailed on 26 Nov allowing a scan for the demo" };
+  assert.equal(manualDetailsProblem(ok), "");
+  assert.match(manualDetailsProblem({ ...ok, ownerName: "admin" }), /name of the website/);
+  assert.match(manualDetailsProblem({ ...ok, consent: "phone" }), /how the owner gave consent/);
+  assert.match(manualDetailsProblem({ ...ok, consent: "" }), /how the owner gave consent/);
+  assert.match(manualDetailsProblem({ ...ok, reason: "admin only" }), /not a reason/);
 });
 
 test("time left on a manual verification", () => {

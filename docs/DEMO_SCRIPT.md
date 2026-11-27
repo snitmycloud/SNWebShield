@@ -22,7 +22,7 @@ Everything runs on this computer. Screenshots of every step are in `docs/proof/d
 
    | Account | Email | Use it to |
    |---|---|---|
-   | Administrator | `demo-admin@example.com` | show the results already prepared (scanme), and **verify an evaluator's site manually** if their DNS cannot be changed during the demo |
+   | Administrator | `demo-admin@example.com` | show the results already prepared (scanme), and **verify an evaluator's site manually** if their DNS cannot be changed during the demo (needs the owner's name, how they consented and a real reason of 20+ characters) |
    | Normal user | `demo-user@example.com` | show what a customer sees (no manual-verify button) |
 4. Sign in as the administrator and check the dashboard shows the **scanme.nmap.org** card with a grade (a fresh scan is already there).
 5. Only scan websites we are allowed to: `scanme.nmap.org` (published for testing) and the GitHub Pages test site, or a website whose
