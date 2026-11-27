@@ -171,15 +171,22 @@ def local_probe(server_port, *, tls=False):
     return checker
 
 
-def test_probe_ok_for_2xx_and_for_404_but_not_for_5xx_or_no_answer():
-    with BackgroundServer(http_handler({"/": (200, {}, b"hi")})) as up, BackgroundServer(http_handler({}, default=(404, {}, b"x"))) as notfound, \
-            BackgroundServer(http_handler({"/": (503, {}, b"x")})) as broken:
+def test_probe_ok_for_2xx_and_for_404_but_not_for_5xx_or_no_answer(monkeypatch):
+    from app.services import netio
+    real_open = netio.open_connection
+
+    async def closed_ports_refuse_at_once(ip, port, **kwargs):   # ports 1 and 2 stand for closed ports (a real closed local port takes about 2 s per try on Windows)
+        if port in (1, 2):
+            raise ConnectionRefusedError("connection refused")
+        return await real_open(ip, port, **kwargs)
+    monkeypatch.setattr(netio, "open_connection", closed_ports_refuse_at_once)
+    with BackgroundServer(http_handler({"/": (200, {}, b"hi")})) as up, BackgroundServer(http_handler({}, default=(404, {}, b"x"))) as notfound,             BackgroundServer(http_handler({"/": (503, {}, b"x")})) as broken:
         for port, expected in ((up.port, True), (notfound.port, True), (broken.port, False)):
             result = run(uptime.probe("example.com", resolve=lambda d: ["127.0.0.1"], timeout=2, ports=((1, True), (port, False))))
             assert result["ok"] is expected, result
             assert result["response_ms"] is not None or not expected
     closed = run(uptime.probe("example.com", resolve=lambda d: ["127.0.0.1"], timeout=1, ports=((1, True), (2, False))))
-    assert closed["ok"] is False
+    assert closed["ok"] is False and closed["error"]
 
 
 def test_probe_refuses_private_addresses_and_does_not_call_that_down():

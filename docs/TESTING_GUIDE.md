@@ -4,15 +4,17 @@
 
 Run one command at a time (running several together can exhaust memory on this computer).
 
-```powershell
-cd backend
-.\.venv\Scripts\python.exe -m pytest                  # full backend suite
-cd ..\frontend
-npm test                                              # unit tests (Node test runner)
-npm run build                                         # production build
-```
+| Level | Command | Time | Use it |
+|---|---|---|---|
+| **Quick** | `powershell -File scripts\test-quick.ps1` (backend `pytest -m "not slow"` + frontend tests) | about 1 minute | while you work |
+| **Full** | `powershell -File scripts\test-full.ps1` (all backend tests, in parallel with pytest-xdist, + frontend tests + build) | about 1 minute (5 minutes without xdist) | before every commit you want to trust |
+| **Release** | `powershell -ExecutionPolicy Bypass -File scriptsresh-clone-check.ps1` | about 5 minutes | once at the end of each phase, before merging |
 
-**Before merging a phase:** `powershell -ExecutionPolicy Bypass -File scripts\fresh-clone-check.ps1`. It clones the committed branch to a temporary folder, installs from scratch, verifies the Nuclei manifest and that `.gitignore` hides nothing needed, then runs the backend and frontend tests and the build.
+By hand: `cd backend; .\.venv\Scripts\python.exe -m pytest` (full), add `-m "not slow"` for quick or `-n 6` for parallel (needs `pip install -r requirements-dev.txt`, dev-only). `cd frontend; npm test; npm run build`.
+
+The fresh-clone check clones the committed branch to a temporary folder, installs from scratch, verifies the Nuclei manifest and that `.gitignore` hides nothing needed, then runs the backend and frontend tests and the build.
+
+**Why it is fast.** The database schema is built once per test run and every test starts from a copy of it (it used to be created and dropped for each of 1,200 tests, about 1.4 s each). The test database skips disk syncing. A few waits are shortened for tests (the TLS handshake wait on plain-HTTP fixtures, closed ports that refuse at once). Tests that need real time (process kills, scan time limits, slow servers) keep it. The slow ones (0.8 s or more) are listed in `backend/tests/slow_tests.txt` and carry the `slow` marker; refresh the list with `backend/tools/make_slow_list.py`.
 
 Rules the tests follow:
 - **No test touches the internet.** An autouse fixture limits connections to loopback test servers and replaces real DNS, crt.sh, NVD and OSV with fakes.

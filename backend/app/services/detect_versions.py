@@ -250,7 +250,7 @@ async def _probe(ip: str, port: int, domain: str, probe: PortProbe) -> None:
     # TLS handshake on every open port.
     tls_writer_info = None
     try:
-        reader, writer = await netio.open_connection(ip, port, tls=True, server_name=domain, timeout=1.2)
+        reader, writer = await netio.open_connection(ip, port, tls=True, server_name=domain, timeout=settings.scan_tls_handshake_timeout_seconds)
     except (asyncio.TimeoutError, OSError):
         reader = writer = None
     if writer is not None:

@@ -1,9 +1,4 @@
 import os
-os.environ["ASSESSMENT_LOCAL_HTTP_ENABLED"] = "false"
-os.environ["ASSESSMENT_REMOTE_DOCKER_ENABLED"] = "false"
-os.environ["ASSESSMENT_REMOTE_IMAGE_ID"] = ""
-os.environ["ASSESSMENT_NMAP_ENABLED"] = "false"
-os.environ["ASSESSMENT_NMAP_IMAGE_ID"] = ""
 os.environ["NUCLEI_ENABLED"] = "false"   # the development default is ON; tests that need it switch it on themselves
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -19,6 +14,7 @@ os.environ["MAIL_OUTBOX_DIR"] = str(Path(TEST_DIRECTORY.name) / "outbox")
 os.environ["SMTP_HOST"] = ""
 os.environ["SMTP_SENDER"] = ""
 os.environ["NOTIFICATION_CHANNEL"] = "dashboard"
+os.environ["SCAN_TLS_HANDSHAKE_TIMEOUT_SECONDS"] = "0.3"   # loopback fixtures: a plain-HTTP fixture never answers a TLS hello, so the 1.2 s production wait only slows tests
 os.environ["MONITOR_DOMAIN_ALLOWLIST"] = ""   # the development .env limits the monitor to the test target; tests use their own domains
 os.environ["CORS_ORIGINS"] = "http://localhost:5173"
 os.environ["JWT_SECRET_KEY"] = "test-only-secret-key-not-for-any-real-environment-123456789"
@@ -56,16 +52,60 @@ def no_internet(monkeypatch):
     yield
 
 
-@pytest.fixture(autouse=True)
-def isolated_database():
+def pytest_collection_modifyitems(config, items):
+    """Tests listed in tests/slow_tests.txt (0.8 s or more) get the `slow` marker: `pytest -m "not slow"` is the quick level."""
+    listed = {l.strip() for l in (Path(__file__).parent / "slow_tests.txt").read_text(encoding="utf-8").splitlines() if l.strip() and not l.startswith("#")}
+    slow = pytest.mark.slow
+    for item in items:
+        if item.nodeid.split("[")[0].replace("tests/", "", 1) in listed:
+            item.add_marker(slow)
+
+
+TEMPLATE_DB = Path(TEST_DIRECTORY.name) / "schema_template.db"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def schema_template():
+    """Build the database schema ONCE per test session (per xdist worker) into a template file; each test then starts from a copy of it.
+    Creating and dropping ~60 tables for every one of 1,200 tests used to cost about 1.4 s each (most of the suite's run time)."""
+    import shutil
+    from sqlalchemy import event
     from app.db.base import Base
     from app.db.session import engine
     import app.models  # noqa: F401
 
+    @event.listens_for(engine, "connect")
+    def fast_throwaway_database(connection, _record):
+        # This file is deleted at the end of the run: no need to wait for the disk to confirm each write.
+        cursor = connection.cursor()
+        cursor.execute("PRAGMA synchronous=OFF")
+        cursor.execute("PRAGMA journal_mode=MEMORY")
+        cursor.close()
+
     Base.metadata.create_all(engine)
+    engine.dispose()
+    shutil.copyfile(TEST_DB, TEMPLATE_DB)
     yield
-    # Only this process's disposable database is affected.
-    Base.metadata.drop_all(engine)
+
+
+@pytest.fixture(autouse=True)
+def isolated_database(schema_template):
+    """Every test starts with an empty, fully built database (a fresh copy of the template). Only this process's disposable file is touched."""
+    import shutil
+    import time
+    from app.db.session import engine
+
+    for attempt in range(20):
+        engine.dispose()   # close every pooled connection so the file can be replaced (Windows keeps open files locked)
+        try:
+            shutil.copyfile(TEMPLATE_DB, TEST_DB)
+            break
+        except PermissionError:
+            time.sleep(0.1 * (attempt + 1))
+    else:
+        shutil.copyfile(TEMPLATE_DB, TEST_DB)
+    yield
+    engine.dispose()
 
 
 def pytest_sessionfinish(session, exitstatus):

@@ -772,3 +772,15 @@ The scheduler ran each job type in sequence, so an error in one (for example a t
 | Kept | every database table and all data (marked unused in `retired_tables`, migration 0022), all audit data, model files (marked UNUSED), all migrations |
 | Packages removed | `reportlab`, `pypdf`, `Pillow` (the PDF report is the browser's print) |
 | Docs | legacy docs deleted; README trimmed; PROJECT_ARCHITECTURE, PROJECT_REQUIREMENTS, TESTING_GUIDE and SECURITY_GUARDRAILS rewritten for the new design |
+
+
+## Test speed (branch `fix/test-speed`, 2026-11-27)
+
+| Measure | Before | After |
+|---|---|---|
+| Full backend suite, one process | 41 min 14 s (2,474 s) | **4 min 25 s** (265 s) |
+| Full backend suite, `pytest -n 6` (pytest-xdist, dev-only) | n/a | **about 1 minute** (55 to 62 s) |
+| Quick level (`pytest -m "not slow"`, 1,093 tests) | n/a | **67 s** |
+| Tests | 1,210 | 1,210 (same count; nothing deleted, skipped or weakened) |
+
+What was slow: measured with `--durations=50`. A trivial test cost about 1.4 s in setup and teardown because the schema (about 60 tables) was created and dropped for every test (about 28 of the 41 minutes). Changes: the schema is built once per run into a template file and each test starts from a copy; the throw-away test database skips disk syncing; the TLS handshake wait on a port that may be plain HTTP is now a setting (`SCAN_TLS_HANDSHAKE_TIMEOUT_SECONDS`, default 1.2 s unchanged, 0.3 s in tests); two tests no longer wait about 2 s per try for a closed local port to refuse (the fake refuses at once; the assertions are the same); the self-test wait test no longer waits the real 60 s. Tests that need real time (process kills, scan time limits, slow servers) keep it. `backend/tests/slow_tests.txt` lists the 89 tests of 0.8 s or more (marker `slow`; regenerate with `backend/tools/make_slow_list.py`). New: `requirements-dev.txt` (`pytest-xdist`, dev only), `scripts/test-quick.ps1`, `scripts/test-full.ps1`; the fresh-clone check now installs the dev requirements and runs the suite in parallel. The fresh-clone check is run once at the end of each phase.
