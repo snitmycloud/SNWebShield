@@ -799,3 +799,17 @@ The scheduler ran each job type in sequence, so an error in one (for example a t
 | Tests | 1,210 | 1,210 (same count; nothing deleted, skipped or weakened) |
 
 What was slow: measured with `--durations=50`. A trivial test cost about 1.4 s in setup and teardown because the schema (about 60 tables) was created and dropped for every test (about 28 of the 41 minutes). Changes: the schema is built once per run into a template file and each test starts from a copy; the throw-away test database skips disk syncing; the TLS handshake wait on a port that may be plain HTTP is now a setting (`SCAN_TLS_HANDSHAKE_TIMEOUT_SECONDS`, default 1.2 s unchanged, 0.3 s in tests); two tests no longer wait about 2 s per try for a closed local port to refuse (the fake refuses at once; the assertions are the same); the self-test wait test no longer waits the real 60 s. Tests that need real time (process kills, scan time limits, slow servers) keep it. `backend/tests/slow_tests.txt` lists the 89 tests of 0.8 s or more (marker `slow`; regenerate with `backend/tools/make_slow_list.py`). New: `requirements-dev.txt` (`pytest-xdist`, dev only), `scripts/test-quick.ps1`, `scripts/test-full.ps1`; the fresh-clone check now installs the dev requirements and runs the suite in parallel. The fresh-clone check is run once at the end of each phase.
+
+## Public landing page and legal drafts (feat/landing)
+
+| Requirement | Where | Test |
+|---|---|---|
+| Public page at `/`: pillars, how it works, pricing from `plans.json`, FAQ incl. "we only scan websites you own", sign-up/log-in | `frontend/site/pages.js` | `site.test.js` (pillars, steps, pricing, changed price) |
+| SEO basics: title, description, canonical, Open Graph, Twitter, JSON-LD, robots, sitemap | `pages.js`, `public/og-image.png` | `site.test.js` (SEO, domain in one setting) |
+| Fast: no framework, no external request, each page under 60 KB, CSS inlined | `vite.config.js` | `site.test.js` (fast) |
+| Same branding and both themes, mobile at 360 px | tokens.css reused | screenshots in `docs/proof/landing/`; theme tests |
+| Terms, Privacy, Acceptable Use marked DRAFT – needs legal review, linked from every footer | `frontend/site/legal.js` | `site.test.js` (legal pages) |
+| Price/GST configuration (`GST_MODE`) | `pages.js` | `site.test.js` (GST mode) |
+| App moved to `/app/`; email links use `/app/` | `accounts.py`, `App.jsx`, `config.py` | `test_accounts.py::test_email_links_open_the_app_under_app_and_plans_carry_prices` |
+
+Open items: the legal text is a draft and needs a lawyer; domain, registration number, grievance officer, phone and effective date are placeholders.

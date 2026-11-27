@@ -1,0 +1,14 @@
+{
+  "product": "SNwebshield",
+  "company": "SNIT",
+  "address": "Dilsukhnagar, Hyderabad, Telangana, India",
+  "contactEmail": "nalavath08@gmail.com",
+  "tagline": "MONITORS. DETECTS. VALIDATES. PROTECTS.",
+  "placeholders": {
+    "companyRegistration": "[PLACEHOLDER: company registration number]",
+    "grievanceOfficer": "[PLACEHOLDER: name of grievance officer]",
+    "phone": "[PLACEHOLDER: contact phone]",
+    "governingCity": "Hyderabad",
+    "effectiveDate": "[PLACEHOLDER: effective date]"
+  }
+}

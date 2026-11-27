@@ -41,9 +41,9 @@ else {
 }
 
 Start-Sleep -Seconds 8
-foreach ($check in @(@("API", "http://127.0.0.1:8000/api/v1/health"), @("Web app", "http://127.0.0.1:5173"))) {
+foreach ($check in @(@("API", "http://127.0.0.1:8000/api/v1/health"), @("Web app", "http://127.0.0.1:5173/app/"))) {
   try { $code = (Invoke-WebRequest $check[1] -UseBasicParsing -TimeoutSec 10).StatusCode; Write-Host ("{0,-8} OK ({1})" -f $check[0], $code) }
   catch { Write-Host ("{0,-8} NOT READY yet - wait a few seconds and run this script again" -f $check[0]) }
 }
 Write-Host ""
-Write-Host "Open http://127.0.0.1:5173 and sign in with the demo account (see docs\DEMO_SCRIPT.md)."
+Write-Host "Open http://127.0.0.1:5173/app/ (the public landing page is http://127.0.0.1:5173/) and sign in with the demo account (see docs\DEMO_SCRIPT.md)."

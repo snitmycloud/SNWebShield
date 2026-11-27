@@ -16,7 +16,7 @@ Everything runs on this computer. Screenshots of every step are in `docs/proof/d
    `API OK` and `Web app OK`. The optional extra checks (Nuclei) are on by default and add about 1.5 minutes to a scan; they run only after
    their self-test passes. For a faster demo run `$env:NUCLEI_ENABLED = 'false'` in that window before the script. Nothing in the demo depends on them.
    To stop everything afterwards: `powershell -ExecutionPolicy Bypass -File scripts\stop-demo.ps1`.
-2. Open **http://127.0.0.1:5173** in Chrome.
+2. Open **http://127.0.0.1:5173** in Chrome: this is the public landing page. Click **Log in** (the app itself is at **http://127.0.0.1:5173/app/**).
 3. Demo accounts (made for the demo, not real people). The passwords are in the private file
    `C:\Users\nalav\SNWebShield-Private\demo-accounts.json` (outside the repository; never paste them into chat or a slide):
 
