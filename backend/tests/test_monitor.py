@@ -756,7 +756,7 @@ def test_every_email_has_a_plain_text_part_and_a_branded_html_part(client):
     page = message.get_body(preferencelist=("html",)).get_content()
     assert "What to do:" in text and "SNwebshield" in text                      # the text part is complete on its own
     assert "SNwebshield" in page and "#0f766e" in page and "<svg" in page       # the shield, the name and the one accent colour
-    assert f'href="http://127.0.0.1:5173/#/websites/{site}"' in page and "/#/settings/alerts/site_down_up" in page
+    assert f'href="http://127.0.0.1:5173/app/#/websites/{site}"' in page and "/#/settings/alerts/site_down_up" in page
     assert message["From"].startswith("SNwebshield")
 
 

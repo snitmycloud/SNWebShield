@@ -18,7 +18,11 @@
       "history_days": 30,
       "pdf_report": true,
       "rechecks_per_day": 20,
-      "scan_interval_hours": 168
+      "scan_interval_hours": 168,
+      "price": {
+        "monthly": 0,
+        "yearly": 0
+      }
     },
     "pro": {
       "label": "Pro",
@@ -38,7 +42,11 @@
       "history_days": 365,
       "pdf_report": true,
       "rechecks_per_day": 50,
-      "scan_interval_hours": 24
+      "scan_interval_hours": 24,
+      "price": {
+        "monthly": 550,
+        "yearly": 5500
+      }
     },
     "business": {
       "label": "Business",
@@ -60,7 +68,12 @@
       "history_days": 730,
       "pdf_report": true,
       "rechecks_per_day": 200,
-      "scan_interval_hours": 24
+      "scan_interval_hours": 24,
+      "price": {
+        "monthly": 2999,
+        "yearly": 29990
+      }
     }
-  }
+  },
+  "currency": "INR"
 }

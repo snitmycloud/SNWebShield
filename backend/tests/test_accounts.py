@@ -195,3 +195,19 @@ def test_only_the_admin_role_manages_users(client, role):
     _, _, headers = account_headers(client, role)
     assert client.get("/api/v1/admin/users", headers=headers).status_code == 403
     assert client.post(f"/api/v1/admin/users/{target}/plan", headers=headers, json={"plan": "business"}).status_code == 403
+
+
+def test_email_links_open_the_app_under_app_and_plans_carry_prices():
+    sign_up_client = TestClient(app)
+    with sign_up_client as c:
+        assert sign_up(c, "links.owner@example.com").status_code == 202
+    token = latest_link_token("links.owner@example.com", "verify-email")
+    assert token
+    from app.services import accounts as accounts_service, plans
+    assert accounts_service._link("verify-email", "T") == f"{settings.frontend_base_url.rstrip('/')}/app/verify-email?token=T"
+    assert settings.public_app_url.rstrip("/").endswith("/app")
+    data = plans.load()
+    assert data["currency"] == "INR" and data["plans"]["free"]["price"] == {"monthly": 0, "yearly": 0}
+    for name in ("pro", "business"):
+        price = data["plans"][name]["price"]
+        assert 0 < price["monthly"] < price["yearly"] <= price["monthly"] * 12

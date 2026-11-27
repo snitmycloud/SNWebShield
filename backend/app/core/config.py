@@ -110,7 +110,8 @@ class Settings(BaseSettings):
     scheduled_scans_per_tick: int = Field(default=5, ge=1, le=100)
     certificate_alert_days: int = Field(default=14, ge=1, le=90)
     alert_repeat_hours: int = Field(default=24, ge=1, le=720)
-    public_app_url: str = "http://127.0.0.1:5173"   # used in the links inside alert emails
+    site_domain: str = "snwebshield.com"   # placeholder until the domain is bought; the landing page build reads the same SITE_DOMAIN
+    public_app_url: str = "http://127.0.0.1:5173/app/"   # used in the links inside alert emails
     # Development safety: when set (comma-separated domains), the monitor schedules scans and runs uptime checks ONLY for these domains.
     # Empty (the default, and what production uses) means every verified website.
     monitor_domain_allowlist: str = ""

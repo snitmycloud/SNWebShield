@@ -56,7 +56,7 @@ def consume_token(db, token: str, purpose: str) -> Admin:
 
 
 def _link(path: str, token: str) -> str:
-    return f"{settings.frontend_base_url.rstrip('/')}/{path}?token={token}"
+    return f"{settings.frontend_base_url.rstrip('/')}/app/{path}?token={token}"
 
 
 def _deliver(*args) -> None:

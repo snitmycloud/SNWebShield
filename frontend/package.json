@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test tests/api.test.js tests/account.test.js tests/detect.test.js tests/findings.test.js tests/report.test.js tests/compare.test.js tests/monitor.test.js tests/phase6.test.js tests/theme-contrast.test.js tests/readable-text.test.js"
+    "test": "node --test tests/api.test.js tests/account.test.js tests/detect.test.js tests/findings.test.js tests/report.test.js tests/compare.test.js tests/monitor.test.js tests/phase6.test.js tests/theme-contrast.test.js tests/readable-text.test.js tests/site.test.js"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

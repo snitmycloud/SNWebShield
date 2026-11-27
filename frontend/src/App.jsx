@@ -15,7 +15,7 @@ function App() {
 
   const leaveLink = () => {
     if (link.mode) {
-      window.history.replaceState(null, "", "/");  // the one-time token leaves the address bar
+      window.history.replaceState(null, "", "/app/");  // the one-time token leaves the address bar
       setLink({ mode: null, token: "" });
     }
   };
@@ -73,7 +73,7 @@ function App() {
   }
   if (!account) {
     return <LoginPage onLogin={handleLogin} notice={authNotice}
-      initialMode={link.mode || "login"} token={link.token} onLeaveLink={leaveLink} />;
+      initialMode={link.mode || (window.location.hash === "#/signup" ? "signup" : "login")} token={link.token} onLeaveLink={leaveLink} />;
   }
   return <Console account={account} onLogout={handleLogout} />;
 }

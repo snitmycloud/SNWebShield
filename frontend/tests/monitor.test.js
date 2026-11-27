@@ -73,3 +73,14 @@ test("audit lines show owner, consent and reason of a manual verification, and s
   assert.equal(auditLine({ action: "something_new" }).title, "something new");
   assert.equal(auditLine({ action: "verification_reset", detail: { why: "not real proof" } }).tone, "warn");
 });
+
+import { sitePriceView } from "../src/lib/monitor.js";
+test("admin price check: matching prices are fine; a mismatch or a check that could not run is a warning, never fine", () => {
+  assert.equal(sitePriceView(null), null);
+  assert.equal(sitePriceView({ status: "ok", differences: [] }).tone, "good");
+  const bad = sitePriceView({ status: "mismatch", message: "m", differences: [{ plan: "pro", field: "monthly", page: 500, plans_json: 550 }, { plan: "*", field: "currency", page: "USD", plans_json: "INR" }] });
+  assert.equal(bad.tone, "bad");
+  assert.match(bad.title, /out of date/);
+  assert.deepEqual(bad.lines, ["pro monthly: page shows 500, plans.json says 550", "Currency: page USD, plans.json INR"]);
+  for (const status of ["not_built", "unreadable"]) assert.equal(sitePriceView({ status, message: "m", differences: [] }).tone, "bad");
+});

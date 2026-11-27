@@ -55,6 +55,11 @@ async def lifespan(app: FastAPI):
     if not all(inspector.has_table(name) for name in ("scans", "account_tokens", "retired_tables")) or not {
             "owner_id", "removed_at"} <= {c["name"] for c in inspector.get_columns("websites")}:
         raise RuntimeError("Self-service migration required (back up first): python -m alembic upgrade head")
+    try:   # a landing page with old prices is only a warning (checkout uses plans.json), but it is logged clearly at every start
+        from app.services import site_check
+        site_check.log_result()
+    except Exception:
+        pass
     yield
 
 

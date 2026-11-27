@@ -235,6 +235,70 @@ class Supervisor:
             role.state = "stopped"
 
 
+class SiteWatch:
+    """Keeps the built landing page in step with plans.json. When the prices on the page differ (plans.json was edited, or the page was never
+    built) it rebuilds the site in a background thread, so the supervisor keeps restarting roles meanwhile. After a failed rebuild it tries
+    again only when plans.json changes or after 10 minutes. Checkout never reads the page; it always uses plans.json."""
+
+    def __init__(self, *, check=None, rebuild=None, clock=time.monotonic, interval=30, retry=600, threaded=True, record=None):
+        from app.services import site_check
+        self.check, self.rebuild = check or site_check.check, rebuild or site_check.rebuild
+        self.clock, self.interval, self.retry, self.threaded = clock, interval, retry, threaded
+        self.record = record or self._record
+        self.next_check, self.last_try, self.busy, self.last_mtime = 0.0, None, False, None
+        self.status = "unknown"
+
+    @staticmethod
+    def _mtime():
+        from app.services import plans
+        try:
+            return plans.PLANS_FILE.stat().st_mtime_ns
+        except OSError:
+            return None
+
+    @staticmethod
+    def _record(action, detail):
+        try:
+            from app.db.session import SessionLocal
+            from app.services import job_engine as engine
+            with SessionLocal() as db:
+                engine.event(db, action, detail=detail)
+                db.commit()
+        except Exception:
+            pass
+
+    def _run(self):
+        try:
+            ok = self.rebuild()
+            self.status = "ok" if ok else "rebuild_failed"
+            self.record("site_rebuilt" if ok else "site_rebuild_failed", {"reason": "landing page prices differed from plans.json"})
+        finally:
+            self.busy = False
+
+    def step(self):
+        now = self.clock()
+        if self.busy or now < self.next_check:
+            return
+        self.next_check = now + self.interval
+        result = self.check()
+        self.status = result["status"]
+        if result["status"] == "ok":
+            self.last_try = None
+            self.last_mtime = self._mtime()
+            return
+        if result["status"] == "unreadable" and not (ROOT / "frontend" / "node_modules").exists():
+            return   # nothing to rebuild with
+        changed = self._mtime() != self.last_mtime
+        if self.last_try is not None and not changed and now - self.last_try < self.retry:
+            return
+        self.last_try, self.last_mtime, self.busy = now, self._mtime(), True
+        if self.threaded:
+            import threading
+            threading.Thread(target=self._run, daemon=True).start()
+        else:
+            self._run()
+
+
 def beat(supervisor: Supervisor) -> None:
     try:
         from app.db.session import SessionLocal
@@ -270,9 +334,15 @@ def main(argv=None) -> int:
     if hasattr(signal, "SIGBREAK"):
         signal.signal(signal.SIGBREAK, lambda *_: setattr(supervisor, "stopping", True))
     last_beat = 0.0
+    site_watch = SiteWatch() if "web" in args.roles else None
     try:
         while not supervisor.stopping:
             supervisor.step()
+            if site_watch is not None:
+                try:
+                    site_watch.step()
+                except Exception:
+                    pass
             if time.monotonic() - last_beat >= 10:
                 beat(supervisor)
                 last_beat = time.monotonic()

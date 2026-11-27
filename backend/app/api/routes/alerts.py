@@ -54,3 +54,10 @@ def send_test_alert(account: Admin = Depends(get_current_account), db: Session =
 def worker_status(admin: Admin = Depends(require_platform_admin), db: Session = Depends(get_db)):
     """Administrator only: is each background role running (judged by the server clock)."""
     return worker_health.status(db)
+
+
+@router.get("/admin/site-check")
+def site_prices_check(admin: Admin = Depends(require_platform_admin)):
+    """Administrator only: do the prices on the built landing page match plans.json? (Checkout always uses plans.json.)"""
+    from app.services import site_check
+    return site_check.check()

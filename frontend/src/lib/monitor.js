@@ -63,3 +63,13 @@ export function workersSummary(data) {
   if (!data) return "";
   return data.healthy ? "All roles are running." : `${data.roles.filter(r => r.state !== "running").length} role(s) need attention.`;
 }
+
+// Admin: the landing page prices against plans.json. Anything but "ok" is a warning (could not check is not "fine").
+export function sitePriceView(result) {
+  if (!result) return null;
+  if (result.status === "ok") return { tone: "good", title: "Landing page prices match plans.json", lines: [] };
+  const lines = (result.differences || []).map(d => d.plan === "*" ? `Currency: page ${d.page}, plans.json ${d.plans_json}`
+    : `${d.plan} ${d.field}: page shows ${d.page ?? "nothing"}, plans.json says ${d.plans_json ?? "nothing"}`);
+  const title = result.status === "mismatch" ? "Landing page prices are out of date" : "Landing page prices could not be checked";
+  return { tone: "bad", title, lines, text: result.message };
+}
