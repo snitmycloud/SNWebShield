@@ -92,3 +92,9 @@ Everything runs on this computer. Screenshots of every step are in `docs/proof/d
 - **Settings > Email alerts**: one switch per alert type and "Send me a test alert" (the email goes to the outbox folder until SMTP is set up: `%USERPROFILE%\SNWebShield-Private\outbox`).
 - **Admin > Workers** shows every role (API, web app, scan worker, monitor, supervisor) and how often each restarted.
 - To start everything by itself at boot: run `scripts\install-autostart.ps1` once as administrator (undo: `scripts\uninstall-autostart.ps1`). Do not run it together with `start-demo.ps1`.
+
+## Phase 6 extras (design)
+
+- Top bar: the moon/sun button switches light and dark. The four pillar cards at the top of the dashboard each open the right website and tab.
+- **Reports** in the menu lists every website's latest report: **View**, or **Download PDF** (opens the report and the browser's Save as PDF).
+- Narrow the browser window (or open on a phone): the menu button replaces the sidebar and tables become cards.

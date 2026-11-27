@@ -39,8 +39,12 @@ test("the trend sentence compares the last two scans", () => {
 });
 
 test("links from alert emails open the website, the finding or the alert settings, and nothing else", () => {
-  assert.deepEqual(parseHash("#/websites/12"), { page: "websites", openId: 12, finding: null });
-  assert.deepEqual(parseHash("#/websites/12/findings/abc123"), { page: "websites", openId: 12, finding: "abc123" });
+  assert.deepEqual(parseHash("#/websites/12"), { page: "websites", openId: 12, finding: null, tab: null, print: false });
+  assert.deepEqual(parseHash("#/websites/12/findings/abc123"), { page: "websites", openId: 12, finding: "abc123", tab: "vulnerabilities", print: false });
+  assert.deepEqual(parseHash("#/websites/3/tab/detect"), { page: "websites", openId: 3, finding: null, tab: "detect", print: false });
+  assert.deepEqual(parseHash("#/websites/3/tab/report/print"), { page: "websites", openId: 3, finding: null, tab: "report", print: true });
+  assert.equal(parseHash("#/websites/3/tab/detect/print").print, false);   // only the report can open the print dialog
+  assert.equal(parseHash("#/websites/3/tab/nonsense").tab, null);
   assert.deepEqual(parseHash("#/settings/alerts/site_down_up"), { page: "settings", alert: "site_down_up" });
   assert.deepEqual(parseHash("#/settings"), { page: "settings", alert: null });
   for (const bad of ["", "#", "#/admin", "#/websites/x", "#/websites/", "#/../etc"]) assert.equal(parseHash(bad), null);

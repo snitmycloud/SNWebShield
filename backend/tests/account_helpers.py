@@ -50,7 +50,7 @@ def outbox_messages(to=None):
 def latest_link_token(to, path):
     """The token from the newest email to `to` whose link points at /<path>."""
     for message in reversed(outbox_messages(to)):
-        found = re.search(rf"/{path}\?token=([A-Za-z0-9_-]+)", message.get_content())
+        found = re.search(rf"/{path}\?token=([A-Za-z0-9_-]+)", message.get_body(preferencelist=("plain",)).get_content())
         if found:
             return found.group(1)
     raise AssertionError(f"No {path} email for {to}")

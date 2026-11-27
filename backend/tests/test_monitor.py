@@ -17,7 +17,7 @@ from app.models.scan import FindingState, Scan, ScanPort
 from app.models.watch import Alert, AlertPreference, ScoreHistory, UptimeCheck, UptimeState
 from app.models.website import Website
 from app.services import alerts, ip_policy, plans, scans, scheduling, uptime, worker_health
-from account_helpers import account_headers, outbox_messages
+from account_helpers import account_headers, make_account, outbox_messages
 from netfixtures import BackgroundServer, http_handler, server_tls
 
 W = "/api/v1/websites"
@@ -322,7 +322,7 @@ def test_an_alert_email_is_plain_language_with_name_what_to_do_link_and_unsubscr
     _, email, _, site, domain, record = make_alert(client)
     assert record is not None and record.delivered
     [message] = inbox(email)
-    body = message.get_content()
+    body = message.get_body(preferencelist=("plain",)).get_content()
     assert domain in message["Subject"]
     assert "What to do:" in body and f"/#/websites/{site}" in body
     assert "/#/settings/alerts/site_down_up" in body and "Turn off this kind of alert" in body
@@ -412,7 +412,7 @@ def test_new_open_port_and_new_serious_finding_alerts_compare_with_the_previous_
         assert alerts.after_scan(db, db.get(Scan, second)) == {"ports": 0, "findings": 0}   # same alerts, no repeat
     subjects = " | ".join(m["Subject"] for m in inbox(email))
     assert "8080" in subjects and "serious finding" in subjects
-    body = "\n".join(m.get_content() for m in inbox(email))
+    body = "\n".join(m.get_body(preferencelist=("plain",)).get_content() for m in inbox(email))
     assert "Brand new problem" in body and "Minor thing" not in body and "Maybe" not in body and "/findings/" in body
 
 
@@ -726,3 +726,54 @@ def test_roles_die_with_the_supervisor_so_no_orphans_are_left(tmp_path):
         assert gone, "the role survived its supervisor"
     finally:
         parent.kill()
+
+
+# --- dashboard: what the DETECT card shows -------------------------------------------------------------------------------------------------------
+
+def test_the_website_read_counts_open_ports_and_technologies_of_the_latest_scan(client):
+    from app.models.scan import ScanTechnology
+    owner, _, headers, site, _ = verified_site(client, plan="pro")
+    assert client.get(f"{W}/{site}", headers=headers).json()["detect"] is None   # no scan yet
+    older = add_scan(site, owner, when=utc_now() - timedelta(days=2))
+    add_port(older, 22)
+    latest = add_scan(site, owner, when=utc_now() - timedelta(days=1), status="incomplete")
+    for port in (80, 443):
+        add_port(latest, port)
+    with SessionLocal() as db:
+        db.add(ScanTechnology(scan_id=latest, name="nginx", category="web server", source="header"))
+        db.commit()
+    detect = client.get(f"{W}/{site}", headers=headers).json()["detect"]
+    assert detect == {"open_ports": 2, "technologies": 1, "complete": False}   # the latest scan only, and an incomplete scan is marked
+
+
+# --- branded emails ------------------------------------------------------------------------------------------------------------------------------
+
+def test_every_email_has_a_plain_text_part_and_a_branded_html_part(client):
+    _, email, _, site, domain, _ = make_alert(client)
+    [message] = inbox(email)
+    assert message.is_multipart() and [part.get_content_type() for part in message.iter_parts()] == ["text/plain", "text/html"]
+    text = message.get_body(preferencelist=("plain",)).get_content()
+    page = message.get_body(preferencelist=("html",)).get_content()
+    assert "What to do:" in text and "SNwebshield" in text                      # the text part is complete on its own
+    assert "SNwebshield" in page and "#0f766e" in page and "<svg" in page       # the shield, the name and the one accent colour
+    assert f'href="http://127.0.0.1:5173/#/websites/{site}"' in page and "/#/settings/alerts/site_down_up" in page
+    assert message["From"].startswith("SNwebshield")
+
+
+def test_the_html_part_escapes_everything_and_never_runs_markup():
+    from app.services import mailer
+    page = mailer.render_html("s", "Hello <script>alert(1)</script>\n\nAbout <b>x.example</b>: see https://app.example/#/websites/3, thanks.\n\nWhat to do: <img src=x onerror=1>")
+    assert "<script>" not in page and "&lt;script&gt;" in page and "<img" not in page and "&lt;b&gt;" in page
+    assert 'href="https://app.example/#/websites/3"' in page and "</a>, thanks." in page   # the comma is not part of the link
+    assert "border-left" in page                                                          # the What-to-do call-out
+
+
+def test_account_emails_are_branded_too(client):
+    _, email = make_account("user", verified=False)
+    with SessionLocal() as db:
+        from app.services import accounts
+        account = db.scalar(select(Admin).where(Admin.email == email))
+        accounts.send_verification(account, "tok123")
+    [message] = inbox(email)
+    assert message["Subject"] == "Confirm your SNwebshield email address"
+    assert "tok123" in message.get_body(preferencelist=("html",)).get_content() and "SNwebshield" in message.get_body(preferencelist=("plain",)).get_content()

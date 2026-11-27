@@ -1,10 +1,11 @@
+import Logo from "./Logo.jsx";
+import ThemeToggle from "./ThemeToggle.jsx";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ShieldCheck, LockKeyhole, Mail, Eye, EyeOff, ArrowRight, LoaderCircle, AlertCircle, CheckCircle2, User,
 } from "lucide-react";
 import { api } from "./lib/api.js";
 import { passwordHint } from "./lib/account.js";
-import "./console.css";
 
 const PILLARS = [
   "Monitors your websites and alerts you to changes",
@@ -116,14 +117,11 @@ export default function LoginPage({ onLogin, notice = "", initialMode = "login",
   return (
     <main className="auth-shell">
       <section className="auth-visual">
-        <div className="auth-visual-brand">
-          <div className="auth-brand-mark"><ShieldCheck size={25} /></div>
-          <div><strong>SNWebShield</strong><span>WEBSITE SECURITY</span></div>
-        </div>
+        <div className="auth-visual-brand"><Logo size={38} caption="WEBSITE SECURITY" /></div>
         <div className="auth-visual-content">
           <div className="auth-chip"><span />MONITORS · DETECTS · VALIDATES · PROTECTS</div>
-          <h1>Know how safe<br />your website <span>really is.</span></h1>
-          <p>Add your website, prove you own it in about a minute, and SNWebShield starts checking it automatically.</p>
+          <h1>Find the weak spots<br />in your website <span>before others do.</span></h1>
+          <p>Add your website, prove you own it in about a minute, and SNwebshield starts checking it automatically.</p>
           <div className="auth-feature-list">
             {PILLARS.map(text => <div key={text}><CheckCircle2 size={17} /><span>{text}</span></div>)}
           </div>
@@ -134,10 +132,7 @@ export default function LoginPage({ onLogin, notice = "", initialMode = "login",
 
       <section className="auth-panel-wrap">
         <div className="auth-panel">
-          <div className="auth-mobile-brand">
-            <div className="auth-brand-mark"><ShieldCheck size={23} /></div>
-            <div><strong>SNWebShield</strong><span>WEBSITE SECURITY</span></div>
-          </div>
+          <div className="auth-panel-top"><div className="auth-mobile-brand"><Logo size={32} caption="WEBSITE SECURITY" /></div><ThemeToggle /></div>
           <div className="auth-heading">
             <div className="auth-heading-icon">{mode === "check-email" ? <Mail size={22} /> : <LockKeyhole size={22} />}</div>
             <h2>{heading[0]}</h2>
@@ -189,7 +184,7 @@ export default function LoginPage({ onLogin, notice = "", initialMode = "login",
             {!busy && <button type="button" className="auth-submit" onClick={() => go("login")}>Go to sign in <ArrowRight size={17} /></button>}
           </div>}
 
-          <div className="auth-copyright">SNWebShield · MONITORS. DETECTS. VALIDATES. PROTECTS.</div>
+          <div className="auth-copyright">SNwebshield · MONITORS. DETECTS. VALIDATES. PROTECTS.</div>
         </div>
       </section>
     </main>

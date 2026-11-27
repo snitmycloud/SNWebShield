@@ -64,6 +64,15 @@ def scan_summary(db: Session, scan: Scan | None) -> dict | None:
     return summary
 
 
+def detect_summary(db: Session, scan: Scan | None) -> dict | None:
+    """How many open ports and technologies the website's latest scan found (the DETECT card on the dashboard)."""
+    if scan is None or scan.status not in ("completed", "incomplete"):
+        return None
+    ports = db.scalar(select(func.count()).select_from(ScanPort).where(ScanPort.scan_id == scan.id, ScanPort.state == "open")) or 0
+    technologies = db.scalar(select(func.count()).select_from(ScanTechnology).where(ScanTechnology.scan_id == scan.id)) or 0
+    return {"open_ports": ports, "technologies": technologies, "complete": scan.status == "completed"}
+
+
 def read_website(db: Session, website: Website, *, with_instructions=False, account: Admin | None = None) -> dict:
     if ownership.expire_manual(website):   # a manual verification lasts 24 hours, then scans pause
         db.commit()
@@ -90,6 +99,7 @@ def read_website(db: Session, website: Website, *, with_instructions=False, acco
                                     and website.verification_status != "verified"),
         "latest_scan": scans.serial(latest) if latest else None,
         "summary": scan_summary(db, latest),
+        "detect": detect_summary(db, latest),
         "uptime": uptime.summary(db, website.id) if website.verification_status == "verified" and website.removed_at is None else None,
     }
     owner = db.get(Admin, website.owner_id) if website.owner_id else None
@@ -132,7 +142,7 @@ def create_website(payload: WebsiteCreate, account: Admin = Depends(get_current_
     test_target = domain in settings.approved_test_targets
     if test_target and account.role != "admin":
         # Approved test targets are for SNWebShield's own testing; they are never available to customers or analysts.
-        raise HTTPException(403, "That address is reserved for SNWebShield's own testing and cannot be added.")
+        raise HTTPException(403, "That address is reserved for SNwebshield's own testing and cannot be added.")
     plan = plans.get(account.plan)
     used = db.scalar(select(func.count()).select_from(Website).where(
         Website.owner_id == account.id, Website.removed_at.is_(None))) or 0
@@ -158,7 +168,7 @@ def create_website(payload: WebsiteCreate, account: Admin = Depends(get_current_
         website.verification_status, website.verification_method = "verified", "test_target"
         website.verified_at = website.verification_checked_at = now
         website.verification_result = {"ok": True, "method": "test_target", "state": "verified", "expected": "", "found": [],
-                                       "message": "Approved SNWebShield test target (admin accounts only).",
+                                       "message": "Approved SNwebshield test target (admin accounts only).",
                                        "checked_at": now.isoformat()}
         engine.event(db, "ownership_verified", resource_id=website.id, actor_id=account.id,
                      detail={"method": "test_target", "domain": domain})

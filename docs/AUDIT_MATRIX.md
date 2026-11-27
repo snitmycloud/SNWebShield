@@ -220,6 +220,21 @@ Tests: `test_detect_pipeline.py` (optional step down: completed with the note; c
 
 **Manual verification made strict (2026-11-27, on the Phase 5 branch).** Owner name or company, how consent was given (email / written letter / in person) and a reason of 20 or more characters are required; placeholder reasons are refused; the details are in the audit event and the website's audit history (`GET /websites/{id}/audit`, field-filtered, staff see the admin's email, owners do not). Tests: `test_manual_verification.py` (65), `frontend/tests/report.test.js`, `monitor.test.js`. Websites 1, 2 and 8 (verified earlier by "admin only") were reset to unverified with `verification_reset` events. The monitor, scheduler, uptime checks and scan requests all use the read-only check `ownership.has_valid_verification` (expired manual verification, fake test target, disabled owner, removed website are skipped even with an empty allowlist).
 
+## Self-service Phase 6: design (branch `feat/phase6-design`, 2026-11-27)
+
+| Spec / approved item | Status | Tests / proof |
+|---|---|---|
+| Nav: Dashboard, Websites, Reports, Settings (+ Admin); four tabs inside each website | Done | screenshots `docs/proof/phase6/*-03`, `*-04` to `*-10` |
+| Dashboard pillar cards (MONITOR, DETECT, VULNERABILITIES, REPORT) across all websites, each linking to the right website and tab | Done | `frontend/tests/phase6.test.js`, `test_the_website_read_counts_open_ports_and_technologies_of_the_latest_scan`, `*-02-dashboard.png` |
+| Reports page: latest report of every website, View and Download PDF | Done | `*-08-reports.png`; `report-from-dark-theme.pdf`, `report-print-view.png` |
+| Branding: name and SVG shield in header, sign-in, sign-up, emails and the PDF report; one accent colour | Done | `test_every_email_has_a_plain_text_part_and_a_branded_html_part`, `test_the_html_part_escapes_everything...`, `test_account_emails_are_branded_too`, `*-01-login.png`, print view |
+| Light and dark themes with remembered choice; severity colours fixed | Done | `theme-contrast.test.js` (4.5:1 in both themes), `phase6.test.js` (theme helpers) |
+| 13 to 14 px minimum text | Done | `readable-text.test.js` |
+| Mobile at 360 px, skeletons, empty states, accessibility (focus, skip link, reduced motion, labels) | Done | `*-phone-*.png`, zero horizontal overflow and zero console errors in the screenshot run |
+| Legacy pages | Deleted in the legacy removal (`legacy-removed`) | n/a |
+
+**Not done / limits (Phase 6).** Gmail and some mail programs hide the inline SVG shield in the HTML email (the name beside it always shows). The PDF is made by the browser's print (not a server-side PDF), so the look depends on the browser. The old per-component CSS was converted mechanically to tokens (`frontend/tools/tokenize_css.py`, kept for review) rather than rewritten by hand; some older panels keep their original spacing. No automated visual-regression test exists; the screenshots are the evidence. The sign-in headline text was changed because it implied a verdict.
+
 ## Demo build (2026-11-26): manual verification, robustness, report (minimal Phase 4)
 
 | Item | Status | Tests / proof |

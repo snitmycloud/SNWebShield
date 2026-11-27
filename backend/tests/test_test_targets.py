@@ -150,7 +150,7 @@ def test_an_admin_adds_the_test_target_labelled_and_without_dns_proof(client):
     site = response.json()
     assert site["domain"] == TARGET and site["test_target"] is True
     assert site["verification_status"] == "verified" and site["verification_method"] == "test_target"
-    assert "Approved SNWebShield test target" in site["verification_result"]["message"]
+    assert "Approved SNwebshield test target" in site["verification_result"]["message"]
     assert "verification_code" not in site and "instructions" not in site
     assert site["latest_scan"]["status"] == "queued" and site["latest_scan"]["trigger"] == "first"
     assert client.get(W, headers=headers).json()[0]["test_target"] is True

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { LoaderCircle, ShieldCheck } from "lucide-react";
 import LoginPage from "./LoginPage.jsx";
+import { ShieldMark } from "./Logo.jsx";
 import Console from "./Console.jsx";
 import { api } from "./lib/api.js";
 import { authRoute } from "./lib/account.js";
@@ -67,7 +68,7 @@ function App() {
   const handleLogout = () => { api.signOut(); setAccount(null); setAuthNotice(""); };
 
   if (checkingSession) {
-    return <div className="auth-loading"><div className="auth-loading-mark"><ShieldCheck size={28} /></div>
+    return <div className="auth-loading"><div className="auth-loading-mark"><ShieldMark size={36} /></div>
       <LoaderCircle className="spin" size={20} /><p>Checking your session…</p></div>;
   }
   if (!account) {

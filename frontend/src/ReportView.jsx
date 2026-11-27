@@ -1,11 +1,12 @@
-import React from "react";
+import React, { useEffect } from "react";
+import Logo from "./Logo.jsx";
 import { AlertTriangle, Download, Info } from "lucide-react";
 import ChangesPanel from "./ChangesPanel.jsx";
 import { SEVERITY_LABEL, cvssText, lifecycleTier, sourceLabel, checksNotFinished, stateText } from "./lib/findings.js";
 import { REPORT_DISCLAIMER, certificateView, gradeView, pdfAllowed, reportFields, reportGroups, scanDuration, severityRows } from "./lib/report.js";
 
 // The website report. Everything from a scan is untrusted text and is shown escaped (React escapes it).
-// A print stylesheet (console.css) hides the app chrome, so "Download PDF" is the browser's own Save as PDF.
+// A print stylesheet (styles/app.css) hides the app chrome, so "Download PDF" is the browser's own Save as PDF.
 
 function FindingBlock({ finding, possible }) {
   const tier = lifecycleTier(finding);
@@ -22,7 +23,12 @@ function FindingBlock({ finding, possible }) {
   </article>;
 }
 
-export default function ReportView({ site, data, plan, scan }) {
+export default function ReportView({ site, data, plan, scan, autoPrint }) {
+  useEffect(() => {   // "Download PDF" from the Reports page opens this tab and the browser's print dialog (Save as PDF), once
+    if (!autoPrint || !data || !pdfAllowed(plan)) return undefined;
+    const timer = setTimeout(() => window.print(), 600);
+    return () => clearTimeout(timer);
+  }, [autoPrint, Boolean(data), pdfAllowed(plan)]);
   if (!data) return <div className="loading-rows"><div /><div /></div>;
   const summary = data.summary, grade = gradeView(summary);
   const { confirmed, needsChecking, accepted, fixed } = reportGroups(data.findings || []);
@@ -38,7 +44,7 @@ export default function ReportView({ site, data, plan, scan }) {
         : <p data-testid="pdf-not-included">PDF download is not included in your plan. You can still read this report on screen.</p>}
     </div>
     <header className="sw-report-title">
-      <div className="sw-report-brand">SNWebShield website security report</div>
+      <div className="sw-report-brand"><Logo size={26} /> <span>website security report</span></div>
       <h2>{site.domain}</h2>
       <p>Scanned {when}{scanDuration(data.scan) ? ` (took ${scanDuration(data.scan)})` : ""}. {data.scan.status === "incomplete" ? "Some checks did not finish." : ""}</p>
     </header>
