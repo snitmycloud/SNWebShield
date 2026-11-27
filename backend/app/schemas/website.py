@@ -28,8 +28,10 @@ class ScanRequest(BaseModel):
 
 class ManualVerifyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    # A typed reason is required (for example "Owner present at demo and gave consent"); it is audit-logged.
-    reason: str = Field(min_length=10, max_length=300)
+    # All three are required and audit-logged; the rules (a real reason, not "admin only") are in ownership.manual_details_problem.
+    owner_name: str = Field(min_length=1, max_length=120)
+    consent_method: Literal["email", "written_letter", "in_person"]
+    reason: str = Field(min_length=1, max_length=300)
 
 
 class VerifyRequest(BaseModel):

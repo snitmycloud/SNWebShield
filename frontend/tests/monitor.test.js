@@ -55,3 +55,17 @@ test("worker health uses plain words, shows restarts and never calls a silent ro
   assert.equal(workersSummary({ healthy: true, roles: [] }), "All roles are running.");
   assert.equal(workersSummary({ healthy: false, roles: [{ state: "running" }, { state: "stale" }] }), "1 role(s) need attention.");
 });
+
+import { auditLine } from "../src/lib/audit.js";
+
+test("audit lines show owner, consent and reason of a manual verification, and say so when an older entry did not record them", () => {
+  const recorded = auditLine({ action: "manual_verification", detail: { recorded_details: true, owner_name: "Asha Rao", consent_label: "Email", reason: "She emailed her consent", admin: "a@example.com", expires_at: "2026-11-28T10:00:00Z" } });
+  assert.equal(recorded.title, "Manually verified by an administrator");
+  assert.ok(recorded.lines.includes("Owner or company: Asha Rao") && recorded.lines.includes("How consent was given: Email") && recorded.lines.includes("Reason: She emailed her consent"));
+  assert.ok(recorded.lines.includes("Done by: a@example.com"));
+  const old = auditLine({ action: "manual_verification", detail: { recorded_details: false, reason: "admin only" } });
+  assert.match(old.lines[0], /were not recorded/);
+  assert.ok(old.lines.includes("Done by: an administrator"));
+  assert.equal(auditLine({ action: "something_new" }).title, "something new");
+  assert.equal(auditLine({ action: "verification_reset", detail: { why: "not real proof" } }).tone, "warn");
+});

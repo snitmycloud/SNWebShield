@@ -28,9 +28,29 @@ export function manualTimeLeft(expiresAt, now = Date.now()) {
   return minutes >= 90 ? `${Math.round(minutes / 60)} hours left` : `${minutes} minute${minutes === 1 ? "" : "s"} left`;
 }
 
-export const MANUAL_REASON_MIN = 10;
+export const MANUAL_REASON_MIN = 20;
+export const CONSENT_METHODS = [["email", "Email"], ["written_letter", "Written letter"], ["in_person", "In person"]];
+// Words that are not an answer ("admin only", "test", "demo" ...). The server applies the same rules and has the last word.
+const FILLER = new Set(["admin", "only", "test", "testing", "tests", "demo", "ok", "okay", "none", "na", "n/a", "nil", "owner", "me", "self", "myself", "yes", "no",
+  "company", "name", "asdf", "qwerty", "xxx", "abc", "temp", "temporary", "just", "because", "needed", "need", "for", "the", "a", "is", "i", "am"]);
+const words = text => String(text || "").toLowerCase().match(/[a-z0-9']+/g) || [];
+
 export function manualReasonOk(reason) {
-  return String(reason || "").trim().length >= MANUAL_REASON_MIN && String(reason).trim().length <= 300;
+  const text = String(reason || "").trim(), list = words(text);
+  return text.length >= MANUAL_REASON_MIN && text.length <= 300 && list.length >= 4 && new Set(list).size >= 3 && list.filter(w => !FILLER.has(w)).length >= 2;
+}
+
+export function manualOwnerOk(name) {
+  const text = String(name || "").trim(), squashed = text.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return text.length >= 2 && text.length <= 120 && /[a-z]/i.test(text) && !FILLER.has(squashed) && !words(text).every(w => FILLER.has(w));
+}
+
+// The first thing wrong with the three required fields, in plain words (empty when all are fine).
+export function manualDetailsProblem({ ownerName, consent, reason }) {
+  if (!manualOwnerOk(ownerName)) return "Enter the name of the website's owner or their company (not \u201cadmin\u201d, \u201ctest\u201d or \u201cowner\u201d).";
+  if (!CONSENT_METHODS.some(([value]) => value === consent)) return "Say how the owner gave consent: email, written letter or in person.";
+  if (!manualReasonOk(reason)) return `Write a reason of at least ${MANUAL_REASON_MIN} characters that says what the owner agreed to. \u201cadmin only\u201d or \u201ctest\u201d is not a reason.`;
+  return "";
 }
 
 export function verificationView(website, now = Date.now()) {

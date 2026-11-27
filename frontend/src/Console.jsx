@@ -5,13 +5,14 @@ import {
   UserCheck, X,
 } from "lucide-react";
 import { api } from "./lib/api.js";
-import { METHODS, MANUAL_REASON_MIN, checkView, isStaff, manualReasonOk, passwordHint, planLimit, removalConfirmed, scanView, verificationView } from "./lib/account.js";
+import { METHODS, MANUAL_REASON_MIN, CONSENT_METHODS, checkView, isStaff, manualDetailsProblem, passwordHint, planLimit, removalConfirmed, scanView, verificationView } from "./lib/account.js";
 import { DetectSections, ScanBanner, useScanDetail } from "./DetectResults.jsx";
 import FindingsPanel from "./FindingsPanel.jsx";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import ReportView from "./ReportView.jsx";
 import ChangesPanel from "./ChangesPanel.jsx";
 import TrendChart from "./TrendChart.jsx";
+import AuditHistory from "./AuditHistory.jsx";
 import AlertSettings from "./AlertSettings.jsx";
 import WorkersPanel from "./WorkersPanel.jsx";
 import { parseHash, scheduleText, uptimeView } from "./lib/monitor.js";
@@ -184,23 +185,30 @@ function Step({ n, children }) {
 
 function ManualVerify({ site, onDone }) {
   const [open, setOpen] = useState(false), [reason, setReason] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const [ownerName, setOwnerName] = useState(""), [consent, setConsent] = useState("");
+  const problem = manualDetailsProblem({ ownerName, consent, reason });
   const submit = async e => {
     e.preventDefault(); setBusy(true); setError("");
-    try { const response = await api.verifyManually(site.id, reason.trim()); setOpen(false); setReason(""); onDone(response); }
+    try { const response = await api.verifyManually(site.id, { ownerName: ownerName.trim(), consent, reason: reason.trim() }); setOpen(false); setReason(""); setOwnerName(""); setConsent(""); onDone(response); }
     catch (err) { setError(err.message); } finally { setBusy(false); }
   };
   if (!open) return <button type="button" className="secondary-button sw-manual-open" data-testid="verify-manually-open" onClick={() => setOpen(true)}>
     <UserCheck size={15} />Verify manually (admin)</button>;
   return <form className="sw-manual" onSubmit={submit} aria-label="Verify manually">
     <strong>Verify manually (admin only)</strong>
-    <p>Use this only when the website's owner is present and agrees. It lasts <b>24 hours</b>, is shown as {"\u201c"}Manually verified by admin{"\u201d"}, and is written to the audit log with your name, this reason and the time.</p>
-    <label htmlFor="sw-manual-reason">Reason (required)</label>
-    <textarea id="sw-manual-reason" value={reason} onChange={e => setReason(e.target.value)} maxLength={300} rows={2}
-      placeholder={"For example: Owner present at demo and gave consent"} required />
-    <small>{reason.trim().length < MANUAL_REASON_MIN ? `At least ${MANUAL_REASON_MIN} characters.` : "Ready."}</small>
+    <p>Use this only when the website's owner has agreed to the scan. It lasts <b>24 hours</b>, is shown as {"\u201c"}Manually verified by admin{"\u201d"}, and is written to the audit history with your name, the owner, how they agreed, this reason and the time.</p>
+    <label htmlFor="sw-manual-owner">Owner name or company (required)</label>
+    <input id="sw-manual-owner" value={ownerName} onChange={e => setOwnerName(e.target.value)} maxLength={120} placeholder="For example: Asha Rao, Excel Logics" data-testid="manual-owner" required />
+    <label htmlFor="sw-manual-consent">How consent was given (required)</label>
+    <select id="sw-manual-consent" value={consent} onChange={e => setConsent(e.target.value)} data-testid="manual-consent" required>
+      <option value="">Choose...</option>{CONSENT_METHODS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+    <label htmlFor="sw-manual-reason">Reason (required, at least {MANUAL_REASON_MIN} characters)</label>
+    <textarea id="sw-manual-reason" value={reason} onChange={e => setReason(e.target.value)} maxLength={300} rows={3}
+      placeholder={"For example: Asha Rao emailed on 26 Nov allowing a scan of the website for the customer demo"} data-testid="manual-reason" required />
+    <small>{problem || "Ready."}</small>
     {error && <div className="form-error" role="alert"><ShieldAlert size={15} />{error}</div>}
     <div className="sw-manual-actions">
-      <button className="primary-button" disabled={busy || !manualReasonOk(reason)}>{busy ? <LoaderCircle className="spin" size={15} /> : <ShieldCheck size={15} />}Verify for 24 hours</button>
+      <button className="primary-button" disabled={busy || Boolean(problem)}>{busy ? <LoaderCircle className="spin" size={15} /> : <ShieldCheck size={15} />}Verify for 24 hours</button>
       <button type="button" className="secondary-button" onClick={() => setOpen(false)}>Cancel</button></div>
   </form>;
 }
@@ -369,13 +377,15 @@ function WebsiteDetail({ id, onBack, onChanged, onRemoved, onUpgrade, plan }) {
     <Heading eyebrow="WEBSITE" title={site.domain || site.name} text={v.text}
       action={<div className="sw-heading-actions">{site.test_target && <Badge tone="info">Test target</Badge>}
         {!site.test_target && <Badge tone={v.tone}>{v.label}</Badge>}
-        {site.manual_verification && <span className="sw-muted" data-testid="manual-detail" title={site.manual_verification.reason}>Reason: {site.manual_verification.reason}</span>}
+        {site.manual_verification && <span className="sw-muted" data-testid="manual-detail" title={site.manual_verification.reason}>
+          {site.manual_verification.owner_name ? `Owner: ${site.manual_verification.owner_name} \u00b7 Consent: ${site.manual_verification.consent_label || "\u2014"} \u00b7 ` : ""}Reason: {site.manual_verification.reason}</span>}
         <button className="secondary-button sw-remove-button" onClick={() => setRemoving(true)}>Remove website</button></div>} />
     {removing && <RemoveDialog site={site} onClose={() => setRemoving(false)} onRemoved={onRemoved} />}
     {site.verification_status === "lost" && site.verification_result?.message && <div className="sw-result bad" role="alert">
       <strong><AlertTriangle size={16} />Scans are paused</strong><p>{site.verification_result.message}</p>
       {site.verification_result.hint && <p>{site.verification_result.hint}</p>}</div>}
     {site.verification_status !== "verified" && <VerifyPanel site={site} onVerified={() => { load(); onChanged(); }} />}
+    <AuditHistory siteId={site.id} refreshKey={`${site.verification_status}-${site.verified_at}-${scans[0]?.id}`} />
     <ScanPanel site={site} scans={scans} onScanNow={scanNow} busy={scanBusy} limitNote={limitNote} onUpgrade={onUpgrade} plan={plan} />
   </>;
 }

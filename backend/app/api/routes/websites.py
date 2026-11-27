@@ -80,6 +80,8 @@ def read_website(db: Session, website: Website, *, with_instructions=False, acco
         "scans_paused": website.verification_status == "lost",
         "manual_verification": ({"label": ownership.MANUAL_LABEL, "reason": (website.verification_result or {}).get("reason"),
                                  "granted_by": (website.verification_result or {}).get("granted_by"),
+                                 "owner_name": (website.verification_result or {}).get("owner_name"),
+                                 "consent_label": (website.verification_result or {}).get("consent_label"),
                                  "granted_at": (website.verification_result or {}).get("granted_at"),
                                  "expires_at": (website.verification_result or {}).get("expires_at")}
                                 if website.verification_method == "manual" and website.verification_status == "verified" else None),
@@ -245,9 +247,13 @@ def verify_manually(website_id: int, payload: ManualVerifyRequest, account: Admi
     ownership.expire_manual(website)
     if website.verification_status == "verified" and website.verification_method != "manual":
         raise HTTPException(409, "This website is already verified.")
-    result = ownership.grant_manual(website, account, payload.reason)
+    problem = ownership.manual_details_problem(payload.owner_name, payload.consent_method, payload.reason)
+    if problem:
+        raise HTTPException(422, {"code": "manual_details", "field": problem[0], "message": problem[1]})
+    result = ownership.grant_manual(website, account, payload.reason, owner_name=payload.owner_name, consent_method=payload.consent_method)
     engine.event(db, "manual_verification", resource_id=website.id, actor_id=account.id, detail={
         "admin_id": account.id, "admin": account.email, "domain": website.domain, "owner_id": website.owner_id, "reason": result["reason"],
+        "owner_name": result["owner_name"], "consent_method": result["consent_method"],
         "granted_at": result["granted_at"], "expires_at": result["expires_at"]})
     scan = None
     if scans.latest_scan(db, website.id) is None:
@@ -347,6 +353,38 @@ def website_scans(website_id: int, limit: int = Query(default=20, ge=1, le=100),
     website = _visible(db, account, website_id)
     rows = db.scalars(select(Scan).where(Scan.website_id == website.id, Scan.scan_type != "recheck").order_by(Scan.requested_at.desc()).limit(limit))
     return [scans.serial(row) for row in rows]
+
+
+AUDIT_ACTIONS = ("website_added", "ownership_check", "ownership_verified", "manual_verification", "verification_reset", "website_removed",
+                 "scan_requested", "manual_scan_requested", "recheck_requested", "risk_accepted", "risk_unaccepted", "risk_acceptance_expired",
+                 "finding_fixed", "finding_reopened", "alert_sent")
+AUDIT_KEYS = {"domain", "method", "state", "reason", "owner_name", "consent_method", "granted_at", "expires_at", "scan_id", "trigger", "scan_type",
+              "check_id", "days", "until", "how", "why", "alert_type", "previous", "test_target", "reset_by"}
+
+
+@router.get("/{website_id}/audit")
+def website_audit(website_id: int, limit: int = Query(default=100, ge=1, le=300), account: Admin = Depends(get_current_account),
+                  db: Session = Depends(get_db)):
+    """The website's audit history (newest first): who verified it and how, scans requested, risks accepted, alerts sent.
+
+    Only listed event kinds and fields are shown. The owner sees "an administrator" where staff see the administrator's email."""
+    from app.models.jobs import ExecutionEvent
+    website = _visible(db, account, website_id)
+    rows = db.scalars(select(ExecutionEvent).where(ExecutionEvent.resource_id == website.id, ExecutionEvent.action.in_(AUDIT_ACTIONS))
+                      .order_by(ExecutionEvent.occurred_at.desc()).limit(limit))
+    events = []
+    for row in rows:
+        detail = {k: v for k, v in (row.detail or {}).items() if k in AUDIT_KEYS}
+        if account.is_staff and (row.detail or {}).get("admin"):
+            detail["admin"] = row.detail["admin"]
+        if row.action == "manual_verification":
+            detail["consent_label"] = ownership.CONSENT_METHODS.get(detail.get("consent_method"), "")
+            detail["recorded_details"] = bool(detail.get("owner_name"))   # older entries (before the stricter rules) have no owner or consent
+        if isinstance(detail.get("previous"), dict):
+            detail["previous"] = {k: v for k, v in detail["previous"].items() if k in ("status", "method", "reason", "expires_at")}
+        events.append({"at": _iso(row.occurred_at), "action": row.action, "by_admin": row.actor_id is not None and row.action in ("manual_verification",),
+                       "detail": detail})
+    return {"events": events}
 
 
 @router.get("/{website_id}/trend")
