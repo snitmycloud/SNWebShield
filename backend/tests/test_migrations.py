@@ -21,7 +21,7 @@ def test_new_database_migrates_and_upgrade_is_idempotent(tmp_path):
     migrate(path)
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0020_finding_states"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0021_monitor"
         columns = {row[1] for row in db.execute("PRAGMA table_info(website_authorizations)")}
         assert "timestamps_verified" in columns
         assert db.execute("SELECT COUNT(*) FROM admins").fetchone()[0] == 0
@@ -152,7 +152,7 @@ def test_vulnerability_migration_preserves_reports_reviews_and_deadlines(tmp_pat
     migrate(path)
     migrate(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0020_finding_states"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0021_monitor"
         after = {table: db.execute(f'SELECT * FROM {table}').fetchall() for table in tables}
         # 0016 appends account columns to admins; every pre-existing value is unchanged.
         after["admins"] = [row[:len(before["admins"][0])] for row in after["admins"]]
@@ -175,7 +175,7 @@ def test_website_removal_migration_keeps_rows_and_only_limits_the_unique_rule_to
     migrate(path)
     migrate(path)  # idempotent
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0020_finding_states"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0021_monitor"
         assert db.execute("SELECT id,owner_id,domain,verification_status FROM websites").fetchall() == before
         assert db.execute("SELECT removed_at FROM websites WHERE id=1").fetchone() == (None,)
         assert db.execute("SELECT COUNT(*) FROM scans").fetchone() == (1,)
@@ -203,7 +203,7 @@ def test_detect_results_migration_is_additive_and_keeps_scan_history(tmp_path):
     migrate(path)
     migrate(path)  # idempotent
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0020_finding_states"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0021_monitor"
         assert {t: db.execute(f'SELECT * FROM "{t}"').fetchall() for t in tables} == before  # nothing existing changed
         for table in ("scan_ports", "scan_technologies", "scan_observations"):
             assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone() == (0,)
@@ -229,7 +229,7 @@ def test_findings_migration_is_additive_keeps_history_and_enforces_one_finding_p
     migrate(path)
     migrate(path)  # idempotent
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0020_finding_states"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0021_monitor"
         assert {t: db.execute(f'SELECT * FROM "{t}"').fetchall() for t in tables} == before
         for table in ("scan_findings", "vuln_cache"):
             assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone() == (0,)

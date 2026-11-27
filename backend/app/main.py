@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect
 
 from app.api import legacy
-from app.api.routes import (admin_users, assessments, auth, clients, findings, health, monitoring, port_watch,
+from app.api.routes import (alerts as alert_routes, admin_users, assessments, auth, clients, findings, health, monitoring, port_watch,
                             remediation, reports, vulnerabilities, websites, workbench)
 from app.core.config import settings
 from app.core.headers import SecurityHeadersMiddleware
@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("Production hardening migration required: python -m alembic upgrade head")
     if not all(inspector.has_table(name) for name in ("scan_ports", "scan_technologies", "scan_observations")):
         raise RuntimeError("Detection migration required (back up first): python -m alembic upgrade head")
-    if not all(inspector.has_table(name) for name in ("finding_states", "finding_rechecks")):
+    if not all(inspector.has_table(name) for name in ("finding_states", "finding_rechecks", "uptime_checks", "uptime_states", "score_history", "alerts", "alert_preferences")):
         raise RuntimeError("Finding lifecycle migration required (back up first): python -m alembic upgrade head")
     if not all(inspector.has_table(name) for name in ("scan_findings", "vuln_cache")):
         raise RuntimeError("Findings migration required (back up first): python -m alembic upgrade head")
@@ -85,6 +85,7 @@ app.include_router(health.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(websites.router, prefix="/api/v1")
 app.include_router(admin_users.router, prefix="/api/v1")
+app.include_router(alert_routes.router, prefix="/api/v1")
 
 # Legacy analyst pipeline: staff-only and read-only (stop actions excepted) until Phases 2-4 replace it.
 # The written-permission system (authorisations, evidence) was removed in Phase 1; its tables keep their data.

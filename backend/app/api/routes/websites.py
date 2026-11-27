@@ -17,7 +17,7 @@ from app.models.scan import Scan, ScanFinding, ScanObservation, ScanPort, ScanTe
 from app.models.website import Website
 from app.schemas.website import AcceptRiskRequest, ManualVerifyRequest, RemoveRequest, ScanRequest, VerifyRequest, WebsiteCreate
 from app.services import job_engine as engine
-from app.services import comparison, finding_states, lifecycle, ownership, plans, scans, scoring
+from app.services import comparison, finding_states, lifecycle, ownership, plans, scans, score_history, scheduling, scoring, uptime
 from app.services.domains import DomainError, normalize_domain
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
@@ -88,7 +88,12 @@ def read_website(db: Session, website: Website, *, with_instructions=False, acco
                                     and website.verification_status != "verified"),
         "latest_scan": scans.serial(latest) if latest else None,
         "summary": scan_summary(db, latest),
+        "uptime": uptime.summary(db, website.id) if website.verification_status == "verified" and website.removed_at is None else None,
     }
+    owner = db.get(Admin, website.owner_id) if website.owner_id else None
+    if owner is not None and website.verification_status == "verified" and website.removed_at is None:
+        due = scheduling.next_scan_at(db, website, owner)
+        data["schedule"] = {"every_hours": scheduling.interval_seconds(owner) // 3600, "next_scan_at": _iso(due)}
     if (account is not None and account.id == website.owner_id and website.removed_at is None
             and website.verification_status == "verified"):
         data["scan_now"] = scans.scan_now_status(db, website, account)  # what the Scan now button shows
@@ -342,6 +347,14 @@ def website_scans(website_id: int, limit: int = Query(default=20, ge=1, le=100),
     website = _visible(db, account, website_id)
     rows = db.scalars(select(Scan).where(Scan.website_id == website.id, Scan.scan_type != "recheck").order_by(Scan.requested_at.desc()).limit(limit))
     return [scans.serial(row) for row in rows]
+
+
+@router.get("/{website_id}/trend")
+def website_trend(website_id: int, limit: int = Query(default=60, ge=2, le=200), account: Admin = Depends(get_current_account),
+                  db: Session = Depends(get_db)):
+    """The score after each finished full scan (oldest first), for the trend chart."""
+    website = _visible(db, account, website_id)
+    return {"points": score_history.trend(db, website.id, limit)}
 
 
 @router.get("/{website_id}/scans/{scan_id}/comparison")

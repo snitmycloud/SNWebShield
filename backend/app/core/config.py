@@ -106,6 +106,19 @@ class Settings(BaseSettings):
     scan_tls_probe_timeout_seconds: float = Field(default=2.0, ge=0.5, le=10)
 
     recheck_time_limit_seconds: int = Field(default=120, ge=30, le=900)    # one "re-scan to confirm fix"
+    # Phase 5 (monitor). Uptime checks do not count against scan limits; the test target is checked less often.
+    uptime_interval_seconds: int = Field(default=300, ge=60, le=3600)
+    test_target_uptime_interval_seconds: int = Field(default=1800, ge=60, le=86400)
+    uptime_timeout_seconds: float = Field(default=10.0, ge=1.0, le=30.0)
+    uptime_failures_before_alert: int = Field(default=2, ge=1, le=10)
+    uptime_keep_days: int = Field(default=30, ge=1, le=365)
+    scheduled_scans_per_tick: int = Field(default=5, ge=1, le=100)
+    certificate_alert_days: int = Field(default=14, ge=1, le=90)
+    alert_repeat_hours: int = Field(default=24, ge=1, le=720)
+    public_app_url: str = "http://127.0.0.1:5173"   # used in the links inside alert emails
+    # Development safety: when set (comma-separated domains), the monitor schedules scans and runs uptime checks ONLY for these domains.
+    # Empty (the default, and what production uses) means every verified website.
+    monitor_domain_allowlist: str = ""
 
     # --- Score and grade (spec section 7): start at 100, subtract per open confirmed finding ---
     score_weight_critical: int = Field(default=25, ge=0, le=100)
@@ -155,6 +168,10 @@ class Settings(BaseSettings):
     @property
     def test_target_rechecks_per_day(self) -> int:
         return TEST_TARGET_RECHECKS_PER_DAY
+
+    def monitor_may_touch(self, domain: str | None) -> bool:
+        allowed = {d.strip().lower() for d in self.monitor_domain_allowlist.split(",") if d.strip()}
+        return not allowed or (domain or "").lower() in allowed
 
     @property
     def test_target_scans_per_day(self) -> int:

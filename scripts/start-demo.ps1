@@ -29,6 +29,11 @@ else {
   Start-Process -FilePath $python -ArgumentList "-m", "app.cli.operations", "scan-worker" -WorkingDirectory $backend
   Write-Host "scan worker starting"
 }
+if (Test-Running 'app\.cli\.operations\s+monitor') { Write-Host "monitor already running" }
+else {
+  Start-Process -FilePath $python -ArgumentList "-m", "app.cli.operations", "monitor" -WorkingDirectory $backend
+  Write-Host "monitor starting (scheduled scans, uptime checks, alerts)"
+}
 if (Test-Running 'vite') { Write-Host "web app already running" }
 else {
   Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "npm run dev" -WorkingDirectory $frontend

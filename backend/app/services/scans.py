@@ -460,6 +460,21 @@ def _after_full_scan(db, scan_id: str) -> None:
             db.commit()
     except Exception:
         db.rollback()
+    # Each of these is separate: one failing must not stop the others, and none may spoil the finished scan.
+    for step in ("record_score", "send_alerts"):
+        try:
+            scan = db.get(Scan, scan_id)
+            if scan is None or scan.scan_type == "recheck" or scan.status not in ("completed", "incomplete"):
+                return
+            if step == "record_score":
+                from app.services import score_history
+                score_history.record(db, scan)
+            else:
+                from app.services import alerts
+                alerts.after_scan(db, scan)
+            db.commit()
+        except Exception:
+            db.rollback()
 
 
 def _conclude_recheck(db, scan_id, token, website_id, state, guard) -> str:
