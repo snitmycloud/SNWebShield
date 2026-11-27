@@ -194,6 +194,27 @@ Tests: `test_detect_pipeline.py` (optional step down: completed with the note; c
 
 **Not done / limits (Phase 4).** The real-scanme proof used the newest existing scan because the Pro account's 5 manual scans for the day were used up (the limit was respected, not bypassed). Re-checks of the grouped "login pages" and "more known issues" lines are not offered. Notifications about an expiring acceptance (email) are not built: the screen shows "Review soon". Older scans keep their original score; fixed and accepted findings are set aside only on the website's latest scan.
 
+## Self-service Phase 5: MONITOR (branch `feat/phase5-monitor`, 2026-11-27)
+
+| Spec item (Phase 5, as approved) | Status | Tests / proof |
+|---|---|---|
+| Dashboard card with score, grade, uptime; score trend per website | Done | `test_trend_*`, `frontend/tests/monitor.test.js`; `docs/proof/phase5/01`, `02` |
+| Scheduled scans by plan (weekly Free, daily Pro/Business), staggered slots, bounded per round, test target counted in its 10/day | Done | `test_every_website_gets_its_own_slot...`, `test_a_due_website_is_queued_once...`, `test_free_is_weekly...`, `test_schedule_skips_...`, `test_scheduled_scans_count_against_the_test_target_limit`, `test_a_scheduling_failure_for_one_website...`, `test_a_restart_after_downtime...` |
+| Uptime every 5 min (30 min test target, a setting), alert after 2 failures in a row, back-up alert, not counted against scan limits | Done | `test_probe_*`, `test_two_failures_in_a_row_mean_down...`, `test_a_blocked_check_is_unknown_not_down`, `test_uptime_runs_every_5_minutes...`, `test_uptime_only_checks_verified_websites...` |
+| Certificate expiry read once a day with uptime; alert within 14 days | Done | `test_the_certificate_is_read_once_a_day...` |
+| Email alerts: new open port, new Critical/High, certificate, down/up, verification lost, accepted risk ending (7 days); once per 24 h; per-type on/off in Settings | Done | `test_new_open_port_and_new_serious_finding_alerts...`, `test_verification_lost_alert_and_accepted_risk_expiring_alert`, `test_the_same_alert_is_sent_at_most_once_per_24_hours`, `test_a_user_can_turn_an_alert_type_off_and_on`, `test_no_port_alert_when_the_port_step_did_not_finish` |
+| Alert emails: plain language, website name in subject, "What to do", link, "turn off this alert" link opening Settings | Done | `test_an_alert_email_is_plain_language...`; `docs/proof/phase5/sample-alert-email-test.eml`; `03` |
+| Emails go to the outbox until SMTP is configured | Done | existing mailer; `test_a_test_alert_goes_to_the_outbox_and_is_limited` |
+| Workers and scheduler start automatically and restart after a crash; worker health on the admin page | Done (Windows tested; reboot test: see below) | `test_supervisor_*`, `test_a_real_child_process_is_started_logged_and_restarted`, `test_worker_health_*`; `docs/proof/phase5/supervisor-restart.txt`, `supervisor-restart-04-admin-workers.png` |
+| Task Scheduler task: at boot, logged in or not, restarted if the supervisor stops | Script written (`scripts/install-autostart.ps1`) | needs the administrator to run it; reboot result below |
+| systemd unit for Linux | **Written, NOT tested** (`deploy/systemd/snwebshield.service`) | no Linux machine used |
+| Slack / webhook alerts | Moved to Phase 7 (Business plan) | n/a |
+| Expiry emails for accepted risk | Done here (was deferred from Phase 4) | see above |
+
+**Found and fixed while building.** The monitor first ran on the development database with no domain limit and sent one uptime request to three other verified websites of the owner (not a scan; one `GET /` each); no scan was queued for them. `MONITOR_DOMAIN_ALLOWLIST` was added and set to the approved test target (`test_the_monitor_allowlist_limits...`). The earlier "1 new" finding between two real scans was a start-up race (see git commit `cbdd7ab`). The browser console showed a favicon 404; fixed.
+
+**Not done / limits (Phase 5).** SMTP is not configured, so no real email was delivered (outbox files only). The web app under the supervisor is the built `frontend\dist` (rebuild with `npm run build` after changing the frontend). Alerts about "ownership no longer proved" repeat at most once a day while it stays lost. Uptime checks use one request per website per interval and do not follow redirects. The Linux unit and Linux paths are untested. A reboot test needs the administrator to install the task and restart the computer.
+
 ## Demo build (2026-11-26): manual verification, robustness, report (minimal Phase 4)
 
 | Item | Status | Tests / proof |

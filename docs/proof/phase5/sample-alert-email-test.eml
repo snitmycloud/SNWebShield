@@ -1,0 +1,21 @@
+From: SNWebShield <no-reply@snwebshield.local>
+To: demo-admin@example.com
+Subject: [SNWebShield] Test alert
+Message-ID: <98e60d1e-01ad-4826-985b-40bf0387bb4b@snwebshield.local>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+Hello,
+
+This is a test alert from SNWebShield. Real alerts look like this one: the we=
+bsite name in the subject, what happened, one line saying what to do, and a l=
+ink.
+
+What to do: nothing. This is only a test.
+
+See SNWebShield: http://127.0.0.1:5173
+
+Change which alerts you get: http://127.0.0.1:5173/#/settings
+
+SNWebShield

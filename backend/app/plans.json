@@ -17,7 +17,8 @@
       ],
       "history_days": 30,
       "pdf_report": true,
-      "rechecks_per_day": 20
+      "rechecks_per_day": 20,
+      "scan_interval_hours": 168
     },
     "pro": {
       "label": "Pro",
@@ -36,7 +37,8 @@
       ],
       "history_days": 365,
       "pdf_report": true,
-      "rechecks_per_day": 50
+      "rechecks_per_day": 50,
+      "scan_interval_hours": 24
     },
     "business": {
       "label": "Business",
@@ -57,7 +59,8 @@
       ],
       "history_days": 730,
       "pdf_report": true,
-      "rechecks_per_day": 200
+      "rechecks_per_day": 200,
+      "scan_interval_hours": 24
     }
   }
 }

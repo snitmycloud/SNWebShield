@@ -1,0 +1,9 @@
+Supervisor crash test (2026-11-27, this computer, real processes; roles started by `python -m app.cli.supervisor`)
+
+1. All roles running (admin page / GET /api/v1/admin/workers):
+   healthy: True | api=running(restarts=0), web=running(restarts=0), scan-worker=running(restarts=0,pid=15872), monitor=running(restarts=0,pid=12492), supervisor=running
+
+2. `taskkill /PID 15872 /T /F` and `taskkill /PID 12492 /T /F` (the scan worker and the monitor were killed).
+
+3. A few seconds later, without anyone starting anything:
+   healthy: True | api=running(restarts=0), web=running(restarts=0), scan-worker=running(restarts=1,pid=21840), monitor=running(restarts=1,pid=2680), supervisor=running

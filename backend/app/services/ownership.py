@@ -366,6 +366,23 @@ def manual_expired(website: Website, now=None) -> bool:
     return expires is None or expires <= (now or utc_now())
 
 
+def has_valid_verification(db, website: Website, now=None) -> bool:
+    """Read-only: is this website verified RIGHT NOW? The stored status must be `verified`, a manual verification must not have run out
+    (the status is only switched to `lost` when something next touches the website), the owner must be an active account, and a test
+    target must still be on the approved list. The monitor, the scheduler and the uptime checks use this before touching a website."""
+    now = now or utc_now()
+    if website.removed_at is not None or not website.owner_id or not website.domain or website.verification_status != "verified":
+        return False
+    owner = db.get(Admin, website.owner_id)
+    if owner is None or not owner.is_active:
+        return False
+    if website.verification_method == "manual":
+        return not manual_expired(website, now)
+    if website.verification_method == "test_target":
+        return website.domain in settings.approved_test_targets and owner.role == "admin"
+    return True
+
+
 def expire_manual(website: Website, now=None) -> bool:
     """Turn an expired manual verification into `lost` (scans pause). Returns True if it changed."""
     now = now or utc_now()

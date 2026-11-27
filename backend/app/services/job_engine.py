@@ -13,15 +13,16 @@ def event(db, action, job=None, resource_id=None, actor_id=None, detail=None):
         action=action, detail=detail or {}, occurred_at=utc_now()))
 
 
-def heartbeat(db, name):
+def heartbeat(db, name, detail=None):
     # Savepoint isolates a concurrent first heartbeat without losing queued jobs.
-    changed = db.execute(update(WorkerHeartbeat).where(WorkerHeartbeat.name == name).values(seen_at=utc_now()))
+    values = {"seen_at": utc_now(), **({"detail": detail} if detail is not None else {})}
+    changed = db.execute(update(WorkerHeartbeat).where(WorkerHeartbeat.name == name).values(**values))
     if changed.rowcount == 0:
         try:
             with db.begin_nested():
-                db.add(WorkerHeartbeat(name=name, seen_at=utc_now())); db.flush()
+                db.add(WorkerHeartbeat(name=name, seen_at=utc_now(), detail=detail)); db.flush()
         except IntegrityError:
-            db.execute(update(WorkerHeartbeat).where(WorkerHeartbeat.name == name).values(seen_at=utc_now()))
+            db.execute(update(WorkerHeartbeat).where(WorkerHeartbeat.name == name).values(**values))
 
 
 def enqueue(db, kind, resource_id, revision, key, now=None):

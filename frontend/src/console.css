@@ -215,3 +215,19 @@
 .sw-accept textarea,.sw-accept select{font:inherit;padding:6px;border:1px solid #c6d0de;border-radius:6px}
 .sw-accepted,.sw-fixed{margin-top:14px}
 @media print{.sw-fbuttons,.sw-accept{display:none}}
+
+/* Phase 5: trend, uptime, alert settings, workers */
+.sw-trend{margin-top:12px}.sw-trend h3{display:flex;align-items:center;gap:6px;margin:0 0 6px}
+.sw-trend-svg{width:100%;max-width:640px;height:auto;display:block}
+.sw-trend-grid{stroke:#e3e9f2;stroke-width:1}.sw-trend-line{fill:none;stroke:#0f766e;stroke-width:2.5;stroke-linejoin:round}
+.sw-trend-dot{fill:#0f766e;stroke:#fff;stroke-width:1.5}.sw-trend-dot.incomplete{fill:#fff;stroke:#0f766e;stroke-width:2}
+.sw-alert-list{list-style:none;margin:8px 0 12px;padding:0;display:grid;gap:8px}
+.sw-alert-list li{padding:8px 10px;border:1px solid #e3e9f2;border-radius:8px}.sw-alert-list li.focus{border-color:#0f766e;background:#effaf7}
+.sw-alert-list label{display:flex;gap:10px;align-items:flex-start;font-size:13px}.sw-alert-list small{display:block;color:#5d6b80;font-weight:400}
+.sw-focus-note{display:block;margin-top:4px;font-size:12px;color:#0f766e;font-style:normal}
+.sw-workers{margin-bottom:14px}.sw-workers h3{display:flex;align-items:center;gap:6px;margin:0 0 6px}
+.sw-workers-summary{font-weight:700;margin:0 0 8px}.sw-workers-summary.good{color:#1f7a3d}.sw-workers-summary.bad{color:#b42318}
+.sw-worker-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.sw-worker-list li{display:flex;justify-content:space-between;gap:12px;padding:8px 10px;border:1px solid #e3e9f2;border-radius:8px;font-size:13px}
+.sw-worker-list small{display:block;color:#5d6b80}.sw-worker-state{text-align:right}
+.sw-trend-axis{font-size:10px;fill:#5d6b80}

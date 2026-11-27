@@ -19,6 +19,7 @@ os.environ["MAIL_OUTBOX_DIR"] = str(Path(TEST_DIRECTORY.name) / "outbox")
 os.environ["SMTP_HOST"] = ""
 os.environ["SMTP_SENDER"] = ""
 os.environ["NOTIFICATION_CHANNEL"] = "dashboard"
+os.environ["MONITOR_DOMAIN_ALLOWLIST"] = ""   # the development .env limits the monitor to the test target; tests use their own domains
 os.environ["CORS_ORIGINS"] = "http://localhost:5173"
 os.environ["JWT_SECRET_KEY"] = "test-only-secret-key-not-for-any-real-environment-123456789"
 

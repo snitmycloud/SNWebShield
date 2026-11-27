@@ -59,6 +59,7 @@ class WorkerHeartbeat(Base):
     __tablename__ = "worker_heartbeats"
     name: Mapped[str] = mapped_column(String(100), primary_key=True)
     seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)   # what the supervisor knows about a role (pid, restarts)
 
 
 class ExecutionSlot(Base):

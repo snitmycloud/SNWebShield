@@ -137,7 +137,7 @@ def _heartbeat_loop(name, stop, progress, limit, interval=10):
 
 
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument("role", choices=["scheduler", "worker", "notifications", "assessment-worker", "scan-worker"])
+    parser = argparse.ArgumentParser(); parser.add_argument("role", choices=["scheduler", "worker", "notifications", "assessment-worker", "scan-worker", "monitor"])
     parser.add_argument("--once", action="store_true"); args = parser.parse_args()
     stop = threading.Event()
     progress = {"at": time.monotonic()}
@@ -145,6 +145,12 @@ def main():
     if args.role == "scan-worker":
         from app.services import scans
         scan_worker = scans.Worker()
+    monitor = None
+    if args.role == "monitor":
+        from app.services import monitor_role
+        monitor = monitor_role.Monitor()
+        if not args.once:   # a long uptime round must not make the role look dead
+            threading.Thread(target=_heartbeat_loop, args=(monitor_role.NAME, stop, progress, 300), daemon=True).start()
     if args.role == "assessment-worker":
         try: assessments.recover_on_start()  # a crash between a result and its ingestion must not lose it
         except Exception: print("assessment-worker: startup recovery failed; check execution history", flush=True)
@@ -160,6 +166,7 @@ def main():
                 elif args.role == "worker": worker_tick()
                 elif args.role == "assessment-worker": assessments.worker_tick()
                 elif args.role == "scan-worker": scan_worker.tick()
+                elif args.role == "monitor": monitor.tick()
                 else: notification_tick()
             except Exception:
                 # Never print URLs, credentials or response contents.

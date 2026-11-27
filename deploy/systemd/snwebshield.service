@@ -1,0 +1,32 @@
+# SNWebShield on a Linux server (systemd). WRITTEN BUT NOT YET TESTED ON LINUX (see docs/AUDIT_MATRIX.md).
+#
+# Install (as root), after creating a service user and installing the project, for example in /opt/snwebshield:
+#   cp deploy/systemd/snwebshield.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now snwebshield
+#   systemctl status snwebshield        journalctl -u snwebshield -f
+# The supervisor starts and restarts the API, the web app (if built), the scan worker and the monitor; systemd restarts the
+# supervisor itself if it ever stops. Put real settings in /opt/snwebshield/backend/.env (never in this file).
+[Unit]
+Description=SNWebShield (API, web app, scan worker, monitor) under the supervisor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=snwebshield
+Group=snwebshield
+WorkingDirectory=/opt/snwebshield/backend
+ExecStart=/opt/snwebshield/backend/.venv/bin/python -m app.cli.supervisor
+Restart=always
+RestartSec=5
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/snwebshield /var/lib/snwebshield
+KillMode=control-group
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

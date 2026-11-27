@@ -85,3 +85,10 @@ Everything runs on this computer. Screenshots of every step are in `docs/proof/d
 - A check that fails or times out is reported as **could not check**, never as clean.
 - No passwords, keys or file contents are stored; cookie values are never kept.
 - The optional extra checks (Nuclei) run only behind a firewall rule and a self-test, and only against the verified website.
+
+## Phase 5 extras (monitor)
+
+- After sign-in the website card shows **Uptime** (Up / Down). Open the website: the **Monitor** tab shows uptime, the next automatic scan and the **score trend**.
+- **Settings > Email alerts**: one switch per alert type and "Send me a test alert" (the email goes to the outbox folder until SMTP is set up: `%USERPROFILE%\SNWebShield-Private\outbox`).
+- **Admin > Workers** shows every role (API, web app, scan worker, monitor, supervisor) and how often each restarted.
+- To start everything by itself at boot: run `scripts\install-autostart.ps1` once as administrator (undo: `scripts\uninstall-autostart.ps1`). Do not run it together with `start-demo.ps1`.

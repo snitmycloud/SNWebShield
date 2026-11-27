@@ -204,6 +204,11 @@ export const api = {
   acceptRisk: (id, fingerprint, reason, days) => jsonPost(`/websites/${encodeURIComponent(id)}/findings/${encodeURIComponent(fingerprint)}/accept`, { reason, days }),
   stopAcceptingRisk: (id, fingerprint) => jsonPost(`/websites/${encodeURIComponent(id)}/findings/${encodeURIComponent(fingerprint)}/unaccept`, {}),
   recheckFinding: (id, fingerprint) => jsonPost(`/websites/${encodeURIComponent(id)}/findings/${encodeURIComponent(fingerprint)}/recheck`, {}),
+  websiteTrend: (id) => request(`/websites/${encodeURIComponent(id)}/trend`),
+  alertPreferences: () => request("/alerts/preferences"),
+  setAlertPreference: (type, enabled) => request(`/alerts/preferences/${encodeURIComponent(type)}`, { method: "PUT", body: JSON.stringify({ enabled }) }),
+  sendTestAlert: () => jsonPost("/alerts/test", {}),
+  adminWorkers: () => request("/admin/workers"),
   removeWebsite: (id, confirmDomain) => jsonPost(`/websites/${encodeURIComponent(id)}/remove`, { confirm_domain: confirmDomain }),
 
   // Admin

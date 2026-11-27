@@ -144,6 +144,8 @@ def request_scan(db, website: Website, trigger: str, scan_type: str = "standard"
     ownership.expire_manual(website)   # a manual verification that ran out no longer counts
     if website.removed_at is not None or website.verification_status != "verified" or not website.owner_id:
         raise HTTPException(409, MESSAGES["not_verified"])
+    if not ownership.has_valid_verification(db, website):   # owner disabled, fake test target, ... : never even queued
+        raise HTTPException(409, MESSAGES["not_verified"])
     existing = active_scan(db, website.id)
     if existing:
         return existing
@@ -460,6 +462,21 @@ def _after_full_scan(db, scan_id: str) -> None:
             db.commit()
     except Exception:
         db.rollback()
+    # Each of these is separate: one failing must not stop the others, and none may spoil the finished scan.
+    for step in ("record_score", "send_alerts"):
+        try:
+            scan = db.get(Scan, scan_id)
+            if scan is None or scan.scan_type == "recheck" or scan.status not in ("completed", "incomplete"):
+                return
+            if step == "record_score":
+                from app.services import score_history
+                score_history.record(db, scan)
+            else:
+                from app.services import alerts
+                alerts.after_scan(db, scan)
+            db.commit()
+        except Exception:
+            db.rollback()
 
 
 def _conclude_recheck(db, scan_id, token, website_id, state, guard) -> str:

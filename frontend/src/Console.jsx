@@ -11,6 +11,10 @@ import FindingsPanel from "./FindingsPanel.jsx";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import ReportView from "./ReportView.jsx";
 import ChangesPanel from "./ChangesPanel.jsx";
+import TrendChart from "./TrendChart.jsx";
+import AlertSettings from "./AlertSettings.jsx";
+import WorkersPanel from "./WorkersPanel.jsx";
+import { parseHash, scheduleText, uptimeView } from "./lib/monitor.js";
 import { certificateView, gradeView, scanDuration, TABS } from "./lib/report.js";
 import { isFriendlyLimit, scanNowText } from "./lib/detect.js";
 import MonitoringPage from "./MonitoringPage.jsx";
@@ -143,6 +147,7 @@ function DashboardView({ account, websites, plan, loading, onOpen, onAdd }) {
           <div className="sw-card-row sw-card-score"><span>Security score</span>{(() => { const g = gradeView(site.summary);
             return g ? <span className={`sw-grade-chip ${g.tone}`} data-testid="card-grade" title={g.note || undefined}><b>{g.grade}</b> {g.score}/100{site.summary.incomplete ? " *" : ""}</span>
               : <span className="sw-muted">{"\u2014"}</span>; })()}</div>
+          {site.uptime && <div className="sw-card-row"><span>Uptime</span><span className={`tone-${uptimeView(site.uptime).tone}`} data-testid="card-uptime">{uptimeView(site.uptime).label}</span></div>}
           {site.summary && <div className="sw-card-row"><span>Certificate</span><span className={`tone-${certificateView(site.summary.certificate).tone}`}>
             {site.summary.certificate ? (site.summary.certificate.days_left < 0 ? "Expired" : `${site.summary.certificate.days_left} days left`) : "\u2014"}</span></div>}
           <p className="sw-card-text">{site.verification_status === "verified" ? s.text : v.text}</p>
@@ -260,7 +265,7 @@ function VerifyPanel({ site, onVerified }) {
   </section>;
 }
 
-function MonitorTab({ site, data }) {
+function MonitorTab({ site, data, refreshKey }) {
   const summary = data.summary, grade = gradeView(summary), cert = certificateView(summary?.certificate), scan = data.scan, v = verificationView(site);
   return <section className="panel sw-monitor" data-testid="monitor-tab">
     <div className="sw-monitor-grid">
@@ -272,12 +277,17 @@ function MonitorTab({ site, data }) {
       <div><span className="sw-label">Ownership</span><strong>{v.label}</strong><small>{site.verification_status === "verified" ? "Scans can run." : "Scans are paused."}</small></div>
       <div><span className="sw-label">Open ports</span><strong>{data.ports.length}</strong></div>
       <div><span className="sw-label">Findings</span><strong>{summary ? `${summary.confirmed} confirmed, ${summary.needs_checking} to check` : "\u2014"}</strong></div>
+      {site.uptime && <div><span className="sw-label">Uptime</span><strong className={`tone-${uptimeView(site.uptime).tone}`} data-testid="monitor-uptime">{uptimeView(site.uptime).label}</strong>
+        <small>{uptimeView(site.uptime).text}</small></div>}
+      {site.schedule && <div><span className="sw-label">Next automatic scan</span><strong>{site.schedule.next_scan_at ? when(site.schedule.next_scan_at) : "\u2014"}</strong>
+        <small data-testid="schedule-text">{scheduleText(site.schedule)}</small></div>}
     </div>
+    <TrendChart siteId={site.id} refreshKey={refreshKey} />
   </section>;
 }
 
 function ScanTabs({ site, scan, plan }) {
-  const [tab, setTab] = useState("monitor");
+  const [tab, setTab] = useState(() => (typeof window !== "undefined" && window.location.hash.includes("/findings/") ? "vulnerabilities" : "monitor"));   // an alert email links straight to the finding
   const [version, setVersion] = useState(0);
   const { data, error } = useScanDetail(site.id, scan, version);
   const refresh = () => setVersion(v => v + 1);
@@ -288,7 +298,7 @@ function ScanTabs({ site, scan, plan }) {
     <ScanBanner data={data} running={running} />
     <div className="sw-tabs sw-site-tabs" role="tablist" aria-label="Website sections">{TABS.map(t =>
       <button key={t.id} role="tab" aria-selected={tab === t.id} data-testid={`tab-${t.id}`} className={tab === t.id ? "active" : ""} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
-    {tab === "monitor" && <MonitorTab site={site} data={data} />}
+    {tab === "monitor" && <MonitorTab site={site} data={data} refreshKey={scan.id} />}
     {tab === "detect" && <DetectSections data={data} running={running} />}
     {tab === "vulnerabilities" && <><ChangesPanel site={site} scan={scan} data={data} /><FindingsPanel findings={data.findings || []} result={data.scan.result || {}} running={running} site={site} onChanged={refresh} /></>}
     {tab === "report" && <ReportView site={site} data={data} plan={plan} scan={scan} />}
@@ -395,7 +405,7 @@ function WebsitesView({ websites, plan, loading, openId, onOpen, onAdded, onLimi
 
 // ---- Settings ------------------------------------------------------------------------------------
 
-function SettingsView({ account, plan }) {
+function SettingsView({ account, plan, alertFocus }) {
   const [current, setCurrent] = useState(""), [next, setNext] = useState("");
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [done, setDone] = useState("");
   const submit = async e => {
@@ -419,6 +429,7 @@ function SettingsView({ account, plan }) {
         </ul>}
         <div className="sw-upgrade-note"><ArrowUpRight size={16} /><span>Pro (25 websites, daily scans, PDF reports) and Business plans are coming soon.
           Until then, contact us and we will upgrade your account.</span></div></section>
+      <AlertSettings focus={alertFocus} />
       <form className="panel sw-box" onSubmit={submit} aria-label="Change password"><h2>Change password</h2>
         <label className="form-field"><span>Current password</span><input type="password" value={current} onChange={e => setCurrent(e.target.value)} autoComplete="current-password" required /></label>
         <label className="form-field"><span>New password</span><input type="password" value={next} onChange={e => setNext(e.target.value)} autoComplete="new-password" required placeholder="At least 12 characters" /></label>
@@ -439,6 +450,7 @@ function AdminView({ account }) {
   const act = async action => { setBusy(true); setError(""); try { await action(); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } };
   return <>
     <Heading eyebrow="ADMIN" title="Users" text="Change plans and disable accounts. Every change is recorded in the audit log." />
+    <WorkersPanel />
     {error && <div className="form-error" role="alert"><ShieldAlert size={15} />{error}</div>}
     <section className="panel table-panel"><div className="table-scroll"><table>
       <thead><tr><th>User</th><th>Role</th><th>Plan</th><th>Websites</th><th>Email confirmed</th><th>Status</th><th /></tr></thead>
@@ -459,7 +471,9 @@ function AdminView({ account }) {
 
 export default function Console({ account, onLogout }) {
   const staff = isStaff(account);
-  const [page, setPage] = useState("dashboard"), [openId, setOpenId] = useState(null);
+  const linked = useMemo(() => parseHash(typeof window !== "undefined" ? window.location.hash : ""), []);   // links in alert emails
+  const [page, setPage] = useState(linked?.page || "dashboard"), [openId, setOpenId] = useState(linked?.openId ?? null);
+  const [alertFocus] = useState(linked?.alert || null);
   const [websites, setWebsites] = useState([]), [plan, setPlan] = useState(null), [loading, setLoading] = useState(true);
   const [legacySites, setLegacySites] = useState([]), [clients, setClients] = useState([]);
   const [error, setError] = useState(""), [limit, setLimit] = useState(null), [notice, setNotice] = useState("");
@@ -524,7 +538,7 @@ export default function Console({ account, onLogout }) {
           onOpen={id => { setPage("websites"); setOpenId(id); }} onAdd={() => go("websites")} />}
         {page === "websites" && <WebsitesView websites={websites} plan={plan} loading={loading} openId={openId} onOpen={setOpenId}
           onAdded={site => { setWebsites(rows => [site, ...rows]); load(); }} onLimit={setLimit} onChanged={load} onRemoved={removed} onUpgrade={() => go("settings")} />}
-        {page === "settings" && <SettingsView account={account} plan={plan} />}
+        {page === "settings" && <SettingsView account={account} plan={plan} alertFocus={alertFocus} />}
         {page === "admin" && account.role === "admin" && <AdminView account={account} />}
         {staff && page.startsWith("legacy-") && <div className="sw-legacy-note"><Shield size={15} />Earlier analyst workflow: read-only. Nothing can be started from these pages.</div>}
         {staff && page === "legacy-monitoring" && <MonitoringPage websites={legacySites} />}
