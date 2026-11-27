@@ -372,7 +372,7 @@ def accept_risk(website_id: int, fingerprint: str, payload: AcceptRiskRequest, a
     return finding_states.view(state)
 
 
-@router.delete("/{website_id}/findings/{fingerprint}/accept")
+@router.post("/{website_id}/findings/{fingerprint}/unaccept")   # POST, not DELETE: the API's CORS rules allow only GET and POST
 def stop_accepting_risk(website_id: int, fingerprint: str, account: Admin = Depends(get_current_account), db: Session = Depends(get_db)):
     website = _owned(db, account, website_id)
     try:

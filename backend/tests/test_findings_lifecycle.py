@@ -109,7 +109,7 @@ def test_accepting_a_risk_raises_the_score_and_stopping_brings_it_back(client, m
         listed = site.findings(scan_id)[CSP]
         assert listed["state"]["status"] == "accepted" and listed["state"]["accepted"]["days"] == 90 and not listed["scored"]
 
-        assert client.delete(f"{W}/{site.id}/findings/{fp}/accept", headers=site.headers).status_code == 200
+        assert client.post(f"{W}/{site.id}/findings/{fp}/unaccept", headers=site.headers).status_code == 200
         assert site.summary(scan_id)["score"] == before["score"]
         assert site.events("risk_accepted") and site.events("risk_unaccepted")
 
