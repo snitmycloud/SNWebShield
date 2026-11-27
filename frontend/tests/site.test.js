@@ -113,3 +113,14 @@ test("text is escaped (a company name cannot inject markup)", () => {
   const html = buildSite({ config: { ...config, company: "<img src=x onerror=alert(1)>" }, plans, css, domain: "snwebshield.com" })["index.html"];
   assert.ok(!html.includes("<img src=x"));
 });
+
+test("the page carries the prices it was built with, in a tag the backend checks against plans.json", async () => {
+  const { pricesMarker } = await import("../site/pages.js");
+  const marker = pricesMarker(plans);
+  assert.equal(marker.currency, "INR");
+  for (const [key, plan] of Object.entries(plans.plans)) assert.deepEqual(marker.prices[key], [plan.price.monthly, plan.price.yearly]);
+  assert.ok(files["index.html"].includes('<meta name="snwebshield-prices" content="'));
+  const copy = JSON.parse(JSON.stringify(plans));
+  copy.plans.pro.price.monthly = 1;
+  assert.notDeepEqual(pricesMarker(copy), marker);
+});

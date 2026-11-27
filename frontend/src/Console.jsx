@@ -14,7 +14,7 @@ import ChangesPanel from "./ChangesPanel.jsx";
 import TrendChart from "./TrendChart.jsx";
 import AuditHistory from "./AuditHistory.jsx";
 import AlertSettings from "./AlertSettings.jsx";
-import WorkersPanel from "./WorkersPanel.jsx";
+import WorkersPanel, { SitePricesPanel } from "./WorkersPanel.jsx";
 import Logo from "./Logo.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
 import PillarCards from "./PillarCards.jsx";
@@ -447,6 +447,7 @@ function AdminView({ account }) {
   const act = async action => { setBusy(true); setError(""); try { await action(); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } };
   return <>
     <Heading eyebrow="ADMIN" title="Users" text="Change plans and disable accounts. Every change is recorded in the audit log." />
+    <SitePricesPanel />
     <WorkersPanel />
     {error && <div className="form-error" role="alert"><ShieldAlert size={15} />{error}</div>}
     <section className="panel table-panel"><div className="table-scroll"><table>

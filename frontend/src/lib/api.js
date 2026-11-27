@@ -197,6 +197,7 @@ export const api = {
   setAlertPreference: (type, enabled) => request(`/alerts/preferences/${encodeURIComponent(type)}`, { method: "PUT", body: JSON.stringify({ enabled }) }),
   sendTestAlert: () => jsonPost("/alerts/test", {}),
   adminWorkers: () => request("/admin/workers"),
+  adminSiteCheck: () => request("/admin/site-check"),
   removeWebsite: (id, confirmDomain) => jsonPost(`/websites/${encodeURIComponent(id)}/remove`, { confirm_domain: confirmDomain }),
 
   // Admin

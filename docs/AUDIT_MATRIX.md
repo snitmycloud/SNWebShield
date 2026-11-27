@@ -813,3 +813,6 @@ What was slow: measured with `--durations=50`. A trivial test cost about 1.4 s i
 | App moved to `/app/`; email links use `/app/` | `accounts.py`, `App.jsx`, `config.py` | `test_accounts.py::test_email_links_open_the_app_under_app_and_plans_carry_prices` |
 
 Open items: the legal text is a draft and needs a lawyer; domain, registration number, grievance officer, phone and effective date are placeholders.
+
+| Price safety: landing page prices vs plans.json | `services/site_check.py`, `main.py` (start-up log), `/admin/site-check`, Admin warning, `SiteWatch` in the supervisor | `test_site_check.py` (ok, mismatch, currency, could-not-check, logged error, admin-only, page built from this repo, supervisor rebuild/interval/no loop), `site.test.js` marker, `monitor.test.js` warning view |
+

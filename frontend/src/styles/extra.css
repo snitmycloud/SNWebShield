@@ -204,3 +204,11 @@ td { font-size: var(--fs-small); color: var(--text-2); }
 /* Nothing meant to be read is smaller than 13 px (uppercase labels may be 12 px) */
 small, .sw-note, .sw-muted, .sw-fd-row, .sw-label, .nav-count, label, legend { font-size: var(--fs-small); }
 .nav-count { font-size: var(--fs-label); }
+
+/* Admin: landing page price check */
+.sw-site-check { margin-bottom: var(--space-4); }
+.sw-site-check.bad { background: var(--bad-bg); border-color: var(--bad-border); color: var(--bad-text); }
+.sw-site-check.good { background: var(--good-bg); border-color: var(--good-border); color: var(--good-text); }
+.sw-site-check h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; font-size: var(--fs-base); }
+.sw-site-check p, .sw-site-check ul { margin: 4px 0 0; font-size: var(--fs-small); }
+.sw-site-check ul { padding-left: 20px; }

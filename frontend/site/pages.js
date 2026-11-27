@@ -53,6 +53,15 @@ export function pricingView(plansData, gstMode = "none", gstPercent = 18) {
   });
 }
 
+// The prices this page was built with, in a machine-readable tag. The backend (services/site_check.py) compares it with plans.json at start
+// and the supervisor rebuilds the site when they differ. Checkout never reads this page; it always uses plans.json.
+export function pricesMarker(plansData) {
+  const prices = {};
+  for (const [key, plan] of Object.entries(plansData.plans)) prices[key] = [Number(plan.price?.monthly || 0), Number(plan.price?.yearly || 0)];
+  return { currency: plansData.currency || "INR", prices };
+}
+const pricesMeta = plansData => `<meta name="snwebshield-prices" content="${esc(JSON.stringify(pricesMarker(plansData)))}">`;
+
 // ---- shared page parts ----
 function head({ title, description, canonical, siteUrl, ogImage, extra = "", noindex = false }) {
   return `<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -168,7 +177,7 @@ export function buildSite({ config, domain, plans, css, gstMode = "none", gstPer
   files["index.html"] = finish(page(head({
     title: `${config.product} | Website security you can understand`,
     description: `${config.product} monitors your website, detects what is exposed, finds real weaknesses and gives you a clear report. We only scan websites you own. Free plan available.`,
-    canonical: base + "/", siteUrl: base, ogImage: og, extra: jsonLd(config, base, view),
+    canonical: base + "/", siteUrl: base, ogImage: og, extra: jsonLd(config, base, view) + pricesMeta(plans),
   }), landingBody(config, domain, view, gstMode)));
   const legal = legalPages(config, domain);
   for (const doc of Object.values(legal)) {
