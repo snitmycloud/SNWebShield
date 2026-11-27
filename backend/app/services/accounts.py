@@ -67,8 +67,8 @@ def _deliver(*args) -> None:
 
 
 def send_verification(account: Admin, token: str) -> None:
-    _deliver(account.email, "Confirm your SNWebShield email address",
-                "Welcome to SNWebShield.\n\n"
+    _deliver(account.email, "Confirm your SNwebshield email address",
+                "Welcome to SNwebshield.\n\n"
                 "Confirm your email address to finish creating your account:\n\n"
                 f"{_link('verify-email', token)}\n\n"
                 f"This link works once and expires in {settings.email_verification_hours} hours.\n"
@@ -76,8 +76,8 @@ def send_verification(account: Admin, token: str) -> None:
 
 
 def send_reset(account: Admin, token: str) -> None:
-    _deliver(account.email, "Reset your SNWebShield password",
-                "Someone (hopefully you) asked to reset your SNWebShield password.\n\n"
+    _deliver(account.email, "Reset your SNwebshield password",
+                "Someone (hopefully you) asked to reset your SNwebshield password.\n\n"
                 f"Choose a new password here:\n\n{_link('reset-password', token)}\n\n"
                 f"This link works once and expires in {settings.password_reset_minutes} minutes.\n"
                 "If you did not ask for this, ignore this email; your password stays the same.\n")

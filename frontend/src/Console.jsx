@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Activity, AlertTriangle, ArrowUpRight, Bug, Check, CheckCircle2, ChevronRight, Copy, FileText, Globe2,
   LayoutDashboard, LoaderCircle, LogOut, Plus, RefreshCw, Settings2, Shield, ShieldAlert, ShieldCheck, Users,
-  UserCheck, X,
+  UserCheck, X, Menu,
 } from "lucide-react";
 import { api } from "./lib/api.js";
 import { METHODS, MANUAL_REASON_MIN, CONSENT_METHODS, checkView, isStaff, manualDetailsProblem, passwordHint, planLimit, removalConfirmed, scanView, verificationView } from "./lib/account.js";
@@ -15,14 +15,19 @@ import TrendChart from "./TrendChart.jsx";
 import AuditHistory from "./AuditHistory.jsx";
 import AlertSettings from "./AlertSettings.jsx";
 import WorkersPanel from "./WorkersPanel.jsx";
+import Logo from "./Logo.jsx";
+import ThemeToggle from "./ThemeToggle.jsx";
+import PillarCards from "./PillarCards.jsx";
+import ReportsOverview from "./ReportsOverview.jsx";
+import { EmptyState, Skeleton } from "./Placeholders.jsx";
 import { parseHash, scheduleText, uptimeView } from "./lib/monitor.js";
 import { certificateView, gradeView, scanDuration, TABS } from "./lib/report.js";
 import { isFriendlyLimit, scanNowText } from "./lib/detect.js";
-import "./console.css";
 
 const MAIN_NAV = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "websites", label: "Websites", icon: Globe2 },
+  { id: "reports", label: "Reports", icon: FileText },
   { id: "settings", label: "Settings", icon: Settings2 },
 ];
 
@@ -106,6 +111,7 @@ function DashboardView({ account, websites, plan, loading, onOpen, onAdd }) {
     <Heading eyebrow="DASHBOARD" title={`Hello${account.full_name ? `, ${account.full_name.split(" ")[0]}` : ""}`}
       text="Your websites at a glance."
       action={<button className="primary-button" onClick={onAdd}><Plus size={16} /> Add website</button>} />
+    <PillarCards websites={websites} onOpen={onOpen} loading={loading} />
     <div className="stats-grid sw-stats">
       <div className="stat-card"><div className="stat-icon teal"><Globe2 size={19} /></div><div className="stat-label">Websites</div>
         <div className="stat-value">{loading ? <span className="skeleton-value" /> : websites.length}</div>
@@ -116,10 +122,9 @@ function DashboardView({ account, websites, plan, loading, onOpen, onAdd }) {
         <div className="stat-value">{loading ? <span className="skeleton-value" /> : waiting}</div><div className="stat-detail">Verify to start scanning</div></div>
     </div>
     {loading ? <div className="sw-cards">{[0, 1, 2].map(i => <div key={i} className="panel sw-card sw-skeleton" />)}</div>
-      : websites.length === 0 ? <div className="panel"><div className="empty-state">
-        <div className="empty-icon"><Globe2 size={22} /></div><strong>Add your first website</strong>
-        <p>Enter your domain, prove you own it in about a minute, and the first scan starts automatically.</p>
-        <button className="primary-button" onClick={onAdd}><Plus size={15} /> Add website</button></div></div>
+      : websites.length === 0 ? <div className="panel"><EmptyState icon={Globe2} title="Add your first website"
+        text="Enter your domain, prove you own it in about a minute, and the first scan starts automatically."
+        action={<button className="primary-button" onClick={onAdd}><Plus size={15} /> Add website</button>} /></div>
       : <div className="sw-cards">{websites.map(site => {
         const v = verificationView(site), s = scanView(site.latest_scan);
         return <button key={site.id} className="panel sw-card" onClick={() => onOpen(site.id)}>
@@ -276,8 +281,8 @@ function MonitorTab({ site, data, refreshKey }) {
   </section>;
 }
 
-function ScanTabs({ site, scan, plan }) {
-  const [tab, setTab] = useState(() => (typeof window !== "undefined" && window.location.hash.includes("/findings/") ? "vulnerabilities" : "monitor"));   // an alert email links straight to the finding
+function ScanTabs({ site, scan, plan, initialTab, autoPrint }) {
+  const [tab, setTab] = useState(() => initialTab || "monitor");   // alert emails and dashboard cards link straight to a tab
   const [version, setVersion] = useState(0);
   const { data, error } = useScanDetail(site.id, scan, version);
   const refresh = () => setVersion(v => v + 1);
@@ -291,11 +296,11 @@ function ScanTabs({ site, scan, plan }) {
     {tab === "monitor" && <MonitorTab site={site} data={data} refreshKey={scan.id} />}
     {tab === "detect" && <DetectSections data={data} running={running} />}
     {tab === "vulnerabilities" && <><ChangesPanel site={site} scan={scan} data={data} /><FindingsPanel findings={data.findings || []} result={data.scan.result || {}} running={running} site={site} onChanged={refresh} /></>}
-    {tab === "report" && <ReportView site={site} data={data} plan={plan} scan={scan} />}
+    {tab === "report" && <ReportView site={site} data={data} plan={plan} scan={scan} autoPrint={autoPrint} />}
   </>;
 }
 
-function ScanPanel({ site, scans, onScanNow, busy, limitNote, onUpgrade, plan }) {
+function ScanPanel({ site, scans, onScanNow, busy, limitNote, onUpgrade, plan, initialTab, autoPrint }) {
   const latest = scans[0];
   const view = scanView(latest);
   const scanNow = site.scan_now;
@@ -314,7 +319,7 @@ function ScanPanel({ site, scans, onScanNow, busy, limitNote, onUpgrade, plan })
     <div className="sw-scan-now"><Badge tone={view.tone}>{view.label}</Badge>
       {view.active && <LoaderCircle className="spin" size={15} />}
       <span data-testid="scan-status">{view.active || !["completed", "incomplete", "refused"].includes(latest?.status) ? view.text : ""}</span></div>
-    {latest && <ScanTabs site={site} scan={latest} plan={plan} />}
+    {latest && <ScanTabs site={site} scan={latest} plan={plan} initialTab={initialTab} autoPrint={autoPrint} />}
     {scans.length > 1 && <ul className="sw-history">{scans.slice(1).map(scan => {
       const v = scanView(scan);
       return <li key={scan.id}><Badge tone={v.tone}>{v.label}</Badge><span>{when(scan.ended_at || scan.requested_at)}</span></li>;
@@ -322,7 +327,7 @@ function ScanPanel({ site, scans, onScanNow, busy, limitNote, onUpgrade, plan })
   </section>;
 }
 
-function WebsiteDetail({ id, onBack, onChanged, onRemoved, onUpgrade, plan }) {
+function WebsiteDetail({ id, onBack, onChanged, onRemoved, onUpgrade, plan, initialTab, autoPrint }) {
   const [site, setSite] = useState(null), [scans, setScans] = useState([]), [error, setError] = useState("");
   const [removing, setRemoving] = useState(false), [scanBusy, setScanBusy] = useState(false), [limitNote, setLimitNote] = useState("");
   const alive = useRef(true);
@@ -368,25 +373,25 @@ function WebsiteDetail({ id, onBack, onChanged, onRemoved, onUpgrade, plan }) {
       {site.verification_result.hint && <p>{site.verification_result.hint}</p>}</div>}
     {site.verification_status !== "verified" && <VerifyPanel site={site} onVerified={() => { load(); onChanged(); }} />}
     <AuditHistory siteId={site.id} refreshKey={`${site.verification_status}-${site.verified_at}-${scans[0]?.id}`} />
-    <ScanPanel site={site} scans={scans} onScanNow={scanNow} busy={scanBusy} limitNote={limitNote} onUpgrade={onUpgrade} plan={plan} />
+    <ScanPanel site={site} scans={scans} onScanNow={scanNow} busy={scanBusy} limitNote={limitNote} onUpgrade={onUpgrade} plan={plan} initialTab={initialTab} autoPrint={autoPrint} />
   </>;
 }
 
-function WebsitesView({ websites, plan, loading, openId, onOpen, onAdded, onLimit, onChanged, onRemoved, onUpgrade }) {
+function WebsitesView({ websites, plan, loading, openId, openTab, openPrint, onOpen, onAdded, onLimit, onChanged, onRemoved, onUpgrade }) {
   const [removing, setRemoving] = useState(null);
-  if (openId) return <WebsiteDetail id={openId} onBack={() => onOpen(null)} onChanged={onChanged} onRemoved={onRemoved} onUpgrade={onUpgrade} plan={plan} />;
+  if (openId) return <WebsiteDetail id={openId} onBack={() => onOpen(null)} onChanged={onChanged} onRemoved={onRemoved} onUpgrade={onUpgrade} plan={plan} initialTab={openTab} autoPrint={openPrint} />;
   return <>
     {removing && <RemoveDialog site={removing} onClose={() => setRemoving(null)} onRemoved={result => { setRemoving(null); onRemoved(result); }} />}
     <Heading eyebrow="WEBSITES" title="Websites" text="Add a website, prove you own it, and we scan it automatically." />
     <AddWebsite plan={plan} count={websites.length} onAdded={site => { onAdded(site); onOpen(site.id); }} onLimit={onLimit} />
-    <section className="panel table-panel"><div className="table-scroll"><table>
-      <thead><tr><th>Website</th><th>Ownership</th><th>Last scan</th><th>Added</th><th /></tr></thead>
-      <tbody>{loading ? <tr><td colSpan={5}><div className="loading-rows"><div /><div /></div></td></tr>
+    <section className="panel table-panel"><div className="table-scroll"><table className="sw-stack">
+      <thead><tr><th>Website</th><th>Ownership</th><th>Last scan</th><th>Added</th><th><span className="sr-only">Actions</span></th></tr></thead>
+      <tbody>{loading ? <tr><td colSpan={5}><Skeleton rows={3} /></td></tr>
         : websites.length ? websites.map(site => {
           const v = verificationView(site), s = scanView(site.latest_scan);
-          return <tr key={site.id}><td><div className="website-cell"><div className="site-icon"><Globe2 size={16} /></div><strong>{site.domain || site.name}</strong>
+          return <tr key={site.id}><td data-label="Website"><div className="website-cell"><div className="site-icon"><Globe2 size={16} /></div><strong>{site.domain || site.name}</strong>
               {site.test_target && <Badge tone="info">Test target</Badge>}</div></td>
-            <td><Badge tone={v.tone}>{v.label}</Badge></td><td><Badge tone={s.tone}>{s.label}</Badge></td><td>{when(site.created_at)}</td>
+            <td data-label="Ownership"><Badge tone={v.tone}>{v.label}</Badge></td><td data-label="Last scan"><Badge tone={s.tone}>{s.label}</Badge></td><td data-label="Added">{when(site.created_at)}</td>
             <td className="sw-row-actions"><button className="secondary-button" onClick={() => onOpen(site.id)}>{site.verification_status === "verified" ? "Open" : "Verify"}</button>
               <button className="secondary-button sw-remove-button" aria-label={`Remove ${site.domain || site.name}`} onClick={() => setRemoving(site)}>Remove</button></td></tr>;
         }) : <tr><td colSpan={5}><div className="empty-state"><div className="empty-icon"><Globe2 size={22} /></div>
@@ -465,6 +470,8 @@ export default function Console({ account, onLogout }) {
   const staff = isStaff(account);
   const linked = useMemo(() => parseHash(typeof window !== "undefined" ? window.location.hash : ""), []);   // links in alert emails
   const [page, setPage] = useState(linked?.page || "dashboard"), [openId, setOpenId] = useState(linked?.openId ?? null);
+  const [openTab, setOpenTab] = useState(linked?.tab || null), [openPrint, setOpenPrint] = useState(Boolean(linked?.print)), [menuOpen, setMenuOpen] = useState(false);
+  const openSite = (id, tab = null, print = false) => { setPage("websites"); setOpenId(id); setOpenTab(tab); setOpenPrint(print); setMenuOpen(false); };
   const [alertFocus] = useState(linked?.alert || null);
   const [websites, setWebsites] = useState([]), [plan, setPlan] = useState(null), [loading, setLoading] = useState(true);
   const [error, setError] = useState(""), [limit, setLimit] = useState(null), [notice, setNotice] = useState("");
@@ -477,7 +484,7 @@ export default function Console({ account, onLogout }) {
   }, []);
   useEffect(() => { load(); const timer = setInterval(load, 30000); return () => clearInterval(timer); }, [load]);
 
-  const go = id => { setPage(id); setOpenId(null); setError(""); setNotice(""); };
+  const go = id => { setPage(id); setOpenId(null); setOpenTab(null); setOpenPrint(false); setMenuOpen(false); setError(""); setNotice(""); };
   useEffect(() => {
     if (!notice) return undefined;
     const timer = setTimeout(() => setNotice(""), 6000);
@@ -491,10 +498,10 @@ export default function Console({ account, onLogout }) {
   const nav = useMemo(() => [...MAIN_NAV, ...(account.role === "admin" ? [{ id: "admin", label: "Admin", icon: Users }] : [])], [account.role]);
   const title = nav.find(item => item.id === page)?.label || "Dashboard";
 
-  return <div className="app-shell">
-    <aside className="sidebar">
-      <div className="brand-lockup"><div className="brand-mark"><ShieldCheck size={22} strokeWidth={2.2} /></div>
-        <div><div className="brand-name">SNWebShield</div><div className="brand-caption">WEBSITE SECURITY</div></div></div>
+  return <div className={`app-shell${menuOpen ? " menu-open" : ""}`}>
+    <a className="skip-link" href="#main-content">Skip to the page content</a>
+    <aside className="sidebar" id="sidebar">
+      <div className="brand-lockup"><Logo size={34} caption="WEBSITE SECURITY" /></div>
       <nav className="main-nav" aria-label="Main navigation">{nav.map(({ id, label, icon: Icon }) =>
         <button key={id} className={`nav-item ${page === id ? "active" : ""}`} onClick={() => go(id)}><Icon size={18} /><span>{label}</span>
           {id === "websites" && <span className="nav-count">{websites.length}</span>}</button>)}</nav>
@@ -503,26 +510,28 @@ export default function Console({ account, onLogout }) {
     </aside>
     <main className="main-panel">
       <header className="topbar">
-        <div className="breadcrumb"><span>SNWebShield</span><ChevronRight size={14} /><strong>{title}</strong></div>
-        <div className="topbar-actions">
+        <button type="button" className="icon-button menu-button" aria-label="Open the menu" aria-expanded={menuOpen} aria-controls="sidebar" onClick={() => setMenuOpen(o => !o)}><Menu size={18} /></button>
+        <div className="breadcrumb"><span>SNwebshield</span><ChevronRight size={14} /><strong>{title}</strong></div>
+        <div className="topbar-actions"><ThemeToggle />
           <button className="icon-button" aria-label="Refresh" onClick={load}><RefreshCw size={17} /></button>
           <button type="button" className="logout-button" onClick={onLogout}><LogOut size={15} /><span>Sign out</span></button>
         </div>
       </header>
-      <div className="content-area"><ErrorBoundary key={`${page}-${openId}`}>
+      <div className="content-area" id="main-content" tabIndex={-1}><ErrorBoundary key={`${page}-${openId}`}>
         {error && <div className="alert alert-error" role="alert"><ShieldAlert size={18} /><div><strong>Something went wrong</strong><span>{error}</span></div>
           <button className="alert-action" onClick={load}>Try again</button></div>}
         {notice && <div className="sw-notice" role="status" data-testid="notice"><CheckCircle2 size={16} />{notice}
           <button className="icon-button" aria-label="Dismiss" onClick={() => setNotice("")}><X size={14} /></button></div>}
         <UpgradeNotice detail={limit} onClose={() => setLimit(null)} onUpgrade={() => { setLimit(null); go("settings"); }} />
         {page === "dashboard" && <DashboardView account={account} websites={websites} plan={plan} loading={loading}
-          onOpen={id => { setPage("websites"); setOpenId(id); }} onAdd={() => go("websites")} />}
-        {page === "websites" && <WebsitesView websites={websites} plan={plan} loading={loading} openId={openId} onOpen={setOpenId}
+          onOpen={openSite} onAdd={() => go("websites")} />}
+        {page === "reports" && <ReportsOverview websites={websites} plan={plan} loading={loading} onOpen={openSite} onAdd={() => go("websites")} />}
+        {page === "websites" && <WebsitesView websites={websites} plan={plan} loading={loading} openId={openId} openTab={openTab} openPrint={openPrint} onOpen={id => { setOpenId(id); setOpenTab(null); setOpenPrint(false); }}
           onAdded={site => { setWebsites(rows => [site, ...rows]); load(); }} onLimit={setLimit} onChanged={load} onRemoved={removed} onUpgrade={() => go("settings")} />}
         {page === "settings" && <SettingsView account={account} plan={plan} alertFocus={alertFocus} />}
         {page === "admin" && account.role === "admin" && <AdminView account={account} />}
         </ErrorBoundary>
-        <footer className="content-footer"><span>SNWebShield</span><span><Shield size={13} /> We only scan websites whose ownership you have verified.</span></footer>
+        <footer className="content-footer"><span>SNwebshield</span><span><Shield size={13} /> We only scan websites whose ownership you have verified.</span></footer>
       </div>
     </main>
   </div>;

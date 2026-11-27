@@ -80,9 +80,9 @@ def compose(website: Website, alert_type: str, headline: str, what: str, do: str
     subject = f"[{name}] {headline}"[:200]
     lines = [f"Hello,", "", f"About your website {name}:", "", what, ""]
     lines += list(extra or []) + ([""] if extra else [])
-    lines += [f"What to do: {do}", "", f"See it in SNWebShield: {link}", "",
+    lines += [f"What to do: {do}", "", f"See it in SNwebshield: {link}", "",
               "You get this email because alerts are on for your account.",
-              f"Turn off this kind of alert: {settings_link(alert_type)}", "", "SNWebShield"]
+              f"Turn off this kind of alert: {settings_link(alert_type)}", "", "SNwebshield"]
     return subject, "\n".join(lines)
 
 
@@ -121,10 +121,10 @@ def raise_alert(db, website: Website, alert_type: str, key: str, *, headline: st
 
 def send_test(db, account: Admin) -> str:
     """A test email to the account's own address (Settings: 'Send me a test alert'). Goes to the outbox until SMTP is set up."""
-    subject = "[SNWebShield] Test alert"
-    body = ("Hello,\n\nThis is a test alert from SNWebShield. Real alerts look like this one: the website name in the subject, "
+    subject = "[SNwebshield] Test alert"
+    body = ("Hello,\n\nThis is a test alert from SNwebshield. Real alerts look like this one: the website name in the subject, "
             "what happened, one line saying what to do, and a link.\n\nWhat to do: nothing. This is only a test.\n\n"
-            f"See SNWebShield: {settings.public_app_url}\n\nChange which alerts you get: {settings.public_app_url.rstrip('/')}/#/settings\n\nSNWebShield")
+            f"See SNwebshield: {settings.public_app_url}\n\nChange which alerts you get: {settings.public_app_url.rstrip('/')}/#/settings\n\nSNwebshield")
     channel = mailer.send(account.email, subject, body)
     engine.event(db, "alert_test_sent", actor_id=account.id, detail={"channel": channel})
     return channel

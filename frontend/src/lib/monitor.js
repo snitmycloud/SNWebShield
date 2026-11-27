@@ -35,10 +35,16 @@ export function trendSummary(points) {
   return `Score ${change > 0 ? "up" : "down"} ${Math.abs(change)} point${Math.abs(change) === 1 ? "" : "s"} since the scan before.`;
 }
 
-// Links in alert emails: #/websites/12, #/websites/12/findings/<fingerprint>, #/settings, #/settings/alerts/<type>.
+// Links in alert emails and on dashboard cards: #/websites/12, #/websites/12/findings/<fingerprint>, #/websites/12/tab/<tab>[/print],
+// #/settings, #/settings/alerts/<type>. Anything else is ignored.
+export const SITE_TABS = ["monitor", "detect", "vulnerabilities", "report"];
+
 export function parseHash(hash) {
   const parts = String(hash || "").replace(/^#\/?/, "").split("/").filter(Boolean);
-  if (parts[0] === "websites" && /^\d+$/.test(parts[1] || "")) return { page: "websites", openId: Number(parts[1]), finding: parts[2] === "findings" ? parts[3] || null : null };
+  if (parts[0] === "websites" && /^\d+$/.test(parts[1] || "")) {
+    const tab = parts[2] === "tab" && SITE_TABS.includes(parts[3]) ? parts[3] : parts[2] === "findings" ? "vulnerabilities" : null;
+    return { page: "websites", openId: Number(parts[1]), finding: parts[2] === "findings" ? parts[3] || null : null, tab, print: tab === "report" && parts[4] === "print" };
+  }
   if (parts[0] === "settings") return { page: "settings", alert: parts[1] === "alerts" ? parts[2] || null : null };
   return null;
 }
