@@ -40,6 +40,55 @@ def log_dir() -> Path:
     return path
 
 
+def make_kill_on_close_job():
+    """Windows: a job object that kills every process in it when the supervisor itself ends, however it ends (Task Scheduler stop, crash,
+    kill). Without it the roles would keep running as orphans and a new supervisor could not take them over. Returns the handle (keep it
+    alive) or None where this does not apply."""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class BASIC(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64), ("LimitFlags", wintypes.DWORD),
+                        ("MinimumWorkingSetSize", ctypes.c_size_t), ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                        ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD), ("SchedulingClass", wintypes.DWORD)]
+
+        class IO(ctypes.Structure):
+            _fields_ = [(name, ctypes.c_uint64) for name in ("a", "b", "c", "d", "e", "f")]
+
+        class EXTENDED(ctypes.Structure):
+            _fields_ = [("Basic", BASIC), ("Io", IO), ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                        ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+        job = kernel.CreateJobObjectW(None, None)
+        if not job:
+            return None
+        info = EXTENDED()
+        info.Basic.LimitFlags = 0x2000   # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not kernel.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)):
+            return None
+        return job
+    except Exception:
+        return None
+
+
+def add_to_job(job, process) -> bool:
+    if not job:
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        return bool(kernel.AssignProcessToJobObject(job, int(process._handle)))
+    except Exception:
+        return False
+
+
 class Spec:
     def __init__(self, name: str, command: list[str], cwd: Path, port: int | None = None):
         self.name, self.command, self.cwd, self.port = name, command, cwd, port
@@ -111,6 +160,7 @@ class Supervisor:
         self.clock, self.cap, self.stable, self.busy = clock, backoff_cap, stable, busy
         self.logs = logs
         self.stopping = False
+        self.job = make_kill_on_close_job()   # the roles die with the supervisor (Windows)
 
     def _spawn(self, spec: Spec):
         directory = self.logs or log_dir()
@@ -121,6 +171,7 @@ class Supervisor:
         flags = (getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
         process = subprocess.Popen(spec.command, cwd=str(spec.cwd), stdin=subprocess.DEVNULL, stdout=handle, stderr=subprocess.STDOUT, creationflags=flags)
         process._sw_log = handle   # closed when the role is stopped
+        add_to_job(self.job, process)
         return process
 
     def _start(self, role: Role) -> None:

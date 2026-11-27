@@ -50,10 +50,10 @@ def status(db, now=None, web_port: int = 5173) -> dict:
         info = sup_detail.get(key) or {}
         if info:
             row.update(restarts=info.get("restarts"), pid=info.get("pid"), started_at=info.get("started_at"), last_exit_code=info.get("last_exit_code"))
-            if key in ("api", "web") and info.get("state") not in (None, "running"):
-                row["state"] = info.get("state")
+            if key == "web" and info.get("state") not in (None, "running", "external"):
+                row["state"] = info.get("state")   # the API is running whenever this page is served; the web port is probed above
         rows.append(row)
     sup_row = next(r for r in rows if r["role"] == "supervisor")
     sup_row.update(age_seconds=sup_age, state="not_started" if sup is None else "running" if sup_age <= STALE_SECONDS else "stale")
-    healthy = all(r["state"] == "running" for r in rows)
+    healthy = all(r["state"] in ("running", "external") for r in rows)   # "external": started by hand, and it answers
     return {"as_of": now.isoformat(), "healthy": healthy, "stale_after_seconds": STALE_SECONDS, "roles": rows}

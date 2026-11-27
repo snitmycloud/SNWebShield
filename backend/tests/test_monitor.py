@@ -688,3 +688,34 @@ def test_websites_without_valid_verification_are_never_scheduled_checked_or_scan
         assert good in queued and good_domain in checked   # the control: a properly verified website is still handled
         with pytest.raises(Exception):   # and a direct scan request is refused too
             scans.request_scan(db, db.get(Website, bad), "manual")
+
+
+@pytest.mark.skipif(__import__("os").name != "nt", reason="job objects are Windows only")
+def test_roles_die_with_the_supervisor_so_no_orphans_are_left(tmp_path):
+    """Start a real supervisor, wait for its child, then kill the supervisor the hard way: the child must go too."""
+    import subprocess, sys, time
+    marker = tmp_path / "child.pid"
+    child = f"import os,time,pathlib; pathlib.Path(r'{marker}').write_text(str(os.getpid())); time.sleep(300)"
+    runner = (
+        "import sys; sys.path.insert(0, r'" + str(__import__("app.cli.supervisor", fromlist=["x"]).BACKEND) + "');"
+        "from app.cli import supervisor as s; import time;"
+        f"sup = s.Supervisor([s.Spec('orphan-test', [sys.executable, '-c', {child!r}], s.BACKEND)], logs=r'{tmp_path}', busy=lambda p: False);"
+        "sup.step(); time.sleep(300)")
+    parent = subprocess.Popen([sys.executable, "-c", runner])
+    try:
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline and not marker.exists():
+            time.sleep(0.2)
+        assert marker.exists()
+        child_pid = int(marker.read_text())
+        subprocess.run(["taskkill", "/PID", str(parent.pid), "/F"], capture_output=True)   # no /T: only the supervisor is killed
+        gone = False
+        for _ in range(50):
+            alive = subprocess.run(["tasklist", "/FI", f"PID eq {child_pid}"], capture_output=True, text=True).stdout
+            if str(child_pid) not in alive:
+                gone = True
+                break
+            time.sleep(0.2)
+        assert gone, "the role survived its supervisor"
+    finally:
+        parent.kill()
