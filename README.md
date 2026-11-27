@@ -203,14 +203,11 @@ Restart the API and the workers after changing `.env` or upgrading. Keep everyth
 ### 6. Run the tests (one at a time, never together)
 
 ```powershell
-cd backend
-.\.venv\Scripts\python.exe -m pytest                 # full backend suite
-cd ..\frontend
-npm test                                      # unit tests (Node test runner)
-npm run build                                 # production build
+powershell -File scripts\test-quick.ps1      # backend quick level + frontend tests, about 1 minute
+powershell -File scripts\test-full.ps1       # all backend tests (parallel with pytest-xdist) + frontend tests + build, about 1 minute
 ```
 
-Before merging a phase run `powershell -ExecutionPolicy Bypass -File scripts\fresh-clone-check.ps1`: it clones the committed branch into a temporary folder, installs it from scratch and runs the backend and frontend tests and the build.
+By hand: `cd backend; .\.venv\Scripts\python.exe -m pytest` (add `-m "not slow"` for quick, `-n 6` for parallel after `pip install -r requirements-dev.txt`), then `cd frontend; npm test; npm run build`. Before merging a phase run `powershell -ExecutionPolicy Bypass -File scriptsresh-clone-check.ps1` (clone, install from scratch, all tests and the build). Details: [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md).
 
 ## Removed: the earlier analyst pipeline
 

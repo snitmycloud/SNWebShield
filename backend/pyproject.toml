@@ -1,3 +1,4 @@
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = ["slow: takes 0.8 s or more (skipped by -m \"not slow\"; the full run includes it)"]

@@ -98,6 +98,7 @@ class Settings(BaseSettings):
     vuln_max_response_bytes: int = Field(default=8 * 1024 * 1024, ge=65536, le=32 * 1024 * 1024)
     scan_identify_budget_seconds: int = Field(default=90, ge=10, le=900)   # all vulnerability look-ups of one scan together
     scan_tls_probe_timeout_seconds: float = Field(default=2.0, ge=0.5, le=10)
+    scan_tls_handshake_timeout_seconds: float = Field(default=1.2, ge=0.1, le=10)   # how long to wait for a TLS answer from a port that may be plain HTTP
 
     recheck_time_limit_seconds: int = Field(default=120, ge=30, le=900)    # one "re-scan to confirm fix"
     # Phase 5 (monitor). Uptime checks do not count against scan limits; the test target is checked less often.

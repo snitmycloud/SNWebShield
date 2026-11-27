@@ -200,7 +200,10 @@ def test_a_slow_database_times_out(connect_to, monkeypatch, sleeps):
 
 def test_an_unreachable_database_is_a_connection_error(monkeypatch, sleeps):
     monkeypatch.setattr(vs, "_resolve", lambda host: "127.0.0.1")
-    monkeypatch.setattr(vs, "_connect", lambda host, ip, timeout: http.client.HTTPConnection("127.0.0.1", 9, timeout=timeout))
+    class Refused(http.client.HTTPConnection):   # what a closed port does, at once (a real closed port takes about 2 s per try on Windows)
+        def request(self, *a, **k):
+            raise ConnectionRefusedError("connection refused")
+    monkeypatch.setattr(vs, "_connect", lambda host, ip, timeout: Refused("127.0.0.1", 9, timeout=timeout))
     with pytest.raises(vs.SourceError) as caught:
         call()
     assert caught.value.reason == "connection"

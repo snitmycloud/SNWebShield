@@ -9,7 +9,7 @@
     2. No file under the source folders is ignored by .gitignore while present on disk (this is how four vendored Nuclei
        templates in a folder called "backups" were once left out of the repository).
     3. A fresh `git clone` of the branch into a new temporary folder.
-    4. A brand-new Python virtual environment and `pip install -r backend\requirements.txt`.
+    4. A brand-new Python virtual environment and `pip install -r backend\requirements-dev.txt`.
     5. The Nuclei manifest check on the clone: all vendored templates present, every SHA-256 equal to MANIFEST.json, the lock
        file pins both platforms, and every template is tracked by git.
     6. The backend tests (the full suite, or a quick subset with -Fast).
@@ -83,7 +83,7 @@ Step "3. Fresh clone of '$Branch'" {
 $python = Join-Path $temp "backend\.venv\Scripts\python.exe"
 Step "4. New virtual environment and pip install" {
   python -m venv (Join-Path $temp "backend\.venv")
-  & $python -m pip install --quiet --disable-pip-version-check -r (Join-Path $temp "backend\requirements.txt")
+  & $python -m pip install --quiet --disable-pip-version-check -r (Join-Path $temp "backend\requirements-dev.txt")
 }
 
 Step "5. Nuclei manifest check on the clone" {
@@ -112,7 +112,7 @@ Step "6. Backend tests" {
   Push-Location (Join-Path $temp "backend")
   try {
     if ($Fast) { & $python -m pytest -q -p no:cacheprovider tests/test_nuclei_validator.py tests/test_nuclei_mapping.py tests/test_nuclei_quick.py tests/test_nuclei_runner_engine.py tests/test_migrations.py tests/test_ownership.py tests/test_manual_verification.py }
-    else { & $python -m pytest -q -p no:cacheprovider }
+    else { & $python -m pytest -q -p no:cacheprovider -n 6 }   # pytest-xdist (dev-only): the whole suite in about a minute
   } finally { Pop-Location }
 }
 

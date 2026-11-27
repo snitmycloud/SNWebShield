@@ -440,6 +440,7 @@ def test_nuclei_is_an_optional_step_so_it_never_makes_a_scan_incomplete():
 def test_a_self_test_that_is_still_starting_skips_nuclei_quietly(monkeypatch):
     async def boom(*a, **k):
         raise AssertionError("must not run")
+    monkeypatch.setattr(en, "SELFTEST_WAIT_SECONDS", 0)   # the scan waits up to 60 s for a running self-test; this one never finishes, so do not wait for real
     out = engine_run(monkeypatch, [web_probe(443, True)], selftest={"ok": False, "failed": ["selftest_running"], "at": 1.0}, runner=boom)
     assert out.state == "skipped" and out.detail == {"reason": "selftest_starting"}
 
